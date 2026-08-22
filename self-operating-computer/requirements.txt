@@ -30,7 +30,7 @@ pydantic_core==2.10.1
 PyGetWindow==0.0.9
 PyMsgBox==1.0.9
 pyparsing==3.1.1
-pyperclip==1.8.2
+pyperclip==1.11.0
 PyRect==0.2.0
 pyscreenshot==3.1
 PyScreeze==0.1.29
