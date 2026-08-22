@@ -171,7 +171,7 @@ jobs:
       # Upload trained model, metrics etc. as GitHub artifacts for inspection
       - name: Upload Training Artifacts
         if: always() # Upload even if previous steps fail (for debugging)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: training-artifacts-${{ github.event.inputs.model_name }}-${{ github.run_id }}
           path: |
