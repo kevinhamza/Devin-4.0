@@ -109,7 +109,7 @@ jobs:
 
       # Step 5: Optional - Upload coverage report
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4 # Use latest codecov action
+        uses: codecov/codecov-action@v7 # Use latest codecov action
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # Store token in GitHub secrets
           files: ./coverage.xml # Specify coverage file
