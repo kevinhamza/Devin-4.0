@@ -56,7 +56,7 @@ jobs:
     steps:
       # Step 1: Check out the specified branch of the repository code
       - name: Checkout code (${{ github.event.inputs.branch_ref }})
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.branch_ref }}
 
