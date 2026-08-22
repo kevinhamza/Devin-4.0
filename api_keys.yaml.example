@@ -1,0 +1,28 @@
+# Devin/.gitignore/api_keys.yaml
+# Purpose: Conceptual placeholder for storing external API keys.
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !! CRITICAL WARNING: DO NOT STORE REAL API KEYS OR SECRETS IN THIS FILE! !!
+# !! THIS FILE MUST BE INCLUDED IN .gitignore TO AVOID COMMITTING SECRETS!  !!
+# !! Use environment variables or a dedicated secrets manager in production. !!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+# --- LLM / AI Service Keys ---
+# These keys should be referenced by environment variable names in other configs
+# (e.g., ai_config.yaml) and loaded securely by the connectors.
+
+openai_api_key: "sk-DUMMYxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxPLACEHOLDER" # Placeholder Only! Load from env var: OPENAI_API_KEY
+google_api_key: "AIzaSyDUMMYxxxxxxxxxxxxxxxxxxxxxxxxxxxPLACEHOLDER" # Placeholder Only! Load from env var: GOOGLE_API_KEY
+perplexity_api_key: "pplx-DUMMYxxxxxxxxxxxxxxxxxxxxxxxxPLACEHOLDER" # Placeholder Only! Load from env var: PERPLEXITY_API_KEY
+
+# --- Hypothetical Pentesting AI Key ---
+pentestgpt_api_key: "dummy-pentestgpt-key-placeholder-replace-me" # Placeholder Only! Load from env var: PENTESTGPT_API_KEY
+
+# --- Other Potential Third-Party Service Keys ---
+# Example: VirusTotal API Key (referenced in threat_intel)
+virustotal_api_key: "dummy_vt_key_0123456789abcdef0123456789abcdef0123456789abcdef" # Placeholder Only! Load from env var: VT_API_KEY
+
+# Example: GitHub API Token (if needed for repository operations)
+# github_pat: "ghp_dummy_personal_access_token_replace_me" # Placeholder Only! Load from env var: GITHUB_TOKEN
+
+# Add other key placeholders as needed, always using dummy values in this file.

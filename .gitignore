@@ -1,0 +1,162 @@
+# Devin/.gitignore
+# Purpose: Specifies intentionally untracked files that Git should ignore.
+# This comprehensive list covers Python artifacts, virtual envs, OS files, editor configs, secrets, etc.
+
+# --- Byte-compiled / optimized / DLL files ---
+__pycache__/
+*.py[cod]
+*$py.class$
+
+# --- C extensions ---
+*.so
+
+# --- Distribution / packaging ---
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.manifest
+*.spec
+MANIFEST
+
+# --- Installer logs ---
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Unit test / coverage reports ---
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+temp_test_logs/
+
+# --- Translations ---
+*.mo
+*.pot
+*.po
+
+# --- Django Stuff ---
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# --- Flask Stuff ---
+instance/
+.webassets-cache
+
+# --- Scrapy Stuff ---
+.scrapy
+
+# --- Sphinx documentation ---
+docs/_build/
+
+# --- PyBuilder ---
+target/
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints
+
+# --- Environments ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak
+venv.bak
+
+# --- Secrets / Sensitive Config (Ensure these are not committed!) ---
+*.env.*
+!.env.example
+secrets.yaml
+secrets.yml
+secret.yaml
+secret.yml
+api_keys.yaml
+!api_keys.yaml.example
+*.pem
+*.key
+
+# --- Static Analysis / Type Checking ---
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# --- Linters ---
+.ruff_cache/
+.flake8
+.pylintrc
+
+# --- IDE / Editor Folders ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+nbproject/
+.nbhistory
+
+# --- OS generated files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+Thumbs.db
+desktop.ini
+
+# --- Temporary files / Logs ---
+*.tmp
+*.temp
+tmp/
+temp/
+*.bak
+*.swp
+*~
+
+# --- Databases ---
+*.sqlite3
+*.db
+local.db
+*.feather
+robot_logs/
+
+# --- Terraform ---
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+
+# --- Node Modules (if using JS tools) ---
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# --- Other ---
+/uploads/

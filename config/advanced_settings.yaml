@@ -1,0 +1,85 @@
+# Devin/config/advanced_settings.yaml
+# Purpose: Advanced configuration parameters for fine-tuning, debugging, or enabling
+#          experimental features. Intended for expert users only. Modify with caution.
+
+# --- Performance Tuning ---
+# Low-level parameters affecting performance. May require profiling to tune effectively.
+performance_tuning:
+  api_gateway:
+    # Max number of concurrent connections allowed by the gateway (if applicable server supports it)
+    max_concurrent_connections: 1000
+    # Factor to adjust default request timeouts (e.g., 1.0 = default, 1.5 = 50% longer)
+    request_timeout_factor: 1.0
+    # Enable detailed Server-Timing headers in responses for performance analysis
+    enable_timing_headers: false
+
+  task_orchestrator:
+    # Override the default max number of worker threads/processes
+    worker_pool_size_override: null # Use null or comment out to use default from global_settings or logic
+    # How many tasks workers prefetch from the queue (if applicable)
+    queue_prefetch_count: 1
+    # Timeout in seconds for acquiring locks within the orchestrator
+    lock_timeout_sec: 5.0
+
+  long_term_memory:
+    # Batch size for writing embeddings to the vector database
+    vector_db_write_batch_size: 128
+    # Timeout for embedding generation requests to external services (if used)
+    embedding_request_timeout_sec: 15.0
+    # Override default similarity search threshold (use carefully, affects relevance)
+    similarity_threshold_override: null # e.g., 0.75 (higher = stricter similarity)
+    # Interval in hours for background index optimization (if DB supports it)
+    index_optimization_interval_hours: 24
+
+  reasoning_engine:
+    # Max depth for recursive reasoning or planning calls to prevent stack overflow/loops
+    max_recursion_depth: 5
+    # Multiplier for default context window size sent to LLMs (e.g., 1.2 = 20% larger)
+    context_window_multiplier: 1.0
+
+# --- Developer / Debugging Overrides ---
+# Settings primarily useful during development or deep debugging.
+# Avoid enabling these in production unless absolutely necessary.
+developer_overrides:
+  # Override log levels for specific modules (more granular than global setting)
+  log_level_overrides:
+    "servers.robotics_control_server": "DEBUG"
+    "ai_core.cognitive_arch.long_term_memory": "DEBUG"
+    # "boto3": "DEBUG" # Example: Enable verbose logs from underlying libraries
+  # Force disable caching for specific components (useful for debugging data flow)
+  disable_caching_for_modules:
+    - "long_term_memory_retrieval"
+    # - "api_gateway_responses"
+  # Force model reload from storage at a specific interval (useful for testing model updates)
+  force_model_reload_interval_min: null # Set to e.g., 30 to force reload every 30 mins
+  # Enable verbose output from specific AI processes
+  ai_verbose_mode: false
+
+# --- Experimental Feature Flags ---
+# Flags for features considered highly unstable or requiring expert supervision.
+# These might differ from the global feature flags which control major subsystems.
+experimental_flags:
+  # Allow plugins (if marketplace enabled) to make direct OS calls (EXTREMELY DANGEROUS)
+  enable_plugin_direct_os_calls: false
+  # Allow installation of plugins without signature verification (VERY DANGEROUS)
+  allow_unsigned_plugins: false
+  # Enable real-time correlation of external threat intel feeds with internal activity
+  enable_live_threat_intel_correlation: false
+  # Enable speculative self-healing routines based on quantum annealing concepts
+  enable_quantum_self_repair: false
+  # Enable verbose logging or specific checks from consciousness monitor (for research)
+  enable_consciousness_monitor_verbose: false
+
+# --- Security Expert Overrides ---
+# Settings that significantly impact security posture. DO NOT CHANGE LIGHTLY.
+security_expert_overrides:
+  # Allow overly permissive CORS policy (e.g., "*") for debugging API calls
+  permissive_cors_policy_enabled: false
+  # Disable input sanitization routines - DANGEROUS, only for specific debug scenarios
+  disable_input_sanitization_for_debug: false
+  # Allow chaos engineering experiments to target production namespaces/resources
+  chaos_allow_production_targets: false
+  # Minimum required confidence score for an exploit suggestion to be presented to user
+  exploit_suggestion_min_confidence: 0.7 # Range 0.0 - 1.0
+  # Disable secondary authentication checks for high-risk operations (VERY DANGEROUS)
+  bypass_mfa_for_critical_ops: false

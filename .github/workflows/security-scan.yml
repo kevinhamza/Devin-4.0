@@ -1,0 +1,129 @@
+# Devin/.github/workflows/security-scan.yml # Automated Security Scans 🛡️
+# Purpose: Runs various security scans (SAST, Dependency Check, Secret Scanning)
+#          on pushes and pull requests to identify potential vulnerabilities.
+
+name: Devin Security Scan
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    paths-ignore: # Don't run for non-code changes
+      - 'docs/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'assets/**'
+  pull_request:
+    branches: [ "main", "develop" ]
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'assets/**'
+  # Optionally run on a schedule for full repo scans
+  schedule:
+    - cron: '30 2 * * 1' # Example: Run every Monday at 2:30 AM UTC
+
+# Required permissions for CodeQL analysis and potentially other security tools
+permissions:
+  actions: read # Needed for checkout
+  contents: read # Needed for checkout and analysis tools
+  security-events: write # Needed for CodeQL to upload results to GitHub Security tab
+
+jobs:
+  # Job 1: Static Application Security Testing (SAST) using CodeQL
+  sast-codeql:
+    name: SAST (CodeQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20 # SAST can take some time
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      # Initializes the CodeQL tools for scanning.
+      # Languages to analyze needs to be specified.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python # Specify languages used in your project (e.g., python, javascript)
+          # Optional: Add queries - uses default queries if omitted
+          # queries: +security-extended, +security-and-quality
+
+      # Autobuild attempts to build any compiled languages (optional for pure Python).
+      # If you have build steps, replace this with your build commands.
+      # For pure Python, CodeQL often works well without an explicit build step.
+      # - name: Autobuild
+      #   uses: github/codeql-action/autobuild@v3
+
+      # Performs the CodeQL analysis
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:python" # Optional: Category for display in Actions status checks
+
+
+  # Job 2: Dependency Vulnerability Check using pip-audit
+  dependency-check:
+    name: Dependency Check (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11' # Use a consistent Python version
+          cache: 'pip'
+
+      # Install system libraries required to build audio deps from source
+      # (PyAudio needs portaudio.h, simpleaudio needs alsa/asoundlib.h)
+      - name: Install system audio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+
+      - name: Install dependencies and pip-audit
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          # Install project dependencies to check them
+          # Check both main and potentially dev requirements
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt --no-deps; fi # --no-deps might avoid conflicts if already installed
+
+      - name: Run pip-audit
+        run: |
+          # Run pip-audit. It checks installed packages against vulnerability databases (e.g., OSV).
+          # It already exits non-zero when vulnerabilities are found; --fail-on-vulnerability
+          # isn't a real pip-audit flag and made every run fail with "unrecognized arguments"
+          # before a single package was even checked.
+          # Use --fix to attempt automatic upgrades (use with caution in CI).
+          # Consider using --ignore-vuln ID if specific vulns are accepted risks.
+          pip-audit --progress-spinner=off
+          # Alternatively, target requirements files directly if dependencies aren't installed:
+          # if [ -f requirements.txt ]; then pip-audit -r requirements.txt --fail-on-vulnerability; fi
+          # if [ -f requirements-dev.txt ]; then pip-audit -r requirements-dev.txt --fail-on-vulnerability; fi
+
+
+  # Job 3: Secret Scanning using TruffleHog
+  secret-scan:
+    name: Secret Scanning (TruffleHog)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code (fetch full history for scanning)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Fetch all history for deep scanning
+
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main # Use the main branch for latest features/fixes
+        with:
+          # path: ./ # Scan the entire repository
+          # Optional: Add extra arguments if needed, e.g., custom regexes, exclude paths
+          # extra_args: --debug --exclude-paths fixtures/ --exclude-paths tests/data/
+          # Fail the workflow if secrets are found (default behavior usually)
+          fail: true

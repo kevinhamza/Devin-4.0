@@ -1,0 +1,126 @@
+# Devin/.dockerignore (Conceptual combined/development focused ignores)
+# Purpose: Specifies files and directories to exclude from the Docker build context
+#          to keep images small, secure, and build times fast.
+
+# --- Version Control ---
+.git/
+.gitignore
+.gitattributes
+.gitmodules
+
+# --- Docker specific ---
+.dockerignore
+Dockerfile* # Usually don't need the Dockerfile itself inside the image
+docker-compose.yaml
+docker-compose.yml
+
+# --- IDE / Editor ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+nbproject/
+.nbhistory
+
+# --- Python Specific ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+# Virtual Environments (NEVER copy these into an image)
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak
+venv.bak
+# Distribution / packaging / Build artifacts
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.manifest # Often build related
+*.spec # Often build related
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Testing / Coverage ---
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# --- Secrets / Local Config (NEVER copy into image!) ---
+*.env.*
+!.env.example # Allow example env files unless specifically excluded elsewhere
+secrets.yaml
+secrets.yml
+*.pem
+*.key
+local_settings.py
+# Any file containing sensitive credentials
+
+# --- Databases (Local dev databases shouldn't be in image) ---
+*.sqlite3
+*.db
+local.db
+
+# --- Logs ---
+*.log
+*.log.*
+logs/
+
+# --- OS generated files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+Thumbs.db
+desktop.ini
+
+# --- Temporary Files ---
+*.tmp
+*.temp
+tmp/
+temp/
+*.bak
+*.swp
+*~
+
+# --- Large Data / Models (Optional - depends if needed during build vs. runtime) ---
+# Often excluded from build context and loaded at runtime if large
+# data/
+# ai_models/storage/
+
+# --- Node Modules (if using JS tools in build process but not needed in final image) ---
+# node_modules/
+# npm-debug.log
+# yarn-error.log
+
+# --- Documentation / Other ---
+README.md
+CONTRIBUTING.md
+docs/ # Usually not needed inside the application image

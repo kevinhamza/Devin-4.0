@@ -1,0 +1,73 @@
+# Devin/backups/config_backup.yaml
+# Conceptual structure for a backup of Devin's configuration settings.
+# Actual content would reflect the state at the time of backup.
+
+backup_info:
+  timestamp_utc: 2025-04-14T01:00:00Z # Example timestamp
+  source_hostname: "devin-primary-instance"
+  backup_type: "full_config"
+  version_ref: "v1.2.3-alpha" # Version of Devin system being backed up
+
+global_settings:
+  environment: "production" # Or development, testing
+  log_level: "INFO" # e.g., DEBUG, INFO, WARNING, ERROR
+  max_concurrent_tasks: 50
+  allow_internet_access: true
+  user_permission_timeout_sec: 300
+
+api_gateway:
+  host: "0.0.0.0"
+  port: 8000
+  # Note: Sensitive keys ideally loaded from env/secrets manager, not directly in config backup unless encrypted.
+  jwt_config:
+    secret_key_ref: "env:API_JWT_SECRET_KEY" # Reference to where the actual secret is stored
+    algorithm: "HS256"
+    audience: "devin_api_users"
+    issuer: "devin_auth_service"
+  rate_limits:
+    api_ip_rpm: { max_rate: 60, period_seconds: 60 }
+    openai_chat_rpm: { max_rate: 20, period_seconds: 60 }
+    # ... other limits ...
+  cors_origins:
+    - "http://localhost:3000" # Example frontend URL
+    - "https://devin-ui.example.com"
+
+ai_core:
+  default_llm_service: "openai" # e.g., openai, gemini, local
+  default_code_model: "gpt-4-turbo"
+  default_chat_model: "gpt-4-turbo"
+  reasoning_max_steps: 15
+  working_memory_size: 100
+  long_term_memory_db:
+    type: "chromadb" # Or pinecone, weaviate
+    path: "/data/devin_ltm_db" # Or connection string
+    embedding_model_ref: "all-MiniLM-L6-v2"
+  neurosymbolic_enabled: true
+  self_improvement_enabled: true
+
+integrations:
+  openai_api_key_ref: "env:OPENAI_API_KEY" # Reference, not the key itself
+  google_api_key_ref: "env:GOOGLE_API_KEY"
+  perplexity_api_key_ref: "env:PERPLEXITY_API_KEY"
+  pentestgpt_api_url: "http://pentestgpt-service:80" # Example internal URL
+  pentestgpt_api_key_ref: "env:PENTESTGPT_API_KEY"
+  local_llm_api_url: "http://localhost:11434/api" # Example Ollama URL
+  # ... other integrations ...
+
+servers:
+  task_orchestrator:
+    max_queue_size: 1000
+    worker_threads: 16
+  robotics_control_server:
+    enabled: false # Example: Robotics disabled in this config backup
+    ros_bridge_topic_prefix: "/devin_robot"
+    default_control_frame: "base_link"
+  # ... config for other servers ...
+
+security:
+  require_explicit_permission_level: 3 # 1=low_risk, 2=medium_risk, 3=high_risk
+  sandbox_analysis_enabled: true # For malware analysis module
+  code_execution_sandbox: "docker" # Or 'vm', 'none'
+  # ... other security flags/configs ...
+
+# Add other sections as needed: mlops, legal, privacy, etc.

@@ -1,0 +1,123 @@
+{
+  "type": "flex",
+  "altText": "{{ alt_text | default(title | default('Devin AI Notification')) }}", // Text shown in chat list / notifications
+  "contents": {
+    "type": "bubble",
+    // Header Section (Optional)
+    "header": {
+      "type": "box",
+      "layout": "vertical",
+      "paddingAll": "15px",
+      "backgroundColor": "#007BFF", // Example header color
+      "contents": [
+        {
+          "type": "text",
+          "text": "{{ title | default('Devin AI Notification') }}", // Dynamic Title
+          "weight": "bold",
+          "size": "lg",
+          "color": "#FFFFFF",
+          "align": "start"
+        }
+        // Add more header elements if needed (e.g., subtitle)
+      ]
+    },
+    // Body Section
+    "body": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "md", // Spacing between elements
+      "paddingAll": "15px",
+      "contents": [
+        {
+          "type": "text",
+          "text": "{{ message_body | default('No message content provided.') }}", // Dynamic message body
+          "wrap": true, // Allow text wrapping
+          "size": "sm"
+        },
+        // Optional Separator
+        {
+          "type": "separator",
+          "margin": "lg"
+        },
+        // Optional Key-Value Details Section
+        {
+          "type": "box",
+          "layout": "vertical",
+          "margin": "lg",
+          "spacing": "sm",
+          "contents": [
+            // Loop through details conceptually
+            // Example detail structure:
+            {% if task_id %}
+            {
+              "type": "box",
+              "layout": "baseline",
+              "contents": [
+                { "type": "text", "text": "Task ID:", "color": "#aaaaaa", "size": "sm", "flex": 2 },
+                { "type": "text", "text": "{{ task_id }}", "wrap": true, "color": "#666666", "size": "sm", "flex": 5 }
+              ]
+            },
+            {% endif %}
+            {% if status %}
+            {
+              "type": "box",
+              "layout": "baseline",
+              "contents": [
+                { "type": "text", "text": "Status:", "color": "#aaaaaa", "size": "sm", "flex": 2 },
+                { "type": "text", "text": "{{ status | upper }}", "wrap": true, "color": "#666666", "size": "sm", "flex": 5, "weight": "bold" }
+              ]
+            },
+            {% endif %}
+            // Add more key-value pairs here using {{ key }} and {{ value }} from a loop if needed
+            {% for key, value in additional_info.items() %}
+             {
+              "type": "box",
+              "layout": "baseline",
+              "contents": [
+                { "type": "text", "text": "{{ key | replace('_', ' ') | capitalize }}:", "color": "#aaaaaa", "size": "sm", "flex": 2 },
+                { "type": "text", "text": "{{ value }}", "wrap": true, "color": "#666666", "size": "sm", "flex": 5 }
+              ]
+            },
+            {% endfor %}
+          ]
+        }
+      ]
+    },
+    // Footer Section (Optional, e.g., for buttons)
+    "footer": {
+      "type": "box",
+      "layout": "vertical",
+      "spacing": "sm",
+      "contents": [
+        // Optional Button
+        {% if action_url and action_text %}
+        {
+          "type": "button",
+          "style": "primary", // 'primary', 'secondary', 'link'
+          "height": "sm",
+          "action": {
+            "type": "uri", // Action type: open URL
+            "label": "{{ action_text | default('View Details') }}",
+            "uri": "{{ action_url }}"
+          }
+        },
+        {% endif %}
+        // Optional Separator
+        {
+          "type": "separator",
+          "margin": "md"
+        },
+        // Optional timestamp/info text
+        {
+          "type": "text",
+          "text": "Devin AI | {{ timestamp | default('Now') }}",
+          "size": "xs",
+          "color": "#aaaaaa",
+          "align": "center"
+        }
+      ],
+      "flex": 0 // Footer doesn't expand generally
+    }
+    // Add other bubble components like 'hero' (for images) if needed
+  }
+}

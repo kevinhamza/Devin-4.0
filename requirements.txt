@@ -1,0 +1,67 @@
+# Devin AGI - Python Dependencies
+
+# --- Core & Servers ---
+flask
+flask-socketio
+python-telegram-bot
+requests
+python-dotenv
+numpy
+pandas
+pyarrow
+websockets
+
+# --- AI & Machine Learning ---
+openai
+anthropic
+google-generativeai
+scikit-learn
+spacy
+torch
+torchvision
+torchaudio
+ultralytics
+Pillow
+tiktoken
+sentence-transformers
+
+# --- Social & Communication ---
+tweepy
+praw
+cryptography
+
+# --- OS & Automation ---
+psutil
+watchdog
+pynput
+selenium
+pyautogui
+paramiko
+boto3
+google-cloud-storage
+google-cloud-compute
+pywin32; sys_platform == 'win32'
+SpeechRecognition
+PyAudio
+pyttsx3
+simpleaudio
+
+# --- Robotics ---
+pyserial
+opencv-python
+
+# --- Threat Intelligence & Pentesting ---
+python-nmap
+beautifulsoup4
+scapy
+pymetasploit3
+
+# --- Other Utilities ---
+tqdm
+pyyaml
+webdriver-manager
+ppad
+pure-python-adb
+dataclasses
+google-genai
+hf_xet

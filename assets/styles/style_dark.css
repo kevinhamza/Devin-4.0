@@ -1,0 +1,54 @@
+/* Devin/assets/styles/style_dark.css */
+/* Dark Theme Overrides */
+
+/* This file assumes that:
+   1. style.css defines the base layout, component styles, and default CSS variables (for light theme).
+   2. A JavaScript theme controller adds/removes the class 'dark-mode' to the <html> or <body> tag.
+   3. This stylesheet is loaded AFTER style.css or its rules have sufficient specificity.
+*/
+
+html.dark-mode, /* Or body.dark-mode if JS targets body */
+body.dark-mode { /* Repeating selector for robustness */
+
+  /* --- Override CSS Variables defined in style.css --- */
+
+  --bg-color: #1a1a1a; /* Darker background */
+  --text-color: #e0e0e0; /* Lighter text */
+  --primary-color: #0d6efd; /* Adjusted primary */
+  --secondary-color: #adb5bd; /* Lighter secondary */
+  --accent-color: #198754; /* Darker accent */
+  --border-color: #444444; /* Darker borders */
+  --input-bg: #2a2a2a; /* Dark input fields */
+  --input-border: #555555;
+  --output-bg: #212121; /* Dark output areas */
+  --code-bg: #333333; /* Darker code background */
+  --link-color: #60a5fa; /* Lighter blue links */
+
+  /* Status colors might need adjustment for contrast */
+  --error-color: #f56565;
+  --warning-color: #f6ad55;
+  --success-color: #48bb78;
+  --info-color: #4fd1c5;
+
+  /* --- Optional: Specific Component Overrides --- */
+  /* Only add rules here if changing variables is not sufficient */
+  /* For example, changing a box-shadow or background image */
+
+  /* Example: Maybe slightly different padding or border for contrast */
+  /*
+  #output-area {
+    border: 1px solid var(--border-color); // Already uses variable, likely fine
+  }
+
+  button, .button {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5); // Darker shadow maybe
+  }
+  */
+
+  /* Add other specific dark-mode ONLY overrides here */
+  /* Keep structural and layout CSS primarily in style.css */
+
+}
+
+/* You might also include overrides for specific components if necessary */
+/* html.dark-mode .specific-component { ... } */

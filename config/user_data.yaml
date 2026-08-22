@@ -1,0 +1,57 @@
+# Devin/config/user_data.yaml
+# Purpose: Conceptual placeholder for user-specific runtime data.
+#
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+# !! CRITICAL WARNING: DO NOT USE THIS FILE FOR ACTUAL USER DATA STORAGE!     !!
+# !! User data (history, stats, runtime info) BELONGS IN A DATABASE           !!
+# !! (e.g., databases/user_profiles.db, databases/task_history.db).         !!
+# !! Using YAML for this purpose will lead to severe performance, scalability, !!
+# !! and data corruption issues. This structure is purely illustrative.       !!
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+# Using a dictionary keyed by user ID (mirroring user_profiles.yaml structure)
+
+user_admin_01:
+  # --- Example Runtime Data Fields (SHOULD BE IN A DATABASE) ---
+  last_login_utc: "2025-04-15T23:10:00Z" # Example timestamp
+  session_count: 153
+  total_tasks_submitted: 450
+  # List of recent project IDs the user worked on
+  recent_project_ids:
+    - "proj_admin_cleanup"
+    - "proj_security_audit"
+  # Conceptual usage stats (would be aggregated in DB)
+  usage_stats:
+    commands_run_count: 1205
+    llm_calls_count: 850
+    data_processed_gb_estimate: 2.5
+
+user_pentester_alice:
+  # --- Example Runtime Data Fields (SHOULD BE IN A DATABASE) ---
+  last_login_utc: "2025-04-15T22:05:15Z"
+  session_count: 88
+  total_tasks_submitted: 210
+  recent_project_ids:
+    - "pentest_client_abc"
+    - "ctf_challenge_internal"
+    - "research_web_vulns"
+  usage_stats:
+    scans_initiated: 55
+    reports_generated: 12
+    tools_used_common: ["nmap", "burpsuite", "metasploit"]
+
+user_normal_bob:
+  # --- Example Runtime Data Fields (SHOULD BE IN A DATABASE) ---
+  last_login_utc: "2025-04-14T10:30:00Z"
+  session_count: 25
+  total_tasks_submitted: 40
+  recent_project_ids:
+    - "personal_automation"
+    - "email_summary_task"
+  usage_stats:
+    general_queries_count: 150
+    automation_scripts_run: 15
+
+# --- End of Conceptual User Data ---
+# Recommendation: Remove this file and implement proper database storage
+# for all user runtime data, linking it to user profiles via user IDs.

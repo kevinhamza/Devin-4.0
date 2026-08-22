@@ -1,0 +1,142 @@
+# Devin/config/robotics_config.yaml
+# Purpose: Configuration settings related to the robotics platform, hardware, sensors, and control parameters.
+
+# --- General Robot Profile ---
+robot_profile:
+  # Unique identifier for the specific robot instance being configured
+  robot_id: "devin_bot_001"
+  # Type or model of the robot platform
+  robot_model: "CustomDifferentialDrivePlatformV2" # e.g., Fetch, TurtleBot4, CustomBuild
+  # Primary middleware used for communication (if applicable)
+  middleware: "ROS2_Humble" # e.g., ROS1_Noetic, ROS2_Humble, Custom_API
+
+# --- ROS Integration Settings (if middleware is ROS-based) ---
+ros_integration:
+  enabled: true # Whether ROS integration is active
+  # How Devin connects (e.g., directly as a node, via a dedicated bridge service)
+  bridge_type: "ros2_bridge_service"
+  # Namespace or prefix used for Devin-related topics and services
+  topic_prefix: "/devin_robot"
+  # Default coordinate frames used by the robot
+  map_frame: "map"
+  odom_frame: "odom"
+  base_frame: "base_link" # Robot's main coordinate frame
+
+# --- Controller Configurations ---
+controllers:
+  # Configuration for the mobile base controller
+  base:
+    type: "diff_drive" # e.g., diff_drive, mecanum, holonomic
+    # Max velocities for safety and control limits
+    max_linear_velocity_mps: 0.5 # meters per second
+    max_angular_velocity_dps: 90.0 # degrees per second
+    # Acceleration limits
+    linear_acceleration_mps2: 0.25
+    angular_acceleration_dps2: 180.0
+    # Physical parameters if needed by controller/odom
+    wheel_diameter_m: 0.15
+    wheel_base_m: 0.40
+    # ROS topic names (if applicable)
+    cmd_vel_topic: "{{topic_prefix}}/cmd_vel" # Using prefix defined above
+    odom_topic: "{{topic_prefix}}/odom"
+
+  # Configuration for a hypothetical robotic arm
+  arm:
+    type: "joint_trajectory_controller" # e.g., joint_trajectory, velocity_controller
+    joint_names: # Order matters!
+      - arm_base_joint
+      - shoulder_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    # Position limits (radians or degrees - specify units!)
+    joint_position_limits_deg:
+      arm_base_joint: [-180, 180]
+      shoulder_joint: [-90, 90]
+      # ... other joints
+    # Velocity limits (radians/s or degrees/s)
+    joint_velocity_limits_dps: 100.0 # Can be scalar or per-joint
+    # Reference to kinematics file if needed by planners
+    kinematics_file: "config/robot_kinematics/my_arm_urdf.xacro" # Conceptual path
+    # ROS topic/service names (if applicable)
+    trajectory_command_topic: "{{topic_prefix}}/arm_controller/joint_trajectory"
+    joint_states_topic: "/joint_states" # Often globally published
+
+  # Configuration for a gripper
+  gripper:
+    type: "parallel_jaw_electric" # e.g., parallel_jaw, vacuum
+    max_opening_mm: 85.0
+    min_opening_mm: 0.0
+    max_force_n: 50.0 # Optional: If force control supported
+    # ROS topic/service names (if applicable)
+    command_topic: "{{topic_prefix}}/gripper_controller/command"
+    status_topic: "{{topic_prefix}}/gripper_controller/status"
+
+# --- Sensor Configurations ---
+sensors:
+  # Example 2D Lidar
+  lidar_2d_front:
+    type: "LaserScan"
+    topic: "{{topic_prefix}}/scan"
+    frame_id: "laser_frame" # TF frame ID
+    range_min_m: 0.05
+    range_max_m: 25.0
+    angle_min_deg: -135.0
+    angle_max_deg: 135.0
+
+  # Example RGB-D Camera
+  camera_rgbd_head:
+    type: "RealSense_D435" # Example model type
+    rgb_topic: "{{topic_prefix}}/camera/color/image_raw"
+    depth_topic: "{{topic_prefix}}/camera/depth/image_rect_raw"
+    points_topic: "{{topic_prefix}}/camera/depth/color/points" # Point cloud topic
+    frame_id: "camera_link"
+    resolution: "640x480"
+    fps: 30
+    # Path to camera calibration file (intrinsics, extrinsics)
+    calibration_file: "config/robot_calibration/head_camera_calib.yaml"
+
+  # Example IMU
+  imu_base:
+    type: "IMU"
+    topic: "{{topic_prefix}}/imu/data"
+    frame_id: "imu_link"
+
+  # Add other sensors: GPS, ultrasonic, force/torque, tactile, etc.
+
+# --- Navigation Stack Configuration ---
+navigation:
+  map_file: "/maps/main_lab_map.yaml" # Path to pre-generated map (e.g., for AMCL)
+  localization_method: "amcl" # e.g., amcl, slam_toolbox (if mapping too), gps_rtk
+  global_planner: "NavFn" # ROS1/ROS2 planner names (e.g., NavFn, SmacPlanner)
+  local_planner: "DWAPlanner" # e.g., DWAPlanner, TEBPlanner, MPPIController
+  # Parameters for costmaps, planners, recovery behaviors etc.
+  costmap_params:
+    global_frame: "{{map_frame}}" # Use frames defined above
+    robot_base_frame: "{{base_frame}}"
+    inflation_radius_m: 0.55
+    obstacle_range_m: 3.0
+    raytrace_range_m: 3.5
+    # ... many more parameters ...
+
+# --- Safety Limits & Configuration ---
+safety:
+  # Method used for emergency stop activation
+  e_stop_method: "hardware_button_ros_topic" # e.g., hardware_button, software_api, deadman_switch
+  e_stop_topic: "/emergency_stop" # Topic to monitor/publish if using ROS
+
+  # Enable basic collision avoidance based on local planner / sensors
+  collision_avoidance_enabled: true
+  # Reduced speed when near obstacles
+  max_speed_near_obstacle_mps: 0.15
+
+  # Define operational boundaries (geofencing) - Conceptual
+  # Format depends on implementation (e.g., list of polygon vertices)
+  operational_zones:
+    - zone_id: "lab_area"
+      type: "allowed"
+      polygon_points: [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]] # Example square
+    - zone_id: "restricted_zone_1"
+      type: "forbidden"
+      polygon_points: [[4.0, 4.0], [6.0, 4.0], [6.0, 6.0], [4.0, 6.0]]

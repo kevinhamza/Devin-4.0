@@ -1,0 +1,94 @@
+# Devin/config/os_specific/windows.yaml
+# Purpose: Windows-specific configuration settings, paths, command equivalents, and tool locations.
+
+# --- Default Paths ---
+# Common filesystem locations on Windows systems, often using environment variables.
+paths:
+  # Temporary directory location (%TEMP% or %TMP%)
+  temp_dir: "%TEMP%"
+  # Windows directory (%SystemRoot% or %windir%)
+  windows_dir: "%SystemRoot%"
+  # System32 directory
+  system32_dir: "%SystemRoot%\\System32"
+  # Program Files directories
+  program_files: "%ProgramFiles%"
+  program_files_x86: "%ProgramFiles(x86)%" # Exists on 64-bit Windows
+  # User profile directory (%USERPROFILE%)
+  user_profile: "%USERPROFILE%"
+  # User AppData directory (Local)
+  user_appdata_local: "%LOCALAPPDATA%"
+  # User AppData directory (Roaming)
+  user_appdata_roaming: "%APPDATA%"
+  # Common location for user startup items
+  user_startup_folder: "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+
+# --- Common Command Names/Paths & PowerShell Equivalents ---
+# Note: Many operations are increasingly done via PowerShell cmdlets.
+commands:
+  # Package management (Winget is becoming standard, Chocolatey is popular third-party)
+  package_manager: "winget" # Or "choco" if Chocolatey is preferred/installed
+  package_search: "winget search"
+  package_install: "winget install --accept-source-agreements --accept-package-agreements" # Winget requires agreement flags
+  package_uninstall: "winget uninstall"
+  # package_install: "choco install -y" # Chocolatey example
+  # package_uninstall: "choco uninstall -y" # Chocolatey example
+
+  # Service management
+  service_query: "sc query state= all" # sc.exe command
+  service_query_detail: "sc qc" # sc.exe command
+  service_start: "sc start" # sc.exe command
+  service_stop: "sc stop" # sc.exe command
+  # PowerShell equivalents are often preferred:
+  powershell_service_get: "Get-Service"
+  powershell_service_start: "Start-Service"
+  powershell_service_stop: "Stop-Service"
+  powershell_service_restart: "Restart-Service"
+
+  # Firewall management (netsh or PowerShell)
+  firewall_query_profile: "netsh advfirewall show currentprofile" # Shows current profile status
+  firewall_show_rules: "netsh advfirewall firewall show rule name=all"
+  # PowerShell firewall cmdlets: Get-NetFirewallRule, New-NetFirewallRule, Set-NetFirewallRule etc.
+
+  # User management (net user or PowerShell)
+  user_query: "net user" # Lists local users
+  user_query_detail: "net user" # Followed by username
+  group_query_local: "net localgroup"
+  # PowerShell user cmdlets: Get-LocalUser, New-LocalUser, Get-LocalGroup etc.
+
+  # Process management
+  process_list: "tasklist.exe"
+  process_kill: "taskkill.exe /F /PID" # Followed by PID, /F forces termination
+
+  # Default shells
+  default_cmd_shell: "cmd.exe"
+  default_powershell: "powershell.exe"
+  # Recommend using powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ... for reliable scripting
+
+# --- Common Tool Paths ---
+# Explicit paths generally not needed if System32 is in PATH, but listed for clarity.
+tools:
+  powershell_exe: "%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+  cmd_exe: "%SystemRoot%\\System32\\cmd.exe"
+  reg_exe: "%SystemRoot%\\System32\\reg.exe" # Registry editor CLI
+  tasklist_exe: "%SystemRoot%\\System32\\tasklist.exe"
+  taskkill_exe: "%SystemRoot%\\System32\\taskkill.exe"
+  schtasks_exe: "%SystemRoot%\\System32\\schtasks.exe" # Scheduled tasks CLI
+  wmic_exe: "%SystemRoot%\\System32\\wbem\\WMIC.exe" # WMI Command-line utility
+  # Sysinternals tools paths (if deployed consistently, e.g., C:\Sysinternals)
+  # accesschk_path: "C:\\Sysinternals\\accesschk.exe"
+
+# --- Common Registry Paths (Informational) ---
+# Examples of registry locations Devin might need to check for information or persistence.
+registry_examples:
+  # Startup locations
+  run_key_user: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+  run_key_machine: "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+  run_once_key_user: "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+  run_once_key_machine: "HKEY_LOCAL_MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce"
+  # Windows version information
+  windows_version_key: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
+  # Installed software
+  installed_software_key_machine: "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+  installed_software_key_user: "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+
+# Add other Windows-specific settings as needed...

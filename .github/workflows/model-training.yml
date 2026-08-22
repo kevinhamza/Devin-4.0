@@ -1,0 +1,186 @@
+# Devin/.github/workflows/model-training.yml # AI Model Retraining
+# Purpose: Defines a workflow for retraining AI models, triggered manually.
+
+name: Devin Model Retraining
+
+# Controls when the workflow will run
+on:
+  workflow_dispatch:
+    # Inputs the user can provide when triggering the workflow manually
+    inputs:
+      model_name:
+        description: 'Name of the model to retrain (e.g., sentiment_analyzer)'
+        required: true
+        type: string
+      dataset_ref:
+        description: 'Reference to the dataset version/path to use (e.g., s3://bucket/data/v2, dataset_v2.1)'
+        required: true
+        type: string
+      training_params_override:
+        description: 'JSON string of hyperparameters to override defaults (optional)'
+        required: false
+        type: string
+        default: '{}'
+      branch_ref:
+        description: 'Git branch/ref containing the training code to use'
+        required: true
+        type: string
+        default: 'main' # Default to main branch
+
+jobs:
+  # Job: Train the specified model
+  train:
+    name: Retrain ${{ github.event.inputs.model_name }} Model
+    # --- Runner Configuration ---
+    # Model training often requires significant resources (GPU, RAM).
+    # Standard GitHub runners might be insufficient for large models.
+    # Consider using:
+    # 1. Self-hosted runners with necessary hardware (GPU, RAM).
+    # 2. Cloud-based runners (e.g., GitHub larger runners).
+    # 3. Actions that trigger training jobs on dedicated ML platforms (SageMaker, Vertex AI, Azure ML).
+    # Using ubuntu-latest as a placeholder, assuming smaller models or CPU training for now.
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # Set a long timeout for potentially long training jobs
+
+    # --- Environment Variables & Secrets ---
+    # Define environment variables needed by scripts, potentially using secrets
+    env:
+      # Example secrets needed for accessing data, saving models, etc.
+      # These must be configured in GitHub repository secrets.
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }} # e.g., us-east-1
+      MODEL_REGISTRY_API_KEY: ${{ secrets.MODEL_REGISTRY_API_KEY }} # If using external registry like MLflow
+      WANDB_API_KEY: ${{ secrets.WANDB_API_KEY }} # Example for experiment tracking
+
+    steps:
+      # Step 1: Check out the specified branch of the repository code
+      - name: Checkout code (${{ github.event.inputs.branch_ref }})
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.branch_ref }}
+
+      # Step 2: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11' # Consistent Python version for training
+          cache: 'pip'
+
+      # Step 3: Install dependencies (including ML frameworks)
+      # Assumes training dependencies might be in a separate file or included in dev requirements
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Install potentially large ML dependencies
+          if [ -f requirements-train.txt ]; then pip install -r requirements-train.txt; fi
+          # Fallback or combine with dev/main requirements
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install -r requirements.txt
+
+      # Step 4: Authenticate & Download Data (Conceptual Placeholder)
+      # Replace with actual commands for your data storage (S3, GCS, DVC, etc.)
+      - name: Download Training Data (${{ github.event.inputs.dataset_ref }})
+        run: |
+          echo "Simulating download/access for dataset: ${{ github.event.inputs.dataset_ref }}"
+          # Example using AWS CLI (requires AWS credentials in env):
+          # aws s3 sync ${{ github.event.inputs.dataset_ref }} ./data/ --delete
+          # Example using DVC (requires DVC setup in repo):
+          # dvc pull data/ # Assuming dataset_ref maps to a DVC tracked directory/file
+          mkdir -p ./data # Create dummy data dir for simulation
+          echo "Dummy data content" > ./data/training_data.csv
+          echo "Data download/pull simulated."
+
+      # Step 5: Run the Training Script
+      # Assumes a script exists, e.g., 'training_scripts/train.py'
+      # Pass inputs as arguments or environment variables to the script
+      - name: Execute Model Training Script
+        id: training_step
+        run: |
+          echo "Starting training script for model: ${{ github.event.inputs.model_name }}"
+          # Construct the command line arguments carefully
+          # Example: Assuming train.py takes these arguments
+          python training_scripts/train.py \
+            --model-name "${{ github.event.inputs.model_name }}" \
+            --dataset-path "./data/" \
+            --output-dir "./trained_models/${{ github.event.inputs.model_name }}/" \
+            --params-override '${{ github.event.inputs.training_params_override }}' \
+            # Add other necessary args like epochs, learning rate etc.
+
+          # --- Simulation of script output ---
+          # The actual script should output paths to model artifacts and metrics
+          echo "Training script execution simulated."
+          # Simulate output paths and metrics for subsequent steps
+          TRAINED_MODEL_PATH="./trained_models/${{ github.event.inputs.model_name }}/final_model.pkl" # Example path
+          METRICS_PATH="./trained_models/${{ github.event.inputs.model_name }}/metrics.json"
+          mkdir -p $(dirname "$TRAINED_MODEL_PATH")
+          echo "dummy model content" > "$TRAINED_MODEL_PATH"
+          echo '{"accuracy": 0.95, "f1": 0.94}' > "$METRICS_PATH" # Dummy metrics
+          # --- End Simulation ---
+
+          # Set outputs for later steps using GitHub Actions syntax
+          echo "trained_model_path=${TRAINED_MODEL_PATH}" >> "$GITHUB_OUTPUT"
+          echo "metrics_path=${METRICS_PATH}" >> "$GITHUB_OUTPUT"
+
+
+      # Step 6: Evaluate Model (Conceptual Placeholder)
+      # This might be part of the training script or a separate script
+      - name: Evaluate Trained Model
+        id: evaluation_step
+        run: |
+          echo "Evaluating model: ${{ steps.training_step.outputs.trained_model_path }}"
+          METRICS_PATH="${{ steps.training_step.outputs.metrics_path }}"
+          # Example: python evaluation_scripts/evaluate.py --model-path "$TRAINED_MODEL_PATH" --test-data "./data/test_data.csv" --output-metrics "$METRICS_PATH"
+          # Read metrics from the file produced by training/evaluation
+          ACCURACY=$(jq -r .accuracy "$METRICS_PATH") # Example using jq to parse JSON
+          F1_SCORE=$(jq -r .f1 "$METRICS_PATH")
+          echo "Evaluation metrics (simulated read): Accuracy=${ACCURACY}, F1=${F1_SCORE}"
+          # Set evaluation result as output
+          echo "accuracy=${ACCURACY}" >> "$GITHUB_OUTPUT"
+          echo "f1_score=${F1_SCORE}" >> "$GITHUB_OUTPUT"
+          # Placeholder: Define evaluation pass/fail criteria
+          EVAL_PASSED="true" # Assume pass for now
+          echo "evaluation_passed=${EVAL_PASSED}" >> "$GITHUB_OUTPUT"
+          echo "Evaluation simulated."
+
+      # Step 7: Version & Register Model (If Evaluation Passed)
+      # This step runs a script that interacts with the ModelVersionControl system
+      - name: Version & Register Model
+        if: steps.evaluation_step.outputs.evaluation_passed == 'true'
+        run: |
+          echo "Evaluation passed. Versioning and registering model..."
+          MODEL_NAME="${{ github.event.inputs.model_name }}"
+          MODEL_PATH="${{ steps.training_step.outputs.trained_model_path }}"
+          METRICS_PATH="${{ steps.training_step.outputs.metrics_path }}"
+          GIT_COMMIT_HASH="${{ github.sha }}" # Get commit hash from GitHub context
+          DATASET_REF="${{ github.event.inputs.dataset_ref }}"
+
+          # Example: Run a script that uses ModelVersionControl.register_version
+          python scripts/register_model_version.py \
+            --model-name "$MODEL_NAME" \
+            --model-file-path "$MODEL_PATH" \
+            --metrics-file "$METRICS_PATH" \
+            --source-code-version "$GIT_COMMIT_HASH" \
+            --training-dataset-ref "$DATASET_REF" \
+            # Add args for params, description, parent version if needed
+
+          echo "Model version registration simulated."
+          # Optionally: Tag this version as 'latest_trained' or similar using MVC script
+
+      # Step 8: Upload Artifacts (Optional)
+      # Upload trained model, metrics etc. as GitHub artifacts for inspection
+      - name: Upload Training Artifacts
+        if: always() # Upload even if previous steps fail (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-artifacts-${{ github.event.inputs.model_name }}-${{ github.run_id }}
+          path: |
+            ./trained_models/${{ github.event.inputs.model_name }}/
+            # Add other relevant files like logs if needed
+
+      # Step 9: Clean up workspace (optional)
+      - name: Cleanup Workspace
+        if: always()
+        run: |
+          echo "Cleaning up workspace..."
+          # rm -rf ./data ./trained_models # Example cleanup
