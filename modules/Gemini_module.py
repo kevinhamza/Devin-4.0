@@ -331,15 +331,16 @@
 # Purpose: A fully functional client for interacting with Google's Gemini models,
 #          featuring multimodal (image) analysis, streaming, and tool calling.
 
+import json
 import logging
 import os
 from typing import List, Dict, Any, Optional, Union, Iterator
 from dataclasses import dataclass, asdict
 
 try:
-    import google.generativeai as genai
-    from google.generativeai.types import GenerationConfig, SafetySettingDict, ContentDict
-    from google.api_core import exceptions as gcp_exceptions
+    from google import genai
+    from google.genai import types as genai_types
+    from google.genai import errors as genai_errors
     from PIL import Image
     GOOGLE_AI_AVAILABLE = True
 except ImportError:
@@ -374,24 +375,75 @@ class GeminiSafetySetting:
 class GeminiModule:
     """
     Interacts with the live Google Gemini API for multimodal content generation,
-    streaming, and tool calling.
+    streaming, and tool calling, via the current `google-genai` SDK. The
+    older `google-generativeai` package this used previously is fully
+    end-of-life (Google has stopped shipping updates or bug fixes for it),
+    so this module talks to the API through `google.genai.Client` instead.
     """
-    DEFAULT_MODEL = "gemini-1.5-pro-latest"
+    # A rolling alias rather than a pinned version -- Gemini model IDs churn
+    # fast (this was "gemini-1.5-pro-latest" until that was retired outright,
+    # confirmed via a live 404 against the real API). "-latest" aliases track
+    # whatever Google currently serves instead of going stale again. Flash is
+    # also the tier with the most generous free-tier quota.
+    DEFAULT_MODEL = "gemini-flash-latest"
 
     def __init__(self, api_key: Optional[str] = None):
         if not GOOGLE_AI_AVAILABLE:
-            raise ImportError("Google AI SDK is required. 'pip install google-generativeai Pillow'")
-        
+            raise ImportError("Google GenAI SDK is required. 'pip install google-genai Pillow'")
+
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("Google Gemini API key is required. Set it via the GEMINI_API_KEY environment variable.")
-            
-        genai.configure(api_key=self.api_key)
-        logger.info("GeminiModule initialized with live Google AI client.")
+
+        self.client = genai.Client(api_key=self.api_key)
+        logger.info("GeminiModule initialized with live Google GenAI client.")
+
+    @staticmethod
+    def _to_part(item: Any) -> 'genai_types.Part':
+        if isinstance(item, Image.Image):
+            import io
+            buf = io.BytesIO()
+            item.save(buf, format="PNG")
+            return genai_types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png")
+        return genai_types.Part.from_text(text=str(item))
+
+    def _to_contents(self, contents: List[Dict[str, Any]]) -> List['genai_types.Content']:
+        return [
+            genai_types.Content(role=entry.get("role", "user"), parts=[self._to_part(p) for p in entry.get("parts", [])])
+            for entry in contents
+        ]
+
+    @staticmethod
+    def _to_gen_config(
+        generation_config: Optional[GeminiGenerationConfig] = None,
+        safety_settings: Optional[List[GeminiSafetySetting]] = None,
+        tools: Optional[List['genai_types.Tool']] = None,
+    ) -> 'genai_types.GenerateContentConfig':
+        gc = generation_config or GeminiGenerationConfig()
+        kwargs: Dict[str, Any] = {k: v for k, v in asdict(gc).items() if v is not None}
+        if safety_settings:
+            kwargs["safety_settings"] = [
+                genai_types.SafetySetting(category=s.category, threshold=s.threshold) for s in safety_settings
+            ]
+        if tools:
+            kwargs["tools"] = tools
+        return genai_types.GenerateContentConfig(**kwargs)
+
+    @staticmethod
+    def _handle_api_error(e: Exception, context: str) -> str:
+        if isinstance(e, genai_errors.ClientError):
+            logger.error(f"Google GenAI API error during {context}: {e}")
+            if getattr(e, "code", None) == 403:
+                return "Error: Permission Denied. Check your Gemini API key."
+            if getattr(e, "code", None) == 429:
+                return "Error: Gemini rate limit exceeded (free tier quota). Try again shortly."
+            return f"Error: {e}"
+        logger.error(f"An unexpected error occurred during {context}: {e}")
+        return f"An unexpected error occurred: {e}"
 
     def generate_content(
         self,
-        contents: List['ContentDict'],
+        contents: List[Dict[str, Any]],
         generation_config: Optional[GeminiGenerationConfig] = None,
         safety_settings: Optional[List[GeminiSafetySetting]] = None,
         model_name: Optional[str] = None
@@ -400,68 +452,49 @@ class GeminiModule:
         Generates content using a Gemini model (non-streaming).
         """
         current_model = model_name or self.DEFAULT_MODEL
-        model = genai.GenerativeModel(current_model)
-
-        gen_config_dict = {k: v for k, v in asdict(generation_config or GeminiGenerationConfig()).items() if v is not None}
-        safety_settings_list = [asdict(s) for s in safety_settings] if safety_settings else []
-        
         logger.info(f"Requesting content generation with model {current_model}...")
         try:
-            response = model.generate_content(
-                contents=contents,
-                generation_config=GenerationConfig(**gen_config_dict),
-                safety_settings=safety_settings_list
+            response = self.client.models.generate_content(
+                model=current_model,
+                contents=self._to_contents(contents),
+                config=self._to_gen_config(generation_config, safety_settings),
             )
             return response.text
-        except gcp_exceptions.PermissionDenied as e:
-            logger.error(f"Google AI API Error: Permission Denied. Is your API key correct? Details: {e}")
-            return "Error: Permission Denied. Check your Gemini API key."
         except Exception as e:
-            logger.error(f"An unexpected error occurred during content generation: {e}")
-            return f"An unexpected error occurred: {e}"
+            return self._handle_api_error(e, "content generation")
 
     # --- ADDED FEATURE: Streaming Response ---
     def generate_content_stream(
         self,
-        contents: List['ContentDict'],
+        contents: List[Dict[str, Any]],
         generation_config: Optional[GeminiGenerationConfig] = None,
         safety_settings: Optional[List[GeminiSafetySetting]] = None,
         model_name: Optional[str] = None
     ) -> Iterator[str]:
         """Generates content in a stream, yielding chunks as they arrive."""
         current_model = model_name or self.DEFAULT_MODEL
-        model = genai.GenerativeModel(current_model)
-
-        gen_config_dict = {k: v for k, v in asdict(generation_config or GeminiGenerationConfig()).items() if v is not None}
-        safety_settings_list = [asdict(s) for s in safety_settings] if safety_settings else []
-        
         logger.info(f"Requesting streaming content generation with model {current_model}...")
         try:
-            response_stream = model.generate_content(
-                contents=contents,
-                generation_config=GenerationConfig(**gen_config_dict),
-                safety_settings=safety_settings_list,
-                stream=True
-            )
-            for chunk in response_stream:
+            for chunk in self.client.models.generate_content_stream(
+                model=current_model,
+                contents=self._to_contents(contents),
+                config=self._to_gen_config(generation_config, safety_settings),
+            ):
                 if chunk.text:
                     yield chunk.text
         except Exception as e:
-            logger.error(f"An unexpected error occurred during streaming generation: {e}")
-            yield f"Error: {e}"
+            yield self._handle_api_error(e, "streaming generation")
 
-    def count_tokens(self, contents: List['ContentDict'], model_name: Optional[str] = None) -> Optional[int]:
+    def count_tokens(self, contents: List[Dict[str, Any]], model_name: Optional[str] = None) -> Optional[int]:
         """Counts tokens for a given set of contents."""
-        # This function is unchanged from your version.
         current_model = model_name or self.DEFAULT_MODEL
-        model = genai.GenerativeModel(current_model)
         try:
-            response = model.count_tokens(contents)
+            response = self.client.models.count_tokens(model=current_model, contents=self._to_contents(contents))
             return response.total_tokens
         except Exception as e:
             logger.error(f"An unexpected error occurred during token counting: {e}")
             return None
-    
+
     # --- ADDED FEATURE: Multimodal and OpenAI Message Adapter ---
     def get_chat_completion_content(self, messages: List[Dict], config: Optional[GeminiGenerationConfig] = None) -> Optional[str]:
         """
@@ -470,14 +503,14 @@ class GeminiModule:
         logger.info("Converting OpenAI message format to Gemini format...")
         gemini_contents = []
         system_prompt = ""
-        
+
         for msg in messages:
             if msg["role"] == "system":
                 system_prompt = msg.get("content", "")
                 continue
-            
+
             role = "model" if msg["role"] == "assistant" else "user"
-            
+
             # Combine parts: text and potentially images
             parts = []
             if msg.get("content"):
@@ -495,11 +528,84 @@ class GeminiModule:
                     logger.info(f"Added image '{image_path}' to Gemini prompt.")
                 except Exception as e:
                     logger.error(f"Failed to open or process image '{image_path}': {e}")
-            
+
             if parts:
                 gemini_contents.append({"role": role, "parts": parts})
 
         return self.generate_content(contents=gemini_contents, generation_config=config)
+
+    # --- ADDED FEATURE: Native Tool/Function Calling ---
+    # This is what makes Gemini usable as the agent's tool-selection provider,
+    # not just for plain chat -- previously only ChatGPTModule/ClaudeModule
+    # could drive the tool-calling loop, so a free Gemini API key alone
+    # (available with no billing setup via Google AI Studio) couldn't run
+    # the actual assistant, only answer questions.
+    @staticmethod
+    def _convert_messages_for_tools(messages: List[Dict]) -> List[Dict]:
+        """Converts this codebase's flat role/content history to Gemini's user/model content list."""
+        gemini_contents: List[Dict] = []
+        system_prompt = ""
+
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            if role == "system":
+                system_prompt += str(content or "")
+                continue
+            if role == "tool":
+                gemini_contents.append({"role": "user", "parts": [f"[Tool result]: {content}"]})
+                continue
+
+            gemini_role = "model" if role == "assistant" else "user"
+            text = str(content or "")
+            if system_prompt and gemini_role == "user":
+                text = f"{system_prompt}\n\n{text}"
+                system_prompt = ""
+            gemini_contents.append({"role": gemini_role, "parts": [text]})
+
+        if not gemini_contents or gemini_contents[0]["role"] != "user":
+            gemini_contents.insert(0, {"role": "user", "parts": ["Continue."]})
+        return gemini_contents
+
+    def get_tool_calling_response(self, messages: List[Dict], tools: List[Dict], config: Optional[GeminiGenerationConfig] = None) -> Dict[str, Any]:
+        """
+        Gets a response that may be a text message or a request to call a
+        tool, using Gemini's native function calling, normalized into the
+        same OpenAI-style shape ChatGPTModule/ClaudeModule return so
+        AIAgent can treat any of the three identically.
+        """
+        function_declarations = [
+            genai_types.FunctionDeclaration(
+                name=(func := t.get("function", t))["name"],
+                description=func.get("description", ""),
+                parameters_json_schema=func.get("parameters") or {"type": "object", "properties": {}},
+            )
+            for t in tools
+        ]
+        gen_config = self._to_gen_config(tools=[genai_types.Tool(function_declarations=function_declarations)])
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.DEFAULT_MODEL,
+                contents=self._to_contents(self._convert_messages_for_tools(messages)),
+                config=gen_config,
+            )
+        except Exception as e:
+            return {"content": self._handle_api_error(e, "tool-calling request")}
+
+        if response.function_calls:
+            call = response.function_calls[0]
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{
+                    "id": call.id or f"gemini-{call.name}",
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": json.dumps(call.args or {})},
+                }],
+            }
+
+        return {"role": "assistant", "content": response.text or "Task appears complete."}
 
 # --- Example Usage ---
 if __name__ == "__main__":

@@ -351,12 +351,15 @@ class AIAgent:
         """
         The core thinking process for tool use. Asks the LLM to choose the next best action
         using the provider's native tool-calling feature for improved reliability.
-        Prefers Claude when configured, falling back to OpenAI.
+        Prefers Claude, then OpenAI, then falls back to Gemini -- Gemini has a
+        genuine free tier (a Google AI Studio key needs no billing setup), so
+        this fallback is what makes the full assistant usable at zero cost
+        rather than requiring a paid Claude/OpenAI key.
         """
         logger.info("AIAgent is selecting a tool to achieve the goal...")
-        tool_selection_module = self.claude_module or self.openai_module
+        tool_selection_module = self.claude_module or self.openai_module or self.gemini_module
         if not tool_selection_module:
-            logger.error("No tool-calling-capable module (Claude or OpenAI) is configured.")
+            logger.error("No tool-calling-capable module (Claude, OpenAI, or Gemini) is configured.")
             return None
 
         try:

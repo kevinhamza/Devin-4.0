@@ -14,6 +14,9 @@ websockets
 # --- AI & Machine Learning ---
 openai
 anthropic
+# google-generativeai is EOL and unused by Devin's own code (see modules/Gemini_module.py,
+# which uses google-genai instead) -- kept only because vendored self-operating-computer/
+# still imports it directly in its own config.py.
 google-generativeai
 scikit-learn
 spacy

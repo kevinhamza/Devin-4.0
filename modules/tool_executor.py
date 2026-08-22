@@ -15,6 +15,7 @@ from modules.automation_tools import DesktopAutomator, WebAutomator
 from modules.system_monitor_module import SystemMonitorFacade
 from modules.mobile_integration_module import MobileFacade
 from modules.os_operations.universal_operations import UniversalOSOperator
+from modules.os_operations.self_operating_computer_tool import operate_computer, SOC_AVAILABLE
 from modules.knowledge_retrieval.code_retriever import CodeRetriever
 from modules.data_logger import DataLogger
 from modules.code_execution import CodeExecutor # For execute_shell, etc.
@@ -128,6 +129,18 @@ class ToolExecutor:
             self._register_tool("click_mouse", self.desktop_automator.mouse_click, "Clicks the mouse (left or right).")
             self._register_tool("type_text", self.desktop_automator.type_text, "Types text on the keyboard.")
             self._register_tool("take_screenshot", self.desktop_automator.take_screenshot, "Takes a screenshot of the current screen.")
+
+        # --- Vision-Based Computer Operation (self-operating-computer) ---
+        # Unlike move_mouse/click_mouse above (which need exact coordinates the
+        # AI has no way to know), this drives the screen by actually looking
+        # at it, so it can complete open-ended objectives on unfamiliar UIs.
+        if SOC_AVAILABLE:
+            self._register_tool(
+                "operate_computer",
+                operate_computer,
+                "Autonomously operates the real screen (looks at it, clicks, types) to complete an open-ended objective, e.g. 'open Chrome and search for X'. Requires a real display -- does nothing useful in a headless environment.",
+                is_dangerous=True,
+            )
 
         # --- Web Automation ---
         if self.web_automator:

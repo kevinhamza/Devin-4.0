@@ -54,8 +54,16 @@ class CodeRetriever:
         
         if SEMANTIC_AVAILABLE:
             logger.info("Semantic search dependencies found. Building semantic index...")
-            self.semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
-            self._build_semantic_index()
+            try:
+                self.semantic_model = SentenceTransformer('all-MiniLM-L6-v2')
+                self._build_semantic_index()
+            except Exception as e:
+                # Not just an install check: no cached weights + no network
+                # reach to Hugging Face (offline/sandboxed/firewalled) raises
+                # here too, and previously crashed the whole app at startup
+                # instead of degrading to keyword-only search.
+                logger.warning(f"Could not load semantic search model ({e}). Semantic search will be disabled.")
+                self.semantic_model = None
         else:
             logger.warning("`sentence-transformers` or `numpy` not found. Semantic search will be disabled.")
 

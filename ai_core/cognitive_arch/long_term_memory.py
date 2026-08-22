@@ -7,13 +7,22 @@ import os
 import json
 import numpy as np
 
-# Try to import sentence-transformers for local embeddings
+# Try to import sentence-transformers for local embeddings. Loading the
+# model can fail for reasons beyond "not installed" -- no cached weights
+# and no network reach to Hugging Face is a real, expected environment
+# (offline/sandboxed/firewalled), and previously crashed the whole app at
+# import time instead of degrading to the random-embedding fallback below.
 try:
     from sentence_transformers import SentenceTransformer
     EMBEDDING_MODEL_NAME = 'all-MiniLM-L6-v2'
-    embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
-    EMBEDDING_DIMENSION = 384
-    print(f"Initialized local embedding model: {EMBEDDING_MODEL_NAME}")
+    try:
+        embedding_model = SentenceTransformer(EMBEDDING_MODEL_NAME)
+        EMBEDDING_DIMENSION = 384
+        print(f"Initialized local embedding model: {EMBEDDING_MODEL_NAME}")
+    except Exception as e:
+        embedding_model = None
+        EMBEDDING_DIMENSION = 384
+        print(f"Warning: could not load embedding model '{EMBEDDING_MODEL_NAME}' ({e}). Using placeholder embeddings.")
 except ImportError:
     embedding_model = None
     EMBEDDING_DIMENSION = 384 # Default

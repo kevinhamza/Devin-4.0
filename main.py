@@ -60,6 +60,10 @@ from modules.social_media_api import SocialMediaManager
 from modules.email_tools import EmailClient
 from modules.encryption_tools import HashingTools, SymmetricCryptoTools, AsymmetricCryptoTools
 
+# Persistent Memory (real sentence-transformers vector memory, not a stub)
+from ai_core.cognitive_arch.long_term_memory import LongTermMemory
+from ai_core.cognitive_arch.working_memory import WorkingMemory
+
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("DevinAGI")
@@ -89,6 +93,13 @@ class DevinAGI:
         )
         self.uim = UserInteractionManager(use_voice=use_voice)
         self.security_dashboard = SecurityDashboard()
+
+        # --- Persistent Memory ---
+        # Real vector memory (sentence-transformers embeddings + cosine
+        # similarity), not the mock/placeholder pattern seen elsewhere in
+        # this codebase -- fulfills the "persistent vector memory" goal.
+        self.long_term_memory = LongTermMemory()
+        self.working_memory = WorkingMemory()
 
         # --- 3. Initialize OpenClaw Ported Services ---
         logger.info("Initializing ported OpenClaw services...")
@@ -219,6 +230,17 @@ class DevinAGI:
         goal = self.uim.get_user_input("\nPlease state your high-level goal: ")
         self.conversation_history.append({"role": "user", "content": f"My goal is: {goal}"})
 
+        # Recall anything relevant from past sessions before planning, so the
+        # agent isn't starting from a blank slate every run.
+        relevant_memories = self.long_term_memory.retrieve_relevant_memories(goal, top_k=3)
+        if relevant_memories:
+            recalled = "\n".join(f"- {m['metadata'].get('content_preview', '')}" for m in relevant_memories)
+            self.conversation_history.append({
+                "role": "system",
+                "content": f"Relevant memories from past sessions:\n{recalled}",
+            })
+        self.working_memory.add_item("current_goal", goal)
+
         while self.is_running:
             # 1. THINK: Agent decides the next step
             tool_call = self.agent.get_tool_selection_response(
@@ -232,6 +254,10 @@ class DevinAGI:
             if tool_call.get("tool") == "task_complete":
                 reason = tool_call.get("parameters", {}).get("reason", "No specific reason provided.")
                 self.uim.display_message(f"Agent has concluded the task. Reason: {reason}", level='success')
+                self.long_term_memory.add_memory(
+                    f"Goal: {goal}\nOutcome: completed. {reason}",
+                    metadata={"type": "task_history", "outcome": "completed"},
+                )
                 break
 
             # 2. VERIFY & CONSENT: Check the plan against ethical and utility functions
@@ -259,14 +285,23 @@ class DevinAGI:
             # 4. PERCEIVE & UPDATE: Add the action and result to history
             self.conversation_history.append({"role": "assistant", "content": json.dumps(tool_call)})
             self.conversation_history.append({"role": "tool", "content": json.dumps(result)})
+            self.working_memory.add_item(f"step_{len(self.conversation_history)}", {"tool_call": tool_call, "result": result})
 
             # Check for completion (simplified)
             if "complete" in str(result).lower() or "finished" in str(result).lower():
                  logger.info("Agent reported task completion.")
+                 self.long_term_memory.add_memory(
+                     f"Goal: {goal}\nOutcome: completed via tool '{tool_call['tool']}'.",
+                     metadata={"type": "task_history", "outcome": "completed"},
+                 )
                  break
-            
+
             if len(self.conversation_history) > 20: # Safety break
                 logger.warning("Conversation limit reached. Ending session.")
+                self.long_term_memory.add_memory(
+                    f"Goal: {goal}\nOutcome: did not complete within the conversation limit.",
+                    metadata={"type": "task_history", "outcome": "incomplete"},
+                )
                 break
 
     def shutdown(self):
