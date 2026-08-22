@@ -19,7 +19,7 @@ fastmcp>=0.2.0,<3.0.0           # MCP framework (from mcp.server.fastmcp import 
 # ============================================================================
 beautifulsoup4>=4.12.0,<5.0.0   # HTML parsing (from bs4 import BeautifulSoup)
 selenium>=4.15.0,<5.0.0         # Browser automation (selenium imports)
-webdriver-manager>=4.0.0,<5.0.0 # ChromeDriver management (referenced in code)
+webdriver-manager>=4.1.2,<5.0.0 # ChromeDriver management (referenced in code)
 
 # ============================================================================
 # ASYNC & NETWORKING (ACTUALLY USED)
