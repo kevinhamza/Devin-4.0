@@ -147,6 +147,7 @@ temp/
 local.db
 *.feather
 robot_logs/
+ltm_storage.json
 
 # --- Terraform ---
 .terraform/
