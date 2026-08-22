@@ -11,6 +11,7 @@ from modules.all_ais_modules import AIAgent
 from security.security_dashboard import SecurityDashboard
 from modules.cloud_integration_services import CloudServicesManager
 from modules.pentesting_tools.pentesting_facade import PentestingFacade
+from modules.pentesting_tools.hexstrike_client import HexStrikeClient
 from modules.automation_tools import DesktopAutomator, WebAutomator
 from modules.system_monitor_module import SystemMonitorFacade
 from modules.mobile_integration_module import MobileFacade
@@ -45,6 +46,7 @@ class ToolExecutor:
         self.security_dashboard: SecurityDashboard = managers.get("security_dashboard")
         self.cloud_manager: CloudServicesManager = managers.get("cloud_services_manager")
         self.pentesting_facade: PentestingFacade = managers.get("pentesting_facade")
+        self.hexstrike_client: HexStrikeClient = managers.get("hexstrike_client", HexStrikeClient())
         self.desktop_automator: DesktopAutomator = managers.get("desktop_automator")
         self.web_automator: WebAutomator = managers.get("web_automator")
         self.system_monitor: SystemMonitorFacade = managers.get("system_monitor_facade")
@@ -129,6 +131,17 @@ class ToolExecutor:
             self._register_tool("click_mouse", self.desktop_automator.mouse_click, "Clicks the mouse (left or right).")
             self._register_tool("type_text", self.desktop_automator.type_text, "Types text on the keyboard.")
             self._register_tool("take_screenshot", self.desktop_automator.take_screenshot, "Takes a screenshot of the current screen.")
+
+        # --- Pentesting ---
+        # PentestingFacade was wired to real scanners earlier this session
+        # (it used to silently mock every scan) but was never actually
+        # exposed here, so the agent could never call it as a tool at all.
+        if self.pentesting_facade:
+            self._register_tool("run_full_pentest_scan", self.pentesting_facade.run_full_scan, "Runs a full pentest scan (port scan + web security headers + default error page check) against a target host.", is_dangerous=True)
+        # hexstrike-ai (~150 security tools) runs as its own server process;
+        # this dispatches to it over HTTP if one is running, and reports
+        # clearly if it isn't rather than silently failing.
+        self._register_tool("run_hexstrike_command", self.hexstrike_client.run_security_tool_command, "Runs a security-tool command (e.g. 'nmap -sV target.com') via the hexstrike-ai server's 150+ tool arsenal.", is_dangerous=True)
 
         # --- Vision-Based Computer Operation (self-operating-computer) ---
         # Unlike move_mouse/click_mouse above (which need exact coordinates the
