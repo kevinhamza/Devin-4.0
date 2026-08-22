@@ -64,6 +64,19 @@ def operate_computer(objective: str, model: Optional[str] = None) -> dict:
         from operate.operate import main as operate_main
     except ImportError as e:
         return {"status": "error", "message": f"Failed to import self-operating-computer: {e}"}
+    except KeyError as e:
+        if str(e) == "'DISPLAY'":
+            # pyautogui (imported transitively at module load, not lazily)
+            # raises this when there's no X11/Wayland/macOS/Windows desktop
+            # session to attach to -- the expected failure mode in a
+            # headless server/container, not a bug.
+            return {
+                "status": "error",
+                "message": "No display available. operate_computer requires a real desktop "
+                            "session (X11/Wayland/macOS/Windows) to see and control -- it cannot "
+                            "do anything useful in a headless environment.",
+            }
+        raise
 
     logger.info(f"Operating computer toward objective '{objective}' using model '{chosen_model}'...")
     try:

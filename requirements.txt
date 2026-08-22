@@ -18,6 +18,14 @@ anthropic
 # which uses google-genai instead) -- kept only because vendored self-operating-computer/
 # still imports it directly in its own config.py.
 google-generativeai
+# Required by vendored self-operating-computer/ (operate_computer tool):
+# config.py and models/apis.py import these unconditionally at module load,
+# so operate_computer fails to import at all without them regardless of
+# which AI provider/model is actually selected.
+prompt-toolkit
+ollama
+python3-xlib
+easyocr
 scikit-learn
 spacy
 torch
