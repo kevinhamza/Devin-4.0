@@ -68,3 +68,30 @@ pure-python-adb
 dataclasses
 google-genai
 hf_xet
+
+# --- Extended Capabilities (quantum, privacy, reality/XR, plugins, ops) ---
+# All of these are individually optional -- every facade in modules/*_tools.py
+# degrades gracefully (logs a warning, disables just that feature) if its
+# dependency isn't installed, same as torch/ROS2/adb above. Install what you
+# actually want to use; nothing here is required for the core assistant loop.
+qiskit                  # quantum circuit simulation (QuantumFacade)
+qiskit-aer
+qiskit-algorithms        # quantum ML (QuantumFacade.train_quantum_classifier)
+qiskit-machine-learning
+liboqs-python            # real post-quantum crypto (Kyber, Dilithium, etc. -- imported as `oqs`)
+diffprivlib              # differential privacy (PrivacyFacade)
+presidio-analyzer        # PII detection/redaction (PrivacyFacade) -- also needs a spaCy model, e.g. `python -m spacy download en_core_web_lg`
+presidio-anonymizer
+Faker
+scipy                    # statistical drift detection (PlatformOpsFacade)
+prometheus_client        # metrics exposition (PlatformOpsFacade)
+geopy                    # geocoding (RealityEngineFacade)
+tinytuya                 # local smart-home IoT control (RealityEngineFacade) -- optional, only needed if you have Tuya devices
+stem                     # Tor control port (RealityEngineFacade dark-web tools) -- also requires a local Tor daemon
+PySocks                  # SOCKS proxy support for the Tor-routed requests session above
+googlesearch-python      # web_search (PluginsFacade)
+numexpr                  # calculate() (PluginsFacade)
+pytz
+ccxt                     # crypto market data, read-only (PluginsFacade)
+pandas-ta; python_version >= '3.12'  # no wheel/sdist available for Python 3.11 or earlier as of this writing
+reportlab                # PDF generation (EthicsLegalFacade pentest-authorization doc, PluginsFacade)

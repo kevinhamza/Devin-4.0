@@ -4,7 +4,7 @@
 
 import inspect
 import logging
-from typing import Dict, Any, List, Callable
+from typing import Dict, Any, List, Callable, Optional
 
 # --- Import all tool-providing modules ---
 from modules.all_ais_modules import AIAgent
@@ -29,6 +29,29 @@ if not logger.handlers:
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
 logger.propagate = False
+
+# --- Extended-capability facades ---
+# Each of these wraps a previously-unwired top-level directory. Imports are
+# individually guarded so a broken/optional dependency in one facade can't
+# take down tool registration for every other one.
+def _optional_import(module_path: str, class_name: str):
+    try:
+        module = __import__(module_path, fromlist=[class_name])
+        return getattr(module, class_name)
+    except Exception as e:
+        logger.warning(f"Extended capability '{class_name}' unavailable ({module_path}): {e}")
+        return None
+
+PluginsFacade = _optional_import("modules.plugins_tools", "PluginsFacade")
+EthicsLegalFacade = _optional_import("modules.ethics_legal_tools", "EthicsLegalFacade")
+RealityEngineFacade = _optional_import("modules.reality_xr_tools", "RealityEngineFacade")
+XRFacade = _optional_import("modules.xr_tools", "XRFacade")
+PlatformOpsFacade = _optional_import("modules.platform_ops_tools", "PlatformOpsFacade")
+QuantumFacade = _optional_import("modules.quantum_tools", "QuantumFacade")
+PrivacyFacade = _optional_import("modules.privacy_tools", "PrivacyFacade")
+ResilienceFacade = _optional_import("modules.resilience_tools", "ResilienceFacade")
+ThreatIntelFacade = _optional_import("modules.threat_intel_tools", "ThreatIntelFacade")
+CyberRangeFacade = _optional_import("modules.cyber_range_tools", "CyberRangeFacade")
 
 class ToolExecutor:
     """
@@ -106,6 +129,27 @@ class ToolExecutor:
             "is_dangerous": is_dangerous,
             "parameters": self._infer_schema(function),
         }
+
+    def _register_facade_tools(self, facade: Any, dangerous: Optional[set] = None, skip: Optional[set] = None):
+        """
+        Registers every public method of a facade as a tool, using the first
+        line of each method's docstring as its description. Used for the
+        extended-capability facades, which are large enough (dozens of
+        methods each) that hand-writing one `_register_tool(...)` call per
+        method the way the original facades above do would just be the same
+        information restated -- the method name and docstring already are
+        the tool name and description.
+        """
+        if facade is None:
+            return
+        dangerous = dangerous or set()
+        skip = skip or set()
+        for name, method in inspect.getmembers(facade, predicate=inspect.ismethod):
+            if name.startswith("_") or name in skip:
+                continue
+            doc = inspect.getdoc(method)
+            description = doc.split("\n")[0].strip() if doc else f"Calls {facade.__class__.__name__}.{name}."
+            self._register_tool(name, method, description, is_dangerous=name in dangerous)
 
     def _register_all_tools(self):
         """Registers all public methods from the facades and managers as tools."""
@@ -190,6 +234,89 @@ class ToolExecutor:
         if self.symmetric_crypto:
             self._register_tool("encrypt_data", self.symmetric_crypto.encrypt, "Encrypts data using symmetric encryption.")
             self._register_tool("decrypt_data", self.symmetric_crypto.decrypt, "Decrypts data using symmetric encryption.")
+
+        # --- Extended Capabilities: Plugins & Community ---
+        if PluginsFacade:
+            try:
+                self._register_facade_tools(
+                    PluginsFacade(),
+                    dangerous={"marketplace_install_plugin", "marketplace_uninstall_plugin", "compose_content"},
+                )
+            except Exception as e:
+                logger.warning(f"PluginsFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Ethics, Legal & Compliance (informational only, not legal advice) ---
+        if EthicsLegalFacade:
+            try:
+                self._register_facade_tools(EthicsLegalFacade())
+            except Exception as e:
+                logger.warning(f"EthicsLegalFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Reality Engine (web/dark-web crawling, IoT, geolocation) ---
+        if RealityEngineFacade:
+            try:
+                self._register_facade_tools(
+                    RealityEngineFacade(),
+                    dangerous={"crawl_dark_web_page", "renew_dark_web_tor_identity", "set_iot_device_power", "set_iot_bulb_color", "discover_iot_devices"},
+                )
+            except Exception as e:
+                logger.warning(f"RealityEngineFacade unavailable: {e}")
+
+        # --- Extended Capabilities: XR / Unity bridge & spatial reasoning ---
+        if XRFacade:
+            try:
+                self._register_facade_tools(XRFacade())
+            except Exception as e:
+                logger.warning(f"XRFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Platform Ops (monitoring, licensing, MLOps drift detection, fairness) ---
+        if PlatformOpsFacade:
+            try:
+                self._register_facade_tools(PlatformOpsFacade())
+            except Exception as e:
+                logger.warning(f"PlatformOpsFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Quantum computing sim & post-quantum crypto ---
+        if QuantumFacade:
+            try:
+                self._register_facade_tools(QuantumFacade())
+            except Exception as e:
+                logger.warning(f"QuantumFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Privacy (differential privacy, PII redaction, GDPR export) ---
+        if PrivacyFacade:
+            try:
+                self._register_facade_tools(PrivacyFacade())
+            except Exception as e:
+                logger.warning(f"PrivacyFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Resilience (digital twins, chaos engineering, backup/rollback) ---
+        if ResilienceFacade:
+            try:
+                self._register_facade_tools(
+                    ResilienceFacade(),
+                    dangerous={"rollback_to_snapshot", "restore_from_backup", "register_monitored_process", "start_process_watchdog"},
+                )
+            except Exception as e:
+                logger.warning(f"ResilienceFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Threat Intelligence (read-only lookups: MITRE ATT&CK,
+        # VirusTotal, IOC feeds, attack-surface recon -- same risk tier as the existing
+        # PentestingFacade scan tool above). Deliberately excludes the malware sandbox
+        # (executes untrusted files) and cyber_range's red-team/ransomware-sim content.
+        if ThreatIntelFacade:
+            try:
+                self._register_facade_tools(ThreatIntelFacade(), dangerous={"analyze_attack_surface"})
+            except Exception as e:
+                logger.warning(f"ThreatIntelFacade unavailable: {e}")
+
+        # --- Extended Capabilities: Cyber Range (CTF training + defensive blue-team simulation).
+        # Deliberately excludes cyber_range's red-team/ai_red_team/cyber_battle_simulator content.
+        if CyberRangeFacade:
+            try:
+                self._register_facade_tools(CyberRangeFacade())
+            except Exception as e:
+                logger.warning(f"CyberRangeFacade unavailable: {e}")
 
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
