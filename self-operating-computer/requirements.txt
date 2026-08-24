@@ -40,7 +40,7 @@ python-dotenv==1.0.0
 pytweening==1.0.7
 requests==2.32.4
 rubicon-objc==0.4.7
-six==1.16.0
+six==1.17.0
 sniffio==1.3.0
 tqdm==4.67.1
 typing_extensions==4.8.0
