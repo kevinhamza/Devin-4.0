@@ -7,7 +7,7 @@ import random
 import math
 import copy
 from dataclasses import dataclass
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Tuple
 
 # Configure basic logging
 logger = logging.getLogger("AnnealingScheduler")

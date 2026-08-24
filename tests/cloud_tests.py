@@ -51,26 +51,40 @@ class TestCloudFacadeIntegration(unittest.TestCase):
     the correct underlying cloud tools.
     """
 
-    @patch('modules.cloud_integration_module.AWSTools')
-    @patch('modules.cloud_integration_module.GCPTools')
-    @patch('modules.cloud_integration_module.AzureTools')
-    def setUp(self, MockAzureTools, MockGCPTools, MockAWSTools):
+    def setUp(self):
         """
         Set up mocks for all CloudTools before each test.
+
+        These are started via patcher.start()/addCleanup rather than as
+        `setUp` decorators: a decorator-based patch is only active for the
+        duration of the setUp() call itself and reverts before each test
+        method runs, so any CloudFacade constructed later *inside* a test
+        method (e.g. to test an unconfigured provider) would build a real,
+        unmocked AWSTools/GCPTools/AzureTools and try to hit real cloud APIs.
         """
-        self.MockAWSTools = MockAWSTools
-        self.MockGCPTools = MockGCPTools
-        self.MockAzureTools = MockAzureTools
-        
+        self.patcher_aws = patch('modules.cloud_integration_module.AWSTools')
+        self.patcher_gcp = patch('modules.cloud_integration_module.GCPTools')
+        self.patcher_azure = patch('modules.cloud_integration_module.AzureTools')
+
+        self.MockAWSTools = self.patcher_aws.start()
+        self.MockGCPTools = self.patcher_gcp.start()
+        self.MockAzureTools = self.patcher_azure.start()
+        self.addCleanup(self.patcher_aws.stop)
+        self.addCleanup(self.patcher_gcp.stop)
+        self.addCleanup(self.patcher_azure.stop)
+
         self.mock_aws_instance = self.MockAWSTools.return_value
         self.mock_gcp_instance = self.MockGCPTools.return_value
         self.mock_azure_instance = self.MockAzureTools.return_value
 
-        # Instantiate the CloudFacade. It will be initialized with our mocks.
+        # Instantiate the CloudFacade. Its real __init__ takes provider *creds*
+        # dicts and constructs the tool instances itself (AWSTools(**aws_creds),
+        # etc.) -- since those classes are patched above, any non-empty creds
+        # dict is enough to make the facade build our mock instances.
         self.facade = CloudFacade(
-            aws_tools=self.mock_aws_instance,
-            gcp_tools=self.mock_gcp_instance,
-            azure_tools=self.mock_azure_instance
+            aws_creds={"region_name": "us-east-1"},
+            gcp_creds={"project_id": "test-project"},
+            azure_creds={"subscription_id": "test-subscription"}
         )
 
     def test_list_vms_dispatches_to_aws_and_normalizes(self):
@@ -136,8 +150,9 @@ class TestCloudFacadeIntegration(unittest.TestCase):
         returns an empty list and does not crash.
         """
         print("\n\n--- Testing Graceful Handling of Unconfigured Provider ---")
-        # 1. Create a new facade with only AWS configured
-        facade_with_missing_gcp = CloudFacade(aws_tools=self.mock_aws_instance, gcp_tools=None)
+        # 1. Create a new facade with only AWS configured (an empty gcp_creds
+        # dict means CloudFacade leaves self.gcp as None, per its real __init__).
+        facade_with_missing_gcp = CloudFacade(aws_creds={"region_name": "us-east-1"}, gcp_creds={})
         
         # 2. Call a method for the unconfigured provider (GCP)
         vms = facade_with_missing_gcp.list_vms(CloudProvider.GCP)

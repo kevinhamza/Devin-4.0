@@ -230,13 +230,24 @@ class AnalyticsServer:
         """Configures the API endpoints for the Flask app."""
         @self.app.route('/log', methods=['POST'])
         def log_event():
-            # ... (log_event logic remains the same)
             data = request.json
-            if not data or 'event_type' not in data or 'value' not in data or not isinstance(data['value'], (int, float)):
+            if not data or 'event_type' not in data or 'value' not in data or not isinstance(data['value'], (int, float)) or isinstance(data['value'], bool):
                 return jsonify({"status": "error", "message": "Invalid payload"}), 400
-            
+
+            # Prefer a client-supplied timestamp (unix epoch seconds, e.g. from
+            # time.time()) so callers can control/backdate events in tests and
+            # replays; fall back to server time when none is provided.
+            client_timestamp = data.get('timestamp')
+            if client_timestamp is not None:
+                try:
+                    event_timestamp = datetime.fromtimestamp(float(client_timestamp))
+                except (TypeError, ValueError):
+                    return jsonify({"status": "error", "message": "Invalid timestamp"}), 400
+            else:
+                event_timestamp = datetime.now()
+
             new_record = pd.DataFrame([{
-                "timestamp": datetime.now(),
+                "timestamp": event_timestamp,
                 "event_type": data['event_type'],
                 "value": data['value']
             }])
@@ -245,12 +256,51 @@ class AnalyticsServer:
 
         @self.app.route('/data', methods=['GET'])
         def get_data():
-            # ... (get_data logic remains the same)
             period = request.args.get('period', '5m')
-            # (Parsing logic for period)
-            # (Filtering logic for self.df)
-            # This part is simplified for brevity
-            return jsonify({"status": "data_placeholder"})
+
+            # Parse a period string like "5m", "1h", "2d" into a timedelta.
+            # Only 'm' (minutes), 'h' (hours), and 'd' (days) are supported.
+            if not period or len(period) < 2:
+                return jsonify({"status": "error", "message": f"Invalid period format: '{period}'. Use e.g. '5m', '1h', '1d'."}), 400
+
+            value_part, unit = period[:-1], period[-1]
+            try:
+                value = int(value_part)
+            except ValueError:
+                return jsonify({"status": "error", "message": f"Invalid period format: '{period}'. Use e.g. '5m', '1h', '1d'."}), 400
+
+            if unit == 'm':
+                delta = timedelta(minutes=value)
+            elif unit == 'h':
+                delta = timedelta(hours=value)
+            elif unit == 'd':
+                delta = timedelta(days=value)
+            else:
+                return jsonify({"status": "error", "message": f"Unsupported period unit '{unit}'. Supported units: 'm', 'h', 'd'."}), 400
+
+            result: dict = {}
+            if not self.df.empty:
+                df = self.df.copy()
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                # "Now" is anchored to the most recent logged event rather than
+                # the server's wall clock, so that periods filter relative to
+                # the data itself (this also makes ingestion of backdated /
+                # replayed events, e.g. with an explicit client timestamp,
+                # filter consistently instead of depending on server clock skew).
+                now_reference = df['timestamp'].max()
+                cutoff_time = now_reference - delta
+                windowed = df[df['timestamp'] >= cutoff_time].sort_values('timestamp')
+                # Include every event_type that has ever been logged (even if it
+                # has no records within this window) so callers can distinguish
+                # "no events yet" from "no events in this window".
+                for event_type in df['event_type'].unique():
+                    group = windowed[windowed['event_type'] == event_type]
+                    result[event_type] = [
+                        {"timestamp": row['timestamp'].isoformat(), "value": row['value']}
+                        for _, row in group.iterrows()
+                    ]
+
+            return jsonify(result)
 
         @self.app.route('/reset', methods=['POST'])
         def reset_data():

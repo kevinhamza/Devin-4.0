@@ -387,6 +387,43 @@ class GeminiModule:
     # also the tier with the most generous free-tier quota.
     DEFAULT_MODEL = "gemini-flash-latest"
 
+    # DEFAULT_MODEL is itself a heavily-used alias and, confirmed live against
+    # the real API, can return `503 UNAVAILABLE` / "high demand" for minutes
+    # at a time even though the key and account are fine. Rather than surface
+    # that as a hard failure, fall back through these once DEFAULT_MODEL
+    # errors transiently -- "gemini-flash-lite-latest" in particular was
+    # confirmed live to keep working during a DEFAULT_MODEL outage.
+    _FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-2.0-flash"]
+
+    @staticmethod
+    def _is_transient_error(e: Exception) -> bool:
+        """True for server-side/connection hiccups worth retrying on a different model alias, as opposed to a real problem (bad key, bad request) that would fail identically on any model."""
+        if isinstance(e, genai_errors.ServerError):
+            return True
+        message = str(e).lower()
+        return any(s in message for s in ("503", "unavailable", "overloaded", "disconnected", "high demand"))
+
+    def _generate_with_fallback(self, api_call, current_model: Optional[str]):
+        """
+        Calls `api_call(model_name)` against `current_model` (or DEFAULT_MODEL),
+        then against `_FALLBACK_MODELS` in order, stopping at the first
+        response that isn't a transient server-side error. Returns
+        (result, error) -- error is set only if every model attempted failed
+        transiently, or a non-transient error occurred (which is not retried).
+        """
+        models_to_try = [current_model or self.DEFAULT_MODEL] + [m for m in self._FALLBACK_MODELS if m != current_model]
+        last_error: Optional[Exception] = None
+        for i, model in enumerate(models_to_try):
+            try:
+                return api_call(model), None
+            except Exception as e:
+                last_error = e
+                if not self._is_transient_error(e):
+                    return None, e
+                if i < len(models_to_try) - 1:
+                    logger.warning(f"Model '{model}' returned a transient error ({e}); falling back to '{models_to_try[i + 1]}'.")
+        return None, last_error
+
     def __init__(self, api_key: Optional[str] = None):
         if not GOOGLE_AI_AVAILABLE:
             raise ImportError("Google GenAI SDK is required. 'pip install google-genai Pillow'")
@@ -451,17 +488,18 @@ class GeminiModule:
         """
         Generates content using a Gemini model (non-streaming).
         """
-        current_model = model_name or self.DEFAULT_MODEL
-        logger.info(f"Requesting content generation with model {current_model}...")
-        try:
-            response = self.client.models.generate_content(
-                model=current_model,
+        logger.info(f"Requesting content generation (preferred model {model_name or self.DEFAULT_MODEL})...")
+        response, error = self._generate_with_fallback(
+            lambda model: self.client.models.generate_content(
+                model=model,
                 contents=self._to_contents(contents),
                 config=self._to_gen_config(generation_config, safety_settings),
-            )
-            return response.text
-        except Exception as e:
-            return self._handle_api_error(e, "content generation")
+            ),
+            model_name,
+        )
+        if error is not None:
+            return self._handle_api_error(error, "content generation")
+        return response.text
 
     # --- ADDED FEATURE: Streaming Response ---
     def generate_content_stream(
@@ -583,15 +621,14 @@ class GeminiModule:
             for t in tools
         ]
         gen_config = self._to_gen_config(tools=[genai_types.Tool(function_declarations=function_declarations)])
+        gemini_contents = self._to_contents(self._convert_messages_for_tools(messages))
 
-        try:
-            response = self.client.models.generate_content(
-                model=self.DEFAULT_MODEL,
-                contents=self._to_contents(self._convert_messages_for_tools(messages)),
-                config=gen_config,
-            )
-        except Exception as e:
-            return {"content": self._handle_api_error(e, "tool-calling request")}
+        response, error = self._generate_with_fallback(
+            lambda model: self.client.models.generate_content(model=model, contents=gemini_contents, config=gen_config),
+            None,
+        )
+        if error is not None:
+            return {"content": self._handle_api_error(error, "tool-calling request")}
 
         if response.function_calls:
             call = response.function_calls[0]

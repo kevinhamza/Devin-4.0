@@ -1,6 +1,7 @@
 # Devin/cyber_range/capture_the_flag/ctf_challenges.py
 # Purpose: Defines and manages CTF challenges within the cyber range.
 
+import os
 import uuid
 import datetime
 import logging
@@ -41,7 +42,6 @@ class ChallengeStatus(str, Enum):
 @dataclass
 class CTFChallenge:
     """Represents a single CTF challenge."""
-    id: str = field(default_factory=lambda: f"CTF-{uuid.uuid4().hex[:8].upper()}")
     name: str
     description: str
     category: ChallengeCategory
@@ -52,6 +52,9 @@ class CTFChallenge:
     # This placeholder might store a reference ID, hash, or env var name.
     flag_reference: str # e.g., "ENV:CHALLENGE_1_FLAG", "VAULT:secret/ctf/chal1", "HASH:sha256:abc..."
     # Alternatively, structure could load flag into memory from secure source on init.
+    # (Field re-ordered below the required fields above -- dataclasses require
+    # every field with a default to come after all fields without one.)
+    id: str = field(default_factory=lambda: f"CTF-{uuid.uuid4().hex[:8].upper()}")
 
     # --- Environment Management ---
     # List of resource identifiers needed (VM templates, container images, network names)

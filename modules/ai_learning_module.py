@@ -410,6 +410,16 @@ class AILearningFacade:
             logger.error(f"Failed to get job status from server: {e}")
             return None
 
+    def list_all_jobs(self) -> Dict[str, Dict]:
+        """Retrieves all known training jobs (and their statuses) from the AILearningServer."""
+        try:
+            response = self.session.get(f"{self.server_url}/train/jobs")
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to list jobs from server: {e}")
+            return {}
+
 
 # --- Example Usage ---
 if __name__ == "__main__":

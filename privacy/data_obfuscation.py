@@ -2,6 +2,14 @@
 # Purpose: A toolkit for detecting and anonymizing Personally Identifiable
 #          Information (PII) in text data using Microsoft Presidio.
 
+# Defers evaluation of type annotations (e.g. the `RecognizerResult` return
+# hint below) so the class can still be *defined* when presidio isn't
+# installed -- only instantiating DataObfuscator() requires it. Without
+# this, merely importing this module without presidio raises NameError on
+# the annotations, breaking the try/except ImportError degradation pattern
+# below.
+from __future__ import annotations
+
 import logging
 import os
 import sys

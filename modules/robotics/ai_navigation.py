@@ -236,7 +236,7 @@ import threading
 import time
 import math
 from enum import Enum, auto
-from typing import Optional, Any, Tuple, Dict, Callable
+from typing import Optional, Any, Tuple, Dict, Callable, NamedTuple
 
 try:
     import numpy as np
@@ -265,7 +265,17 @@ class NavigationStatus(Enum):
     FAILED = auto()
     CANCELLED = auto()
 
-Pose = Tuple[float, float, float]  # (x_meters, y_meters, theta_degrees)
+class Pose(NamedTuple):
+    """(x_meters, y_meters, theta_degrees). A real constructible type -- this
+    used to be a bare `Tuple[float, float, float]` alias, which callers
+    throughout this codebase (and its own tests) tried to instantiate as
+    `Pose(x, y, theta)`, which `typing.Tuple` doesn't support. NamedTuple
+    keeps every existing indexing/unpacking/slicing use (self.pose[0],
+    goal_pose[:2], etc.) working unchanged while also being callable.
+    """
+    x: float
+    y: float
+    theta: float
 
 class AINavigationSystem:
     """
@@ -366,8 +376,13 @@ class AINavigationSystem:
                 
                 # --- Control Logic ---
                 if abs(heading_error) > 5.0: # Turn first if not facing the goal
-                    # Proportional control for rotation
+                    # Proportional control for rotation. Clamp the magnitude
+                    # the same way linear_speed is clamped below -- without a
+                    # floor, this decays asymptotically as heading_error
+                    # shrinks toward the 5-degree deadband and can take
+                    # minutes of real time to actually cross it.
                     rotation_speed = 0.5 * (heading_error / 180.0)
+                    rotation_speed = math.copysign(max(0.1, min(0.5, abs(rotation_speed))), rotation_speed)
                     self.controller.set_base_velocity(0.0, rotation_speed)
                 else:
                     # Proportional control for forward movement

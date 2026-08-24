@@ -67,22 +67,57 @@ class CodeRetriever:
         else:
             logger.warning("`sentence-transformers` or `numpy` not found. Semantic search will be disabled.")
 
+    # Directories that are never source code -- walking into them (especially
+    # .git, which can contain tens of thousands of loose objects) is what
+    # made indexing take over a minute on this repo despite it having well
+    # under 1,000 real .py files.
+    _EXCLUDED_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".tox", "dist", "build", ".eggs"}
+
+    def _iter_python_files(self):
+        for root, dirnames, filenames in os.walk(self.project_root):
+            dirnames[:] = [d for d in dirnames if d not in self._EXCLUDED_DIRS and not d.endswith(".egg-info")]
+            for filename in filenames:
+                if filename.endswith(".py"):
+                    yield Path(root) / filename
+
+    @staticmethod
+    def _get_source_segment_fast(lines: List[str], node: ast.AST) -> Optional[str]:
+        """
+        Equivalent to `ast.get_source_segment(content, node)`, but takes
+        pre-split lines instead of the raw source string. The stdlib version
+        re-splits the *entire* file on every call, which is fine for a
+        handful of nodes but turns quadratic on a file with thousands of
+        functions (e.g. hexstrike-ai/hexstrike_server.py alone took ~30s of
+        the ~75s total index-build time before this fix, for exactly that
+        reason).
+        """
+        try:
+            lineno, end_lineno = node.lineno - 1, node.end_lineno - 1
+            col_offset, end_col_offset = node.col_offset, node.end_col_offset
+        except AttributeError:
+            return None
+        if end_lineno == lineno:
+            return lines[lineno][col_offset:end_col_offset]
+        segment = [lines[lineno][col_offset:]] + lines[lineno + 1:end_lineno] + [lines[end_lineno][:end_col_offset]]
+        return "\n".join(segment)
+
     def _build_index(self):
         """Walks the project directory and uses AST to index all code blocks."""
         logger.info("Building code index...")
-        for py_file in self.project_root.rglob("*.py"):
+        for py_file in self._iter_python_files():
             try:
                 relative_path = str(py_file.relative_to(self.project_root))
                 with open(py_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     tree = ast.parse(content)
-                    
+                lines = content.splitlines()
+
                 for node in ast.walk(tree):
                     if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
                         block_type = "function" if isinstance(node, ast.FunctionDef) else "class"
                         full_name = f"{relative_path}::{node.name}"
-                        source_segment = ast.get_source_segment(content, node)
-                        
+                        source_segment = self._get_source_segment_fast(lines, node)
+
                         self.index[full_name] = CodeBlock(
                             name=node.name,
                             file_path=relative_path,

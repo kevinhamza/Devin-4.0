@@ -48,12 +48,14 @@ class AILearningServer:
         logger.info(f"Registering training function for model '{model_name}'")
         self.training_registry[model_name] = training_function
 
-    def _run_training_job(self, job_id: str, training_func: Callable, params: Dict):
+    def _run_training_process(self, job_id: str, params: Dict):
         """Wrapper function to run a training job and update its status."""
         self.jobs[job_id]["status"] = "RUNNING"
         self.jobs[job_id]["start_time"] = time.time()
         logger.info(f"Starting training job {job_id}...")
         try:
+            model_name = self.jobs[job_id]["model_name"]
+            training_func = self.training_registry[model_name]
             # The training function itself is responsible for logging progress
             result = training_func(**params)
             self.jobs[job_id]["status"] = "COMPLETED"
@@ -87,12 +89,12 @@ class AILearningServer:
             self.jobs[job_id] = {"status": "QUEUED", "result": None, "model_name": model_name}
             
             thread = threading.Thread(
-                target=self._run_training_job,
-                args=(job_id, training_func, params)
+                target=self._run_training_process,
+                args=(job_id, params)
             )
             thread.daemon = True
             thread.start()
-            
+
             return jsonify({"message": f"Training job for model '{model_name}' started.", "job_id": job_id}), 202
 
         @self.app.route("/train/status/<job_id>", methods=["GET"])
@@ -101,6 +103,17 @@ class AILearningServer:
             if not job:
                 return jsonify({"error": "Job not found."}), 404
             return jsonify(job)
+
+        @self.app.route("/train/jobs", methods=["GET"])
+        def list_jobs():
+            return jsonify(self.jobs)
+
+        @self.app.route("/shutdown", methods=["POST"])
+        def shutdown():
+            func = request.environ.get('werkzeug.server.shutdown')
+            if func:
+                func()
+            return jsonify({"status": "shutting down"})
 
     def run(self, host: str = '127.0.0.1', port: int = 5005):
         """Starts the Flask web server."""

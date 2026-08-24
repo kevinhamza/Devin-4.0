@@ -47,15 +47,15 @@ class MemoryTracker:
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
-    def get_virtual_memory_usage(self) -> psutil._common.svmem:
+    def get_virtual_memory_usage(self) -> Any:
         """Gets system-wide virtual memory (RAM) statistics."""
         return psutil.virtual_memory()
 
-    def get_swap_memory_usage(self) -> psutil._common.sswap:
+    def get_swap_memory_usage(self) -> Any:
         """Gets system-wide swap memory statistics."""
         return psutil.swap_memory()
 
-    def get_process_memory_usage(self, pid: int) -> Optional[psutil._common.pmem]:
+    def get_process_memory_usage(self, pid: int) -> Optional[Any]:
         """Gets the memory usage for a specific process."""
         try:
             process = psutil.Process(pid)

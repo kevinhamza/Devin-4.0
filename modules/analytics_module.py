@@ -299,8 +299,9 @@
 #          AnalyticsServer to generate reports and visualizations.
 
 import logging
+import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from datetime import timedelta
 
 try:
@@ -347,6 +348,42 @@ class AnalyticsFacade:
             logger.error(f"Connection Error: Could not connect to the AnalyticsServer at {self.server_url}. Is it running?")
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}")
+        return None
+
+    def log_event(self, event_type: str, value: float) -> bool:
+        """
+        Logs a single event to the AnalyticsServer.
+
+        Args:
+            event_type: The name/category of the event (e.g., "cpu_usage").
+            value: The numeric value associated with the event.
+
+        Returns:
+            True if the event was logged successfully, False otherwise.
+        """
+        payload = {
+            "event_type": event_type,
+            "value": value,
+            "timestamp": time.time(),
+        }
+        response = self._handle_request("POST", "log", json=payload)
+        return response is not None and response.status_code == 200
+
+    def get_timeseries_data(self, period: str = "5m") -> Optional[Dict[str, List[Dict[str, Any]]]]:
+        """
+        Retrieves logged event data from the server, grouped by event_type,
+        filtered to the given time window.
+
+        Args:
+            period: Time period string, e.g., "5m", "1h", "1d".
+
+        Returns:
+            A dict mapping event_type -> list of {"timestamp", "value"} records,
+            or None on error.
+        """
+        response = self._handle_request("GET", "data", params={"period": period})
+        if response and response.status_code == 200:
+            return response.json()
         return None
 
     def get_historical_data(self, period: str = "1h") -> Optional[pd.DataFrame]:
