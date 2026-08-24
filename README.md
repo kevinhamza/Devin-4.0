@@ -1,88 +1,166 @@
-# 🦞 Devin AGI v2.0 - The Self-Operating System
+# 🦞 Devin AGI
 
-Devin-2.0 is a next-generation AGI assistant designed to autonomously operate your computer. It combines advanced reasoning, persistent memory, and multimodal capabilities with a native Python implementation of OpenClaw's best features.
+Devin is a large, modular personal-assistant agent: a central LLM-driven "think → act" loop (`main.py`) that can call **195 real, working tools** — file/OS operations, shell and Python execution, network and web-application scanning, threat intelligence (MITRE ATT&CK, VirusTotal, IOC feeds), desktop and browser automation, vision-based screen control, robotics, quantum computing simulation and post-quantum cryptography, differential privacy and PII redaction, digital twins and chaos engineering, a CTF/blue-team training range, GDPR/CCPA/CFAA compliance advisories, crypto-market analysis, and more. It runs entirely on your own machine.
+
+This guide gets you from a fresh clone to a running agent with the fewest surprises. Every step below has been run end-to-end, not just written from the source.
 
 ## 🌟 Key Features
-- **Voice-First Interaction:** Command Devin using your voice with real-time speech-to-text.
-- **Full OS Control:** Devin can move your mouse, click, type, and take screenshots to perform tasks just like a human.
-- **Live Visual Canvas:** A real-time web workspace (Port 5005) to see Devin's thoughts, logs, and outputs.
-- **Multi-Channel Messaging:** Control Devin remotely via Telegram.
-- **Persistent Memory:** Local vector-based long-term memory using semantic embeddings.
-- **Autonomous Reasoning:** A robust Regex-based planning engine that translates high-level goals into multi-step tool calls.
+
+- **Runs for free, no credit card:** a Google AI Studio (Gemini) API key has a genuine free tier and is enough to run the *full* assistant — every tool below, real tool-calling, everything. OpenAI, Anthropic, and Perplexity keys are optional extras.
+- **Offline mock mode:** no API key at all still gets you a working agent loop against a canned mock model, for development or CI.
+- **195 real tools**, not stubs — see [What Devin Can Do](#-what-devin-can-do) below.
+- **Full OS control:** mouse, keyboard, screenshots, and a vision-based "look at the screen and operate it" mode.
+- **Live visual canvas:** a real-time web dashboard (port 5005) showing Devin's thoughts, logs, and outputs as it works.
+- **Persistent memory:** local vector-based long-term memory, so Devin recalls relevant context from past sessions.
+- **Safety by default:** every tool that can have a real side effect (deleting files, running shell commands, controlling IoT devices, restoring backups, etc.) is flagged `is_dangerous` and requires your explicit confirmation before it runs, every time.
 
 ---
 
 ## 🚀 Step-by-Step Setup Guide
 
 ### 1. Prerequisites
-Ensure you have Python 3.9 or higher installed. You will also need `pip` for package management.
+
+- **Python 3.10, 3.11, or 3.12** (this is what CI tests against; 3.11 is what this guide was validated on).
+- **On Debian/Ubuntu**, install the audio build headers *before* `pip install`, or two packages (`PyAudio`, `simpleaudio`) will fail to build:
+  ```bash
+  sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+  ```
+  (macOS: `brew install portaudio`. Windows: these ship as prebuilt wheels, no extra step needed.)
 
 ### 2. Clone and Install
+
 ```bash
-# Navigate to your git directory
-mkdir -p ~/git && cd ~/git
+git clone https://github.com/kevinhamza/Devin-4.0.git
+cd Devin-4.0
 
-# Clone the repository (if you haven't already)
-git clone https://github.com/kevinhamza/Devin-2.0.git
-cd Devin-2.0
+# A virtual environment is strongly recommended -- this repo's own
+# code-indexer walks the project directory on startup, and a heavy venv
+# created *inside* the repo makes that slower (see Troubleshooting).
+python3 -m venv ../devin-venv
+source ../devin-venv/bin/activate   # Windows: ..\devin-venv\Scripts\activate
 
-# Install all required dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 
-# Download the spaCy language model used by the voice/NLU pipeline
+# Used by the voice/NLU pipeline
 python -m spacy download en_core_web_sm
 ```
 
-### 3. Configure Environment Variables
-Create a `.env` file in the root directory and add your API keys:
-```env
-# AI Providers
-OPENAI_API_KEY=your_openai_key_here
-GEMINI_API_KEY=your_gemini_key_here
-PERPLEXITY_API_KEY=your_perplexity_key_here
+`requirements.txt` also lists an **Extended Capabilities** section (quantum computing, differential privacy, PII redaction, post-quantum crypto, etc.) — those packages are optional. Every tool that needs one degrades gracefully with a clear warning if it's missing, so you can skip them and add only what you actually want later.
 
-# Messaging (Optional)
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-
-# System Settings
-DEVIN_MODE=live  # Set to 'mock' for testing without API calls
+Run the pre-flight check to confirm everything installed correctly:
+```bash
+python bootstrap.py
 ```
+A missing `adb` or `ros2` is expected and fine unless you have Android or ROS 2 hardware — those tools just report unavailable.
+
+### 3. Configure Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env`. The one decision that matters is **`DEVIN_MODE`**:
+
+- **`DEVIN_MODE=mock`** (the default) — no API key needed at all. Devin runs against a canned offline model. Good for a first look, development, or CI.
+- **`DEVIN_MODE=live`** — real reasoning and tool selection. Set **one** of these three (in priority order — Claude wins if more than one is set):
+  ```env
+  GEMINI_API_KEY="..."      # Recommended: free tier, no billing setup. Get one at https://aistudio.google.com/apikey
+  ANTHROPIC_API_KEY="..."
+  OPENAI_API_KEY="..."
+  ```
+  Leave the ones you're not using **blank** (`""`), not the placeholder text — a non-empty placeholder string is still "set" as far as the code is concerned and will be tried first.
+
+Everything else in `.env` (Telegram, VirusTotal, cloud provider credentials, robot serial port) is optional and only unlocks the corresponding tools; leaving it unset just disables that one feature with a log warning, nothing breaks.
 
 ### 4. Running Devin
 
-#### **Text Mode (Standard)**
-Run Devin in your terminal and type your goals.
 ```bash
-python main.py
+python main.py            # Text mode -- type your goal when prompted
+python main.py --voice    # Voice mode -- speak your goal instead
 ```
 
-#### **Voice Mode (Human-Like Assistance)**
-Talk directly to Devin to get things done.
-```bash
-python main.py --voice
-```
+**What happens on startup**, so you're not surprised:
+1. Four background servers start (cloud integration, analytics, mobile integration, AI learning — ports 5002/5004/5006/5007). A cloud-integration error with no cloud credentials configured is expected and harmless.
+2. Devin indexes its own source code for the code-retrieval tool. This takes a few seconds.
+3. You're prompted for your goal.
 
 ### 5. Accessing the Live Canvas
-Once Devin is running, open your web browser and navigate to:
-`http://localhost:5005`
+
+Once running, open `http://localhost:5005` to watch Devin's live log/status feed.
 
 ---
 
 ## 🛠️ Usage Examples
-- **"Hey Devin, find the latest news about AI and summarize it in a new text file on my desktop."**
-- **"Open Chrome, go to biselahore.com, and check if the results page is up."**
-- **"Move my mouse to the top left corner and take a screenshot."**
+
+- *"List the files in the current directory."*
+- *"Look up MITRE ATT&CK technique T1059.003 and summarize the recommended mitigations."*
+- *"Scan example.com's attack surface for open ports and subdomains."* *(you'll be asked to confirm — this is a real scan)*
+- *"Hash this string with SHA-256, then encrypt it."*
+- *"Open Chrome, go to a URL, and check if the page loaded."*
+- *"Move my mouse to the top-left corner and take a screenshot."*
+
+---
+
+## 🧰 What Devin Can Do
+
+Run this to see the live, current tool list at any time (grouped by facade, with descriptions):
+```bash
+python -c "from modules.tool_executor import ToolExecutor; te = ToolExecutor(); [print(f'{n}: {t[\"description\"]}') for n, t in te.tools.items()]"
+```
+
+Roughly, by category:
+
+| Category | Examples |
+|---|---|
+| Files & shell | list/read/write files, execute shell/Python (sandboxed via Docker if available) |
+| Desktop & web automation | mouse/keyboard/screenshot, vision-based screen operation, browser navigation & scraping |
+| Security | port/web scanning, MITRE ATT&CK & VirusTotal lookups, IOC feeds, a CTF training range with blue-team SOC playbooks and threat hunting |
+| Quantum & crypto | Qiskit circuit simulation, post-quantum key exchange/signing, symmetric/asymmetric crypto, hashing |
+| Privacy & compliance | differential privacy, PII detection/redaction, GDPR/CCPA/CFAA advisories (informational, not legal advice) |
+| Reality & IoT | web/dark-web crawling (Tor-gated, authorized-OSINT use only), geocoding, local IoT device control |
+| Resilience | digital twins, latency/network-partition chaos testing, filesystem snapshots & backup/restore, process watchdogs |
+| Ops & monitoring | CPU/memory monitoring, license/feature-flag checks, ML drift & fairness metrics, Prometheus metrics |
+| Communication | Telegram messaging, email (IMAP/SMTP), social media search, robotics control |
+
+Every tool that writes to disk, executes code, controls a real device, or touches an external system asks for your confirmation before running (`is_dangerous=True`) — you'll see exactly what it's about to do first.
+
+**Deliberately not included:** a malware-execution sandbox, cyber_range's red-team/ransomware-simulation content, and anything under `hardware/battlefield/` — these stay out of the live, autonomous tool registry regardless of how they're framed in the source.
+
+---
+
+## 🧪 Running Tests
+
+```bash
+pytest tests/
+```
+(Note the custom file pattern in `pytest.ini` — some test modules use a `*_tests.py` suffix instead of pytest's default, which is already configured for you.)
 
 ---
 
 ## 🏗️ Architecture
-- `main.py`: The entry point that orchestrates background servers and the AGI loop.
-- `modules/tool_executor.py`: The "hands" of the system, executing OS and Web actions.
-- `modules/messaging_gateway.py`: Handles Telegram and external communication.
-- `modules/canvas_server.py`: Powers the live visual web interface.
-- `ai_core/cognitive_arch/`: The "brain", containing reasoning, working memory, and persistent LTM.
+
+- `main.py` — entry point; orchestrates the background servers and the think-act loop.
+- `modules/tool_executor.py` — the central tool registry and dispatcher; auto-discovers and registers every facade below.
+- `modules/all_ais_modules.py` — the `AIAgent`, unifying Claude/OpenAI/Gemini/mock providers behind one interface.
+- `modules/*_tools.py` — the extended-capability facades (threat intel, quantum, privacy, resilience, reality/XR, cyber range, plugins, ethics/legal, platform ops).
+- `modules/canvas_server.py` — the live visual web dashboard.
+- `ai_core/cognitive_arch/` — working memory and persistent long-term (vector) memory.
+- `singularity/goal_system/` — the ethical-constraint checks and utility-function scoring every plan passes through before execution.
+- `security/security_dashboard.py` — rule-based detection of dangerous commands.
+
+---
+
+## 🔧 Troubleshooting
+
+- **`pip install` fails building PyAudio/simpleaudio** — install the system audio headers from step 1 first (`portaudio19-dev libasound2-dev` on Debian/Ubuntu).
+- **Startup is slow / seems to hang after "Building code index..."** — this is normal and takes a few seconds; if it's taking much longer, check that you didn't create your virtual environment *inside* the repo directory (it gets walked and indexed along with your source).
+- **"Could not load embedding model... 403 Forbidden. Using placeholder embeddings."** — expected in a network-restricted/offline environment; long-term memory and semantic code search fall back to keyword-only search and still work, just less precisely.
+- **`gemini-flash-latest` intermittently returns `503 UNAVAILABLE`** — Devin automatically retries against alternate model aliases; you shouldn't need to do anything, but if it persists Google's status page will confirm an outage.
+- **Desktop/browser automation tools report "no X connection"** — expected on a headless server/container; they need a real display (X11/Wayland/macOS/Windows desktop session).
+- **`adb`/`ros2` missing** — expected unless you have Android or ROS 2 hardware connected; those tools just report unavailable and everything else still works.
+- **First run is noticeably slower than later ones** — the threat-intelligence tools download and cache the ~35MB MITRE ATT&CK dataset to `intel_cache/` on first use; subsequent runs read from that cache in under a second.
 
 ---
 **Author:** Kevin Devin / KevinHamza
-**Version:** 2.0.0
 **License:** MIT
