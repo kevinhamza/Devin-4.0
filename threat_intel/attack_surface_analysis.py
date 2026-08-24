@@ -4,12 +4,12 @@
 
 import logging
 import socket
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, field
 import concurrent.futures
 
 try:
-    from modules.pentesting_tools.network_scanner import NetworkScanner
+    from modules.pentesting_tools.network_scanning_tools import NetworkScanner
     DEVIN_CORE_AVAILABLE = True
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
@@ -91,8 +91,8 @@ class AttackSurfaceAnalyzer:
         common_ports = [21, 22, 25, 80, 110, 143, 443, 3306, 3389, 5900, 8080, 8443]
         for ip in unique_ips:
             logger.info(f"Scanning common ports on {ip}...")
-            scan_result = self.scanner.scan_ports(ip, common_ports)
-            open_ports = [int(p) for p, s in scan_result.items() if s == 'open']
+            scan_result = self.scanner.scan_host(ip, common_ports)
+            open_ports = list(scan_result.open_ports.keys())
             if open_ports:
                 report.open_ports_by_ip[ip] = open_ports
         

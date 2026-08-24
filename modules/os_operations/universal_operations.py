@@ -387,13 +387,16 @@ import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
+import numpy as np
+
 # --- Platform-Specific Compatibility Layers ---
-# These are conceptual imports. In a real system, these would be separate files.
-# For simplicity, we define mock versions if the real ones aren't available.
+# These are the real, functional low-level wrappers for each OS.
+# We fall back to inert stub classes if the compatibility layer can't be
+# imported (e.g. on a minimal install), so the operator still constructs.
 try:
-    from .windows_operations import Win32APIWrapper
-    from .linux_operations import LinuxSyscallWrapper
-    from .macos_operations import MetalWrapper
+    from .compatibility_layer.win32_api import Win32APIWrapper
+    from .compatibility_layer.linux_syscalls import LinuxSyscallWrapper
+    from .compatibility_layer.macos_metal import MetalWrapper
 except ImportError:
     class Win32APIWrapper: pass
     class LinuxSyscallWrapper: pass
@@ -426,6 +429,67 @@ class UniversalOSOperator:
         elif self.os_type == "Darwin": # macOS
             self.platform_api = LinuxSyscallWrapper() # For POSIX compatibility
             self.gpu_accelerator = MetalWrapper()
+
+    def get_detailed_os_version(self) -> Dict[str, Any]:
+        """
+        Gets detailed OS and kernel version information in a standardized format,
+        dispatching to the correct platform-specific compatibility layer.
+        """
+        logger.info("Requesting detailed OS version...")
+        if self.os_type == "Windows" and self.platform_api:
+            prod_name = self.platform_api.read_registry_key(
+                "HKEY_LOCAL_MACHINE",
+                "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                "ProductName",
+            )
+            build = self.platform_api.read_registry_key(
+                "HKEY_LOCAL_MACHINE",
+                "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                "CurrentBuild",
+            )
+            return {"os": "Windows", "product_name": prod_name, "build": build}
+        elif self.os_type in ["Linux", "Darwin"] and self.platform_api:
+            raw_info = self.platform_api.uname()
+            if raw_info:
+                return {
+                    "os": raw_info.get("sysname"),
+                    "kernel_release": raw_info.get("release"),
+                    "architecture": raw_info.get("machine"),
+                }
+            return {"os": self.os_type, "version": platform.release()}
+        else:
+            return {"os": self.os_type, "version": platform.release()}
+
+    def accelerated_vector_add(self, vec_a: "np.ndarray", vec_b: "np.ndarray") -> Optional["np.ndarray"]:
+        """
+        Performs vector addition, using macOS Metal GPU acceleration when
+        available, and falling back to a NumPy CPU implementation otherwise.
+        """
+        if self.os_type == "Darwin" and self.gpu_accelerator:
+            logger.info("macOS Metal device found. Offloading vector addition to GPU...")
+            try:
+                pipeline = self.gpu_accelerator.compile_shader(
+                    self.gpu_accelerator.VECTOR_ADD_SHADER, "vector_add"
+                )
+                buffer_a = self.gpu_accelerator.device.newBufferWithBytes_length_options_(
+                    vec_a, vec_a.nbytes, 0
+                )
+                buffer_b = self.gpu_accelerator.device.newBufferWithBytes_length_options_(
+                    vec_b, vec_b.nbytes, 0
+                )
+                result_buffer = self.gpu_accelerator.device.newBufferWithLength_options_(
+                    vec_a.nbytes, 0
+                )
+
+                self.gpu_accelerator.execute_kernel(
+                    pipeline, [buffer_a, buffer_b, result_buffer], (len(vec_a), 1, 1)
+                )
+                return self.gpu_accelerator.read_numpy_from_buffer(result_buffer, vec_a.dtype)
+            except Exception as e:
+                logger.error(f"Metal execution failed, falling back to CPU. Error: {e}")
+
+        logger.info("GPU acceleration not available. Performing vector addition on CPU with NumPy.")
+        return np.add(vec_a, vec_b)
 
     # --- NEW METHOD TO FIX THE CRASH ---
     def list_directory(self, path: str) -> Dict[str, List[Dict]]:

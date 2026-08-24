@@ -108,11 +108,11 @@ class TestSystemMonitor(unittest.TestCase):
         print("\n\n--- Testing SystemMonitorFacade Aggregation ---")
         # 1. Configure the mock monitors to return pre-defined SystemMetrics objects
         mock_local_instance = MockLocalMonitor.return_value
-        mock_local_instance.get_metrics.return_value = SystemMetrics(cpu_usage_percent=10.0, memory_usage_percent=20.0)
-        
+        mock_local_instance.get_metrics.return_value = SystemMetrics(host="localhost", cpu_usage_percent=10.0, memory_usage_percent=20.0)
+
         mock_remote_instance = MockRemoteMonitor.return_value
         mock_remote_instance.host = "remote-server-1"
-        mock_remote_instance.get_metrics.return_value = SystemMetrics(cpu_usage_percent=30.0, memory_usage_percent=40.0)
+        mock_remote_instance.get_metrics.return_value = SystemMetrics(host="remote-server-1", cpu_usage_percent=30.0, memory_usage_percent=40.0)
 
         # 2. Instantiate the real Facade with the mock monitors
         facade = SystemMonitorFacade(monitors=[mock_local_instance, mock_remote_instance])

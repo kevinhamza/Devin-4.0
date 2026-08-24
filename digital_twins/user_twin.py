@@ -5,7 +5,8 @@ import os
 import json
 import logging
 import datetime
-from typing import Dict, List, Optional, Any, TypedDict
+import random
+from typing import Dict, List, Optional, Any, TypedDict, Tuple
 from collections import Counter
 
 # Configure basic logging

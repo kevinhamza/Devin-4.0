@@ -7,7 +7,7 @@ import uuid
 import datetime
 import logging
 from enum import Enum
-from typing import Dict, List, Optional, Any, TypedDict, Literal
+from typing import Dict, List, Optional, Any, TypedDict, Literal, Tuple
 from dataclasses import dataclass, field, asdict
 
 # Configure basic logging
@@ -29,6 +29,7 @@ class PlaybookActionType(str, Enum):
     ENDPOINT_QUERY = "endpoint_query" # Query EDR for process list, connections etc.
     THREAT_INTEL_LOOKUP = "threat_intel_lookup" # Check IP/hash/domain against TI feeds
     USER_INFO_LOOKUP = "user_info_lookup" # Get info about involved user from directory/HR system
+    DATA_ENRICHMENT = "data_enrichment" # Generic enrichment step (e.g. pull headers/body/attachments from a source system)
     # Analysis
     AI_ANALYZE_LOGS = "ai_analyze_logs" # Send logs to an AI for summary/anomaly detection
     AI_ANALYZE_ARTIFACT = "ai_analyze_artifact" # Send file hash/URL to AI/Sandbox
@@ -57,8 +58,10 @@ class PlaybookStep:
     """Represents a single step within a playbook."""
     id: str # Unique identifier within the playbook (e.g., "step_1", "isolate_if_confirmed")
     name: str # User-friendly name for the step
-    description: Optional[str] = None
     action_type: PlaybookActionType
+    # (description moved below action_type -- dataclasses require every
+    # field with a default to come after all fields without one.)
+    description: Optional[str] = None
     # Parameters specific to the action_type
     # e.g., for LOG_QUERY: {'query': '...', 'timeframe': '...'}
     # e.g., for ISOLATE_HOST: {'hostname_or_ip': '...'}
@@ -86,10 +89,12 @@ class PlaybookDefinition:
 @dataclass
 class PlaybookExecutionInstance:
     """Tracks the runtime state of a specific playbook execution."""
-    instance_id: str = field(default_factory=lambda: f"PB-EXEC-{uuid.uuid4().hex[:12].upper()}")
+    # (Required fields moved above the defaulted ones below -- dataclasses
+    # require every field with a default to come after all fields without one.)
     playbook_id: str
     playbook_name: str # Denormalized for easier display
     triggering_event: Dict[str, Any] # The alert or data that triggered this playbook
+    instance_id: str = field(default_factory=lambda: f"PB-EXEC-{uuid.uuid4().hex[:12].upper()}")
     start_time_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     end_time_utc: Optional[str] = None
     status: PlaybookExecutionStatus = PlaybookExecutionStatus.PENDING
@@ -157,7 +162,7 @@ class SOCPlaybookManager:
                     "step2_analyze_links": PlaybookStep(id="step2_analyze_links", name="Analyze URLs/Attachments", description="Check links/attachment hashes against threat intel.", action_type=PlaybookActionType.THREAT_INTEL_LOOKUP, action_params={'inputs': ['email_body', 'attachments'], 'output_vars': ['suspicious_indicators']}, on_success_next_step_id="step3_notify", on_failure_next_step_id="step_fail"),
                     "step3_notify": PlaybookStep(id="step3_notify", name="Notify SOC Analyst", description="Send findings to analyst for review.", action_type=PlaybookActionType.NOTIFY_TEAM, action_params={'channel': '#soc-alerts', 'summary': 'Phishing triage results ready', 'details_var': 'suspicious_indicators'}, on_success_next_step_id="step_end"),
                     "step_fail": PlaybookStep(id="step_fail", name="Handle Failure", description="Log failure.", action_type=PlaybookActionType.NOTIFY_TEAM, action_params={'channel': '#soc-errors', 'summary': 'Playbook failed'}, on_success_next_step_id="step_end"),
-                    "step_end": PlaybookStep(id="step_end", name="End Playbook", description="Final step.", action_type=PlaybookActionType.MANUAL_REVIEW_TASK, action_params={'assignee': 'soc_level_1'}) # End state
+                    "step_end": PlaybookStep(id="step_end", name="End Playbook", description="Final step.", action_type=PlaybookActionType.MANUAL_ANALYSIS_TASK, action_params={'assignee': 'soc_level_1'}) # End state
                 }
             ),
             PlaybookDefinition(
@@ -170,7 +175,7 @@ class SOCPlaybookManager:
                     "step1_isolate": PlaybookStep(id="step1_isolate", name="Isolate Host", description="Use EDR/Firewall to isolate the affected host from the network.", action_type=PlaybookActionType.ISOLATE_HOST, action_params={'hostname_var': 'alert_hostname'}, on_success_next_step_id="step2_ticket", on_failure_next_step_id="step_fail_isolate"),
                     "step2_ticket": PlaybookStep(id="step2_ticket", name="Create Incident Ticket", description="Create ticket in ITSM/SOAR.", action_type=PlaybookActionType.CREATE_TICKET, action_params={'severity': 'High', 'summary': 'Malware Detected - Host Isolated', 'details_var': 'alert_details'}, on_success_next_step_id="step_end"),
                     "step_fail_isolate": PlaybookStep(id="step_fail_isolate", name="Isolation Failure Alert", description="Notify team about isolation failure.", action_type=PlaybookActionType.NOTIFY_TEAM, action_params={'channel': '#soc-critical', 'summary': 'HOST ISOLATION FAILED'}, on_success_next_step_id="step_end"),
-                    "step_end": PlaybookStep(id="step_end", name="End Playbook", description="Playbook finished.", action_type=PlaybookActionType.MANUAL_REVIEW_TASK, action_params={'assignee': 'soc_level_2_incident_response'})
+                    "step_end": PlaybookStep(id="step_end", name="End Playbook", description="Playbook finished.", action_type=PlaybookActionType.MANUAL_ANALYSIS_TASK, action_params={'assignee': 'soc_level_2_incident_response'})
                 }
             ),
             # Add more playbook definitions...

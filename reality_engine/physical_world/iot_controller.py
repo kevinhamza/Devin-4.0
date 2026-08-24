@@ -43,7 +43,7 @@ class IoTController:
                 return json.load(f)
         return {}
 
-    def _get_device_handle(self, device_name: str) -> Optional[tinytuya.Device]:
+    def _get_device_handle(self, device_name: str) -> "Optional[tinytuya.Device]":
         """Looks up a device by name and returns a tinytuya Device object."""
         device_info = self.devices.get(device_name)
         if not device_info:

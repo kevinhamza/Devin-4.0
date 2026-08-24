@@ -2,6 +2,13 @@
 # Purpose: A general-purpose toolkit for building, simulating, and
 #          visualizing fundamental quantum circuits using Qiskit.
 
+# Defers evaluation of type annotations (e.g. the `QuantumCircuit` return
+# hints below) so the class can still be *defined* when qiskit isn't
+# installed -- only instantiating QuantumComputer() requires it. Without
+# this, merely importing this module without qiskit raises NameError on the
+# annotations, breaking the try/except ImportError degradation pattern below.
+from __future__ import annotations
+
 import logging
 from typing import Dict, Optional
 

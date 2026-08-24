@@ -104,14 +104,25 @@ class BrowserManager:
 class DesktopAutomator:
     """High-level facade for controlling the desktop environment."""
     def __init__(self):
-        if not DEPS_AVAILABLE:
-            logger.warning(f"Desktop automation features are unavailable: {_import_error}")
-            self.kbm = None
-            self.screen_width, self.screen_height = (1920, 1080)
-        else:
+        # Try to build the keyboard/mouse controller independently of the
+        # broader DEPS_AVAILABLE flag: a headless environment (no DISPLAY)
+        # can still exercise this class through a mocked/injected controller.
+        try:
             self.kbm = KeyboardMouseController()
-            self.screen_width, self.screen_height = pyautogui.size()
-            logger.info(f"DesktopAutomator initialized. Screen size: {self.screen_width}x{self.screen_height}.")
+        except Exception as e:
+            logger.warning(f"Keyboard/mouse control unavailable: {e}")
+            self.kbm = None
+
+        if DEPS_AVAILABLE:
+            try:
+                self.screen_width, self.screen_height = pyautogui.size()
+            except Exception as e:
+                logger.warning(f"Could not determine screen size: {e}")
+                self.screen_width, self.screen_height = (1920, 1080)
+        else:
+            self.screen_width, self.screen_height = (1920, 1080)
+
+        logger.info(f"DesktopAutomator initialized. Screen size: {self.screen_width}x{self.screen_height}.")
 
     def open_application(self, app_name: str):
         """Opens an application using the OS-native 'Run' or 'Spotlight' dialog."""
@@ -130,6 +141,25 @@ class DesktopAutomator:
         time.sleep(0.2)
         self.kbm.press_key('enter')
         self.kbm.release_key('enter')
+
+    def open_application_and_type(self, app_name: str, text: str):
+        """
+        Convenience workflow: opens an application via the "Run" dialog
+        (Win+R) shortcut, launches it, waits briefly for it to gain focus,
+        and then types the given text into it.
+        """
+        if not self.kbm:
+            logger.warning("Cannot open application and type: keyboard/mouse control unavailable.")
+            return
+        logger.info(f"Opening application '{app_name}' and typing text into it.")
+        self.kbm.hotkey('cmd', 'r')
+        time.sleep(0.5)
+        self.kbm.type_string(app_name)
+        time.sleep(0.2)
+        self.kbm.press_key('enter')
+        self.kbm.release_key('enter')
+        time.sleep(0.5)  # Give the launched application time to gain focus
+        self.kbm.type_string(text)
 
     def move_mouse_to(self, x: int, y: int, duration_sec: float = 0.5):
         if DEPS_AVAILABLE:
@@ -236,6 +266,53 @@ class WebAutomator:
         except Exception as e:
             logger.error(f"Could not find or type in element {locator}: {e}")
             return False
+
+    def login_to_website(
+        self,
+        url: str,
+        username: str,
+        password: str,
+        username_locator: Tuple[str, str],
+        password_locator: Tuple[str, str],
+        submit_locator: Tuple[str, str],
+    ) -> dict:
+        """
+        Logs into a website: navigates to the URL, fills in the username and
+        password fields located by the given locators, and clicks submit.
+
+        Args:
+            url: The login page URL.
+            username: The username/email to enter.
+            password: The password to enter.
+            username_locator: (by, value) tuple for the username field, e.g. ('id', 'username').
+            password_locator: (by, value) tuple for the password field.
+            submit_locator: (by, value) tuple for the submit button.
+        """
+        try:
+            driver = self.browser.get_driver()
+            if not driver:
+                return {"status": "error", "message": "Browser unavailable."}
+
+            driver.get(url)
+
+            def _locate(locator: Tuple[str, str]):
+                by = getattr(By, locator[0].upper().replace(" ", "_"))
+                return driver.find_element(by, locator[1])
+
+            username_field = _locate(username_locator)
+            username_field.send_keys(username)
+
+            password_field = _locate(password_locator)
+            password_field.send_keys(password)
+
+            submit_button = _locate(submit_locator)
+            submit_button.click()
+
+            logger.info(f"Submitted login form for user '{username}' at {url}.")
+            return {"status": "success", "message": f"Logged in to {url}"}
+        except Exception as e:
+            logger.error(f"Login to {url} failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     def close_browser(self):
         """Closes the browser instance."""

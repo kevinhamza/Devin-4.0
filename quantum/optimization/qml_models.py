@@ -3,6 +3,14 @@
 #          Quantum Machine Learning (QML) models, specifically a
 #          Variational Quantum Classifier (VQC).
 
+# Defers evaluation of type annotations (e.g. the `VQC`/`np.ndarray` return
+# hints below) so the class can still be *defined* when the QML libraries
+# aren't installed -- only instantiating QML_Modeler() requires them.
+# Without this, merely importing this module without them raises NameError
+# on the annotations, breaking the try/except ImportError degradation
+# pattern below.
+from __future__ import annotations
+
 import logging
 from typing import Optional, Tuple
 

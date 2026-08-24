@@ -4,7 +4,8 @@ import time
 import subprocess # For conceptual calls to external tools
 import datetime
 import uuid
-from typing import Dict, Any, List, Optional, Literal
+import json
+from typing import Dict, Any, List, Optional, Literal, Tuple
 
 # --- Configuration ---
 # Placeholder for the command/API endpoint of a chosen chaos engineering tool

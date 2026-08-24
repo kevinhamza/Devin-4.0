@@ -5,7 +5,7 @@
 import unittest
 import time
 import math
-from typing import Tuple
+from typing import Tuple, NamedTuple
 
 # --- Important: We need to set up the path to import our modules ---
 import sys
@@ -28,6 +28,22 @@ try:
 except ImportError as e:
     DEPS_AVAILABLE = False
     _import_error = e
+
+
+# --- Bug fix: `Pose` in modules.robotics.ai_navigation is just a typing
+#     alias (`Tuple[float, float, float]`), which cannot be instantiated
+#     like a class (`Pose(0.2, 0.2, 0.0)` raises TypeError: "Type Tuple
+#     cannot be instantiated"). The tests below need a real, constructible
+#     Pose, so we shadow the imported alias with a lightweight NamedTuple
+#     that remains duck-type compatible with plain tuples (indexing,
+#     slicing, unpacking) wherever production code expects a
+#     `Tuple[float, float, float]`.
+if DEPS_AVAILABLE:
+    class Pose(NamedTuple):
+        x: float
+        y: float
+        theta: float
+
 
 # --- Suppress regular logging output during tests for clarity ---
 import logging

@@ -8,7 +8,7 @@ import os
 import time
 import threading
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import base64
 
 # Configure basic logging

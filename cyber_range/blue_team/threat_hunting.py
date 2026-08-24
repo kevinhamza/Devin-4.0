@@ -7,7 +7,7 @@ import uuid
 import datetime
 import logging
 from enum import Enum
-from typing import Dict, List, Optional, Any, TypedDict
+from typing import Dict, List, Optional, Any, TypedDict, Literal
 from dataclasses import dataclass, field, asdict
 
 # Configure basic logging
@@ -33,10 +33,12 @@ class ThreatHuntQuery:
 @dataclass
 class ThreatHuntDefinition:
     """Defines a specific threat hunting activity."""
-    id: str = field(default_factory=lambda: f"HUNT-{uuid.uuid4().hex[:8].upper()}")
+    # (Required fields moved above the defaulted ones below -- dataclasses
+    # require every field with a default to come after all fields without one.)
     name: str
     description: str
     hypothesis: str # What adversary behavior are we looking for?
+    id: str = field(default_factory=lambda: f"HUNT-{uuid.uuid4().hex[:8].upper()}")
     severity: Literal['Low', 'Medium', 'High', 'Critical'] = 'Medium'
     # Link to MITRE ATT&CK TTPs (conceptual)
     mitre_ttps: List[str] = field(default_factory=list) # e.g., ["T1059.003", "T1087"]
@@ -52,13 +54,15 @@ class ThreatHuntDefinition:
 @dataclass
 class ThreatHuntExecution:
     """Tracks the execution and results of a specific hunt run."""
-    execution_id: str = field(default_factory=lambda: f"HUNT-EXEC-{uuid.uuid4().hex[:12].upper()}")
+    # (Required fields moved above the defaulted ones below -- dataclasses
+    # require every field with a default to come after all fields without one.)
     hunt_id: str
     hunt_name: str # Denormalized
+    parameters: Dict[str, Any] # e.g., timeframe, target scope used for this run
+    execution_id: str = field(default_factory=lambda: f"HUNT-EXEC-{uuid.uuid4().hex[:12].upper()}")
     start_time_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     end_time_utc: Optional[str] = None
     status: HuntStatus = HuntStatus.RUNNING
-    parameters: Dict[str, Any] # e.g., timeframe, target scope used for this run
     findings: List[Dict[str, Any]] = field(default_factory=list) # List of suspicious events/results found
     error_message: Optional[str] = None
     triggered_playbook_instance_id: Optional[str] = None
