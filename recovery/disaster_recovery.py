@@ -54,8 +54,15 @@ class DisasterRecovery:
         
         for backup_file in self.backup_location.glob("devin_backup_*.tar.gz"):
             try:
-                # Extract timestamp from filename like 'devin_backup_YYYYMMDD_HHMMSS.tar.gz'
-                timestamp_str = backup_file.stem.split('_')[-2] + '_' + backup_file.stem.split('_')[-1]
+                # Extract timestamp from filename like 'devin_backup_YYYYMMDD_HHMMSS.tar.gz'.
+                # Path.stem only strips the LAST suffix, so on a '.tar.gz' file it leaves
+                # '.tar' behind (e.g. 'devin_backup_20260824_120323.tar') -- strip the full
+                # double extension from .name instead so the date actually parses.
+                base_name = backup_file.name
+                if base_name.endswith(".tar.gz"):
+                    base_name = base_name[: -len(".tar.gz")]
+                name_parts = base_name.split('_')
+                timestamp_str = name_parts[-2] + '_' + name_parts[-1]
                 backup_date = datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
                 if backup_date < cutoff_date:
                     logger.warning(f"Deleting old backup: {backup_file.name}")

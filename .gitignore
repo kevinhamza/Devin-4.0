@@ -161,3 +161,9 @@ yarn-error.log
 
 # --- Other ---
 /uploads/
+
+# Model weights auto-downloaded at runtime by ultralytics/YOLO (e.g. object_detection.py, robotics tests)
+*.pt
+
+# Runtime caches auto-downloaded by threat_intel/ clients (MITRE ATT&CK data, IOC feeds)
+/intel_cache/

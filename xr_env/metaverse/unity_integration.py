@@ -7,7 +7,7 @@ import asyncio
 import websockets
 import json
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 
 # Configure basic logging
 logger = logging.getLogger("UnityIntegration")

@@ -49,7 +49,6 @@ class LocalMonitor:
     def get_metrics(self) -> SystemMetrics:
         """Gathers and returns metrics from the local system."""
         try:
-            import psutil
             net_io = psutil.net_io_counters()
             return SystemMetrics(
                 host=self.host,
@@ -94,7 +93,33 @@ class RemoteMonitor:
         if match:
             return float(match.group(1))
         return None
-    
+
+    def _parse_net_dev_output(self, output: str) -> 'tuple[Optional[int], Optional[int]]':
+        """
+        Parses the output of `cat /proc/net/dev` to get bytes sent/received.
+
+        Format per line is `iface: rx_bytes rx_packets rx_errs rx_drop rx_fifo
+        rx_frame rx_compressed rx_multicast tx_bytes tx_packets tx_errs tx_drop
+        tx_fifo tx_colls tx_carrier tx_compressed`, so tx_bytes (net_bytes_sent)
+        is the 9th whitespace-separated field after the interface name, and
+        rx_bytes (net_bytes_recv) is the 1st. The loopback interface ('lo') is
+        skipped in favor of the first real interface found.
+        """
+        for line in output.splitlines():
+            line = line.strip()
+            if ':' not in line:
+                continue
+            iface_name, rest = line.split(':', 1)
+            iface_name = iface_name.strip()
+            if not iface_name or iface_name == 'lo' or iface_name.lower() == 'face':
+                continue
+            parts = rest.split()
+            if len(parts) >= 9:
+                rx_bytes = int(parts[0])
+                tx_bytes = int(parts[8])
+                return tx_bytes, rx_bytes
+        return None, None
+
     def get_metrics(self) -> SystemMetrics:
         """Gathers and returns metrics from the remote system."""
         metrics = SystemMetrics(host=self.host)
@@ -113,7 +138,14 @@ class RemoteMonitor:
         df_res = self.ssh.execute_command("df -h /")
         if df_res['exit_code'] == 0:
             metrics.disk_usage_percent = self._parse_df_output_disk(df_res['stdout'])
-            
+
+        # Network
+        net_res = self.ssh.execute_command("cat /proc/net/dev")
+        if net_res['exit_code'] == 0:
+            sent, recv = self._parse_net_dev_output(net_res['stdout'])
+            metrics.net_bytes_sent = sent
+            metrics.net_bytes_recv = recv
+
         return metrics
 
 # --- Main Facade ---

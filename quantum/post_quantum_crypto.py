@@ -29,9 +29,18 @@ class PostQuantumCrypto:
     """
     def __init__(self):
         if not OQS_AVAILABLE:
-            raise ImportError("The 'oqs' library is required. 'pip install oqs'")
-        self.supported_kems = oqs.get_enabled_KEMs()
-        self.supported_sigs = oqs.get_enabled_sigs()
+            raise ImportError("The 'liboqs-python' package (imported as 'oqs') is required. 'pip install liboqs-python'")
+        # liboqs-python renamed get_enabled_KEMs()/get_enabled_sigs() to
+        # get_enabled_kem_mechanisms()/get_enabled_sig_mechanisms() -- fall
+        # back to the old names for older installs.
+        self.supported_kems = (
+            oqs.get_enabled_kem_mechanisms() if hasattr(oqs, "get_enabled_kem_mechanisms")
+            else oqs.get_enabled_KEMs()
+        )
+        self.supported_sigs = (
+            oqs.get_enabled_sig_mechanisms() if hasattr(oqs, "get_enabled_sig_mechanisms")
+            else oqs.get_enabled_sigs()
+        )
         logger.info("Post-Quantum Crypto module initialized.")
 
     # --- Key Encapsulation Mechanism (KEM) Methods ---
@@ -75,8 +84,11 @@ class PostQuantumCrypto:
             The shared_secret, or None on failure.
         """
         if algorithm not in self.supported_kems: return None
-        with oqs.KeyEncapsulation(algorithm) as kem:
-            shared_secret = kem.decap_secret(ciphertext, secret_key)
+        # The secret key must be supplied to the KeyEncapsulation constructor
+        # (it's used internally for the decapsulation call, not passed to
+        # decap_secret() directly).
+        with oqs.KeyEncapsulation(algorithm, secret_key) as kem:
+            shared_secret = kem.decap_secret(ciphertext)
             return shared_secret
 
     # --- Digital Signature Methods ---

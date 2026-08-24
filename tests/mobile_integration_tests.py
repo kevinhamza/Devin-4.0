@@ -41,11 +41,16 @@ class TestMobileIntegrationPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Starts the MobileIntegrationServer in a background thread."""
-        cls.server_instance = MobileIntegrationServer()
-        
-        # Patch the subprocess.run call within the server's module
+        # Patch subprocess.run *before* constructing the server: its __init__
+        # runs `adb version` via subprocess.run to probe ADB availability, and
+        # without a mocked (successful) result here, a test box with no real
+        # `adb` binary would set self.adb_available = False, making every
+        # route below return 503 regardless of what a test configures.
         cls.patcher = patch('servers.mobile_integration_server.subprocess.run')
         cls.mock_subprocess_run = cls.patcher.start()
+        cls.mock_subprocess_run.return_value = MagicMock(stdout="1.0.41", stderr="", returncode=0)
+
+        cls.server_instance = MobileIntegrationServer()
 
         cls.server_thread = threading.Thread(
             target=cls.server_instance.run,
@@ -68,7 +73,7 @@ class TestMobileIntegrationPipeline(unittest.TestCase):
 
     def setUp(self):
         """Create a new facade instance for each test and reset mocks."""
-        self.facade = MobileFacade(base_url=self.server_url)
+        self.facade = MobileFacade(server_url=self.server_url)
         self.mock_subprocess_run.reset_mock()
 
     def test_list_devices_workflow(self):
@@ -83,9 +88,11 @@ class TestMobileIntegrationPipeline(unittest.TestCase):
         # 2. Call the facade, which calls the server, which calls the mock
         devices = self.facade.list_connected_devices()
         
-        # 3. Verify the subprocess call
+        # 3. Verify the subprocess call. The server's /devices route calls
+        # subprocess.run without an explicit `check` kwarg (it defaults to
+        # False), unlike the ADB-availability probe in _check_adb_connection.
         self.mock_subprocess_run.assert_called_once_with(
-            ['adb', 'devices'], capture_output=True, text=True, check=False
+            ['adb', 'devices'], capture_output=True, text=True
         )
         print("  [SUCCESS] Server correctly called 'adb devices'.")
 
@@ -111,10 +118,11 @@ class TestMobileIntegrationPipeline(unittest.TestCase):
         # 2. Call the facade
         result = self.facade.run_shell_command(device_id, command)
         
-        # 3. Verify the subprocess call
+        # 3. Verify the subprocess call. Like /devices, the /shell route calls
+        # subprocess.run without an explicit `check` kwarg.
         expected_adb_command = ['adb', '-s', device_id, 'shell', 'getprop', 'ro.product.model']
         self.mock_subprocess_run.assert_called_once_with(
-            expected_adb_command, capture_output=True, text=True, check=False
+            expected_adb_command, capture_output=True, text=True
         )
         print("  [SUCCESS] Server correctly constructed and called the targeted 'adb shell' command.")
         

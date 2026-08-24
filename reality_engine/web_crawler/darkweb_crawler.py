@@ -4,7 +4,9 @@
 
 import logging
 import requests
+import sys
 import time
+from typing import Optional
 from urllib.parse import urljoin, urlparse
 
 try:
@@ -45,7 +47,7 @@ class DarkWebCrawler:
         self.session = requests.Session()
         self.session.proxies = self.proxies
 
-    def _get_tor_controller(self) -> Optional[Controller]:
+    def _get_tor_controller(self) -> "Optional[Controller]":
         """Connects to the Tor control port."""
         try:
             controller = Controller.from_port(port=self.control_port)

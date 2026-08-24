@@ -29,11 +29,11 @@ jobs:
     steps:
       # Step 1: Check out the repository code
       - name: Checkout code
-        uses: actions/checkout@v5 # Use latest checkout action
+        uses: actions/checkout@v7 # Use latest checkout action
 
       # Step 2: Set up Python environment
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11' # Specify Python version for linting
           cache: 'pip' # Cache dependencies
@@ -78,11 +78,11 @@ jobs:
     steps:
       # Step 1: Check out code
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Step 2: Set up specific Python version from matrix
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
@@ -109,7 +109,7 @@ jobs:
 
       # Step 5: Optional - Upload coverage report
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4 # Use latest codecov action
+        uses: codecov/codecov-action@v7 # Use latest codecov action
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # Store token in GitHub secrets
           files: ./coverage.xml # Specify coverage file

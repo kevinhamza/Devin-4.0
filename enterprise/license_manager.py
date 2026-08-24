@@ -6,7 +6,7 @@ import json
 import logging
 import datetime
 from enum import Enum
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Union
 from dataclasses import dataclass, field, asdict
 
 # Configure basic logging

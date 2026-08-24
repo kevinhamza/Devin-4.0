@@ -344,8 +344,12 @@ class MobileFacade:
 
     def run_shell_command(self, device_id: str, command: str) -> Optional[str]:
         """Runs a shell command on the specified device."""
-        payload = {"command": command}
-        response = self._handle_request("POST", f"{device_id}/shell", json=payload)
+        # The server exposes a single POST /shell endpoint and expects the
+        # target device id inside the JSON body (see
+        # servers/mobile_integration_server.py's `run_shell_command` route) --
+        # there is no per-device URL path.
+        payload = {"device_id": device_id, "command": command}
+        response = self._handle_request("POST", "shell", json=payload)
         return response.json().get("output") if response else None
 
     def take_screenshot(self, device_id: str, output_path: Path) -> bool:

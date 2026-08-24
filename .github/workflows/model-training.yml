@@ -56,13 +56,13 @@ jobs:
     steps:
       # Step 1: Check out the specified branch of the repository code
       - name: Checkout code (${{ github.event.inputs.branch_ref }})
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.branch_ref }}
 
       # Step 2: Set up Python environment
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11' # Consistent Python version for training
           cache: 'pip'
@@ -171,7 +171,7 @@ jobs:
       # Upload trained model, metrics etc. as GitHub artifacts for inspection
       - name: Upload Training Artifacts
         if: always() # Upload even if previous steps fail (for debugging)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: training-artifacts-${{ github.event.inputs.model_name }}-${{ github.run_id }}
           path: |

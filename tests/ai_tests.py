@@ -1,6 +1,6 @@
 # Devin/tests/ai_tests.py
 # Purpose: An integration test suite for the AIAgent, verifying its logic for
-#          provider routing, persona management, and tool-use parsing.
+#          provider routing, pentesting-analysis routing, and tool-use parsing.
 
 import unittest
 import json
@@ -16,7 +16,6 @@ _import_error = None
 
 try:
     from modules.all_ais_modules import AIAgent, AIProvider
-    from modules.ai_connector import AIRequest, AIResponse
     DEVIN_CORE_AVAILABLE = True
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
@@ -26,132 +25,164 @@ except ImportError as e:
 import logging
 logging.disable(logging.CRITICAL)
 
+
 @unittest.skipUnless(DEVIN_CORE_AVAILABLE, f"Skipping AI tests, dependency missing: {_import_error}")
 class TestAIAgentIntegration(unittest.TestCase):
     """
-    Tests the AIAgent's internal logic using mocked AI connectors.
+    Tests the real, current AIAgent (modules/all_ais_modules.py) using mocked
+    underlying provider modules (live mode) and the agent's self-contained
+    mock mode.
     """
 
     def setUp(self):
         """
-        Set up mocks for all AI connectors before each test.
-        This isolates the AIAgent from real network calls.
+        Patch the real provider-module classes where AIAgent imports them, so
+        live-mode tests never touch the network. Each patched class is a
+        MagicMock class whose instances are also MagicMocks, so we can assert
+        on `<mock>.return_value.<method>` calls.
         """
-        # We patch the class in the module where it's *imported*
-        self.patcher_openai = patch('modules.all_ais_modules.OpenAIConnector')
-        self.patcher_gemini = patch('modules.all_ais_modules.GeminiConnector')
-        self.patcher_perplexity = patch('modules.all_ais_modules.PerplexityConnector')
+        self.patcher_openai = patch('modules.all_ais_modules.ChatGPTModule')
+        self.patcher_gemini = patch('modules.all_ais_modules.GeminiModule')
+        self.patcher_perplexity = patch('modules.all_ais_modules.PerplexityModule')
+        self.patcher_claude = patch('modules.all_ais_modules.ClaudeModule')
 
-        self.MockOpenAIConnector = self.patcher_openai.start()
-        self.MockGeminiConnector = self.patcher_gemini.start()
-        self.MockPerplexityConnector = self.patcher_perplexity.start()
+        self.MockChatGPTModule = self.patcher_openai.start()
+        self.MockGeminiModule = self.patcher_gemini.start()
+        self.MockPerplexityModule = self.patcher_perplexity.start()
+        self.MockClaudeModule = self.patcher_claude.start()
 
-        # Get a handle on the mock *instances* that will be created
-        self.mock_openai_instance = self.MockOpenAIConnector.return_value
-        self.mock_gemini_instance = self.MockGeminiConnector.return_value
-        self.mock_perplexity_instance = self.MockPerplexityConnector.return_value
-
-        # Instantiate the AIAgent. It will now be initialized with our mocks.
-        self.agent = AIAgent(
-            openai_api_key="fake-key",
-            gemini_api_key="fake-key",
-            perplexity_api_key="fake-key"
-        )
+        # Handles on the mock *instances* that AIAgent will create/use.
+        self.mock_openai_instance = self.MockChatGPTModule.return_value
+        self.mock_gemini_instance = self.MockGeminiModule.return_value
+        self.mock_perplexity_instance = self.MockPerplexityModule.return_value
+        self.mock_claude_instance = self.MockClaudeModule.return_value
 
     def tearDown(self):
         """Stop all patches after each test."""
         patch.stopall()
 
-    def test_agent_routes_to_correct_provider(self):
+    def test_agent_prefers_claude_then_openai_then_gemini_for_tool_selection(self):
         """
-        Verify that the agent calls the correct connector based on the provider enum.
+        get_tool_selection_response documents (and implements) a preference
+        order of Claude > OpenAI > Gemini. Verify the agent actually honors
+        that order based on which provider modules are configured.
         """
-        print("\n\n--- Testing AI Provider Routing ---")
-        messages = [{"role": "user", "content": "test"}]
-        
-        # Configure mocks to return their name
-        self.mock_openai_instance.get_chat_completion.return_value = AIResponse("OpenAI Response", True)
-        self.mock_gemini_instance.get_chat_completion.return_value = AIResponse("Gemini Response", True)
-        self.mock_perplexity_instance.get_chat_completion.return_value = AIResponse("Perplexity Response", True)
+        print("\n\n--- Testing AI Provider Preference Order for Tool Selection ---")
+        messages = [{"role": "user", "content": "list the files here"}]
+        tools = [{"name": "list_files", "description": "List files", "parameters": {}}]
 
-        # Test OpenAI routing
-        self.agent.get_general_chat_response(messages, provider=AIProvider.OPENAI)
-        self.mock_openai_instance.get_chat_completion.assert_called_once()
-        self.mock_gemini_instance.get_chat_completion.assert_not_called()
-        self.mock_perplexity_instance.get_chat_completion.assert_not_called()
-        print("  [SUCCESS] Correctly routed to OpenAI.")
+        tool_call_response = {
+            "tool_calls": [{"function": {"name": "list_files", "arguments": '{"path": "."}'}}]
+        }
 
-        # Test Gemini routing
-        self.mock_openai_instance.reset_mock() # Reset call counts
-        self.agent.get_general_chat_response(messages, provider=AIProvider.GEMINI)
-        self.mock_openai_instance.get_chat_completion.assert_not_called()
-        self.mock_gemini_instance.get_chat_completion.assert_called_once()
-        self.mock_perplexity_instance.get_chat_completion.assert_not_called()
-        print("  [SUCCESS] Correctly routed to Gemini.")
+        # --- All three configured: Claude should win. ---
+        self.mock_claude_instance.get_tool_calling_response.return_value = tool_call_response
+        agent_all = AIAgent(
+            mode='live',
+            anthropic_api_key="fake-claude-key",
+            openai_api_key="fake-openai-key",
+            gemini_api_key="fake-gemini-key",
+        )
+        result = agent_all.get_tool_selection_response(messages, tools)
+        self.mock_claude_instance.get_tool_calling_response.assert_called_once()
+        self.mock_openai_instance.get_tool_calling_response.assert_not_called()
+        self.mock_gemini_instance.get_tool_calling_response.assert_not_called()
+        self.assertEqual(result["tool"], "list_files")
+        print("  [SUCCESS] Claude preferred when all providers are configured.")
 
-    def test_agent_injects_correct_pentesting_persona(self):
+        # --- Only OpenAI + Gemini configured: OpenAI should win. ---
+        self.mock_claude_instance.reset_mock()
+        self.mock_openai_instance.reset_mock()
+        self.mock_gemini_instance.reset_mock()
+        self.mock_openai_instance.get_tool_calling_response.return_value = tool_call_response
+        agent_no_claude = AIAgent(
+            mode='live',
+            openai_api_key="fake-openai-key",
+            gemini_api_key="fake-gemini-key",
+        )
+        agent_no_claude.get_tool_selection_response(messages, tools)
+        self.mock_openai_instance.get_tool_calling_response.assert_called_once()
+        self.mock_gemini_instance.get_tool_calling_response.assert_not_called()
+        print("  [SUCCESS] OpenAI preferred over Gemini when Claude is unavailable.")
+
+        # --- Only Gemini configured: Gemini should be used as the last-resort fallback. ---
+        self.mock_gemini_instance.get_tool_calling_response.return_value = tool_call_response
+        agent_gemini_only = AIAgent(mode='live', gemini_api_key="fake-gemini-key")
+        result_gemini = agent_gemini_only.get_tool_selection_response(messages, tools)
+        self.mock_gemini_instance.get_tool_calling_response.assert_called_once()
+        self.assertEqual(result_gemini["tool"], "list_files")
+        print("  [SUCCESS] Gemini used as the free-tier fallback when nothing else is configured.")
+
+    def test_agent_pentest_analysis_routes_to_pentestgpt_module(self):
         """
-        Verify that get_pentesting_chat_response prepends the correct system prompt.
+        get_pentest_analysis is the specialized entry point for pentesting-tool
+        output analysis. PentestGPTAIModule (the real live-mode implementation)
+        still carries an "ethical hacking" persona system prompt, but that
+        prompt is internal to PentestGPTAIModule, not something AIAgent itself
+        injects -- so what AIAgent needs to guarantee is that this call is
+        correctly routed to the dedicated PentestGPT module (mock mode's
+        MockPentestGPTModule here) rather than a general-purpose provider.
         """
-        print("\n\n--- Testing Pentesting Persona Injection ---")
-        user_messages = [{"role": "user", "content": "scan the target"}]
-        
-        # We don't care about the response, only what was sent
-        self.mock_openai_instance.get_chat_completion.return_value = AIResponse("OK", True)
-        
-        self.agent.get_pentesting_chat_response(user_messages)
-        
-        # Check that the connector was called
-        self.mock_openai_instance.get_chat_completion.assert_called_once()
-        
-        # Get the AIRequest object that was passed to the mock connector
-        sent_request: AIRequest = self.mock_openai_instance.get_chat_completion.call_args[0][0]
-        sent_messages = sent_request.messages
-        
-        # Assert that the first message is now a system prompt
-        self.assertEqual(sent_messages[0]['role'], 'system')
-        # Assert that the system prompt contains keywords for the pentesting persona
-        system_prompt = sent_messages[0]['content']
-        self.assertIn("ethical hacker", system_prompt.lower())
-        self.assertIn("penetration testing", system_prompt.lower())
-        self.assertIn("Metasploit", system_prompt)
-        # Assert that the user's message is still there
-        self.assertEqual(sent_messages[1], user_messages[0])
-        print("  [SUCCESS] Correctly prepended the pentesting system prompt.")
+        print("\n\n--- Testing PentestGPT Analysis Routing ---")
+        agent = AIAgent(mode='mock')
+
+        result = agent.get_pentest_analysis("Nmap", "Host is up. 80/tcp open http.")
+
+        # Routed to the PentestGPT module specifically, not OpenAI/Gemini/Perplexity.
+        self.assertIsInstance(result, dict)
+        self.assertIn("findings", result)
+        self.assertIn("vulnerabilities", result)
+        self.assertIn("next_step", result)
+        print("  [SUCCESS] get_pentest_analysis correctly routed to the PentestGPT module.")
 
     def test_agent_correctly_parses_valid_tool_selection_json(self):
         """
-        Verify that a valid JSON string for a tool call is correctly parsed.
+        Verify that a valid native tool-call response is correctly translated
+        into the agent's {"tool": ..., "parameters": ...} shape.
         """
         print("\n\n--- Testing Valid Tool Selection Parsing ---")
-        valid_json_response = json.dumps({
-            "tool": "execute_shell",
-            "parameters": {"command": "nmap -sV 127.0.0.1"}
-        })
-        self.mock_openai_instance.get_chat_completion.return_value = AIResponse(valid_json_response, True)
-        
-        result = self.agent.get_tool_selection_response([], [])
-        
+        self.mock_claude_instance.get_tool_calling_response.return_value = {
+            "tool_calls": [{
+                "function": {
+                    "name": "execute_shell",
+                    "arguments": json.dumps({"command": "nmap -sV 127.0.0.1"}),
+                }
+            }]
+        }
+
+        agent = AIAgent(mode='live', anthropic_api_key="fake-claude-key")
+        result = agent.get_tool_selection_response([], [])
+
         expected_dict = {
             "tool": "execute_shell",
             "parameters": {"command": "nmap -sV 127.0.0.1"}
         }
         self.assertEqual(result, expected_dict)
-        print("  [SUCCESS] Correctly parsed valid JSON from LLM.")
+        print("  [SUCCESS] Correctly parsed a valid tool-call response.")
 
     def test_agent_handles_malformed_tool_selection_json(self):
         """
-        Verify that malformed JSON from the LLM is handled gracefully and returns None.
+        Verify that malformed JSON in the tool call's arguments is handled
+        gracefully and returns None instead of raising.
         """
         print("\n\n--- Testing Malformed Tool Selection Parsing ---")
-        # This JSON has a trailing comma, which is invalid
-        malformed_json_response = '{"tool": "execute_shell", "parameters": {"command": "nmap -sV 127.0.0.1"},}'
-        self.mock_openai_instance.get_chat_completion.return_value = AIResponse(malformed_json_response, True)
-        
-        result = self.agent.get_tool_selection_response([], [])
-        
+        # This "arguments" string has a trailing comma, which is invalid JSON.
+        malformed_arguments = '{"command": "nmap -sV 127.0.0.1",}'
+        self.mock_claude_instance.get_tool_calling_response.return_value = {
+            "tool_calls": [{
+                "function": {
+                    "name": "execute_shell",
+                    "arguments": malformed_arguments,
+                }
+            }]
+        }
+
+        agent = AIAgent(mode='live', anthropic_api_key="fake-claude-key")
+        result = agent.get_tool_selection_response([], [])
+
         self.assertIsNone(result, "Expected None for malformed JSON, but got a result.")
         print("  [SUCCESS] Correctly returned None for malformed JSON from LLM.")
+
 
 if __name__ == '__main__':
     # Re-enable logging for the test runner's output

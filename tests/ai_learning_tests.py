@@ -42,9 +42,16 @@ class TestAILearningPipeline(unittest.TestCase):
     def setUpClass(cls):
         """Starts the AILearningServer in a background thread before any tests run."""
         cls.server_instance = AILearningServer()
-        
-        # This is the actual training function we will mock
-        def mock_training_process(job_id, params):
+        # The server only accepts jobs for models registered ahead of time.
+        cls.server_instance.register_training_job("test-model", lambda **kwargs: kwargs)
+
+        # This is the actual training function we will mock.
+        # Note: _run_training_process is a real instance method (self, job_id,
+        # params), so accessing it as self._run_training_process(...) always
+        # binds the instance as the first positional argument -- the mock
+        # must accept it too, even though it uses the closed-over
+        # cls.server_instance instead.
+        def mock_training_process(self, job_id, params):
             """A mock function that simulates a fast, successful training run."""
             cls.server_instance.jobs[job_id]["status"] = "RUNNING"
             time.sleep(2) # Simulate work
@@ -78,7 +85,7 @@ class TestAILearningPipeline(unittest.TestCase):
 
     def setUp(self):
         """Create a new facade instance for each test."""
-        self.facade = AILearningFacade(base_url=self.server_url)
+        self.facade = AILearningFacade(server_url=self.server_url)
 
     def test_full_training_job_lifecycle(self):
         """
