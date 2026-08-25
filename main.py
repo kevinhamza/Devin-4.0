@@ -14,7 +14,7 @@ import threading
 import os
 import json
 import argparse
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # --- Load Environment Variables ---
 from dotenv import load_dotenv
@@ -77,11 +77,17 @@ class DevinAGI:
     """
     The main class that orchestrates the entire AGI system.
     """
-    def __init__(self, use_voice: bool = False):
+    def __init__(self, use_voice: bool = False, permission_mode: Optional[str] = None):
         logger.info("Initializing Devin AGI...")
         self.mode = os.getenv("DEVIN_MODE", "live") # Read the mode
         self.is_running = True
         self.conversation_history: List[Dict] = []
+        # Mirrors Claude Code's permission modes:
+        #   default        -- ask for confirmation before a dangerous tool call (unchanged behavior)
+        #   auto_approve   -- run dangerous tools without asking (still subject to the ethical VETO check, which is never bypassable)
+        #   plan           -- describe every tool call instead of running any of them, so the user can review the whole plan first
+        #   bypass         -- alias for auto_approve
+        self.permission_mode = permission_mode or os.getenv("DEVIN_PERMISSION_MODE", "default")
 
         # --- 1. Start All Background Servers ---
         self.servers = self._start_background_servers()
@@ -226,6 +232,16 @@ class DevinAGI:
             hashing_tools=self.hashing_tools,
             symmetric_crypto=self.symmetric_crypto,
             asymmetric_crypto=self.asymmetric_crypto
+        )
+
+        # Sub-agent delegation (mirrors Claude Code's Task tool): a bounded,
+        # isolated sub-conversation using the same models/tools but its own
+        # fresh history, so a self-contained chunk of work doesn't have to
+        # pollute the main conversation with every intermediate step.
+        self.tool_executor._register_tool(
+            "delegate_subtask",
+            self.run_subagent,
+            "Delegates a focused, bounded sub-task to a fresh sub-agent with its own isolated conversation (same tools/models as the main assistant) -- use for self-contained work whose intermediate steps don't need to show up in the main conversation. Returns the sub-agent's final summary.",
         )
 
         self._log_integrated_repos()
@@ -410,7 +426,17 @@ class DevinAGI:
                         self.conversation_history.append({"role": "system", "content": f"Plan for {tool_call['tool']} seemed suboptimal or unsafe; skipped."})
                         continue
 
-                    if self.tool_executor.is_dangerous(tool_call['tool']):
+                    args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
+
+                    # Plan mode: describe every action instead of running any
+                    # of it, so the whole plan can be reviewed up front --
+                    # the ethical VETO check above still applies even here.
+                    if self.permission_mode == "plan":
+                        self.uim.display_message(f"○ [PLAN] {tool_call['tool']}({args_preview}) -- not executed (plan mode)", level='tool')
+                        self.conversation_history.append({"role": "tool", "content": f"(plan mode) {tool_call['tool']} described but not executed."})
+                        continue
+
+                    if self.tool_executor.is_dangerous(tool_call['tool']) and self.permission_mode not in ("auto_approve", "bypass"):
                         if not self.uim.ask_for_confirmation(f"The next action is potentially dangerous: {tool_call}. Do you want to proceed?"):
                             self.conversation_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
                             self.uim.display_message("Okay, I won't do that -- what would you like instead?", level='assistant')
@@ -418,7 +444,6 @@ class DevinAGI:
                             break
 
                     # ACT: show the call transparently, then execute it
-                    args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
                     self.uim.display_message(f"● {tool_call['tool']}({args_preview})", level='tool')
                     result = self.tool_executor.execute_tool(tool_call)
                     self.uim.display_message(f"  → {result}", level='tool')
@@ -439,6 +464,56 @@ class DevinAGI:
             # so context shrinks without losing what happened earlier.
             if len(self.conversation_history) > 200:
                 self._compact_conversation_history()
+
+    def run_subagent(self, goal: str, max_steps: int = 10) -> str:
+        """
+        Runs a focused sub-agent on one bounded goal, in its own isolated
+        conversation (not the main one), using the same AIAgent/tool
+        executor. Returns the sub-agent's final summary once it calls
+        task_complete or exhausts its step budget. Dangerous tools and the
+        ethical VETO check still apply exactly as in the main loop --
+        delegation narrows scope, it doesn't loosen safety.
+        """
+        sub_history: List[Dict] = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a focused sub-agent working on exactly one bounded task, delegated "
+                    "by the main assistant. Work efficiently and call task_complete with a clear, "
+                    "concise summary of what you found or did as soon as the task is done."
+                ),
+            },
+            {"role": "user", "content": goal},
+        ]
+
+        for _ in range(max_steps):
+            response = self.agent.get_tool_selection_response(sub_history, self.tool_executor.get_available_tools())
+            if not response or not isinstance(response, dict):
+                return "Sub-agent failed to get a usable response from the model."
+
+            if response.get("tool") == "task_complete":
+                return response.get("parameters", {}).get("reason", "Sub-task completed with no summary.")
+
+            tool_calls = response.get("tool_calls") or ([response] if "tool" in response else [])
+            for tool_call in tool_calls:
+                plan = Plan(steps=[tool_call])
+                violations = self.ethical_constraints.check_plan(plan)
+                if any(v.severity == "VETO" for v in violations):
+                    return f"Sub-agent aborted: '{tool_call['tool']}' would violate a core safety principle."
+
+                if self.tool_executor.is_dangerous(tool_call['tool']) and self.permission_mode not in ("auto_approve", "bypass"):
+                    if not self.uim.ask_for_confirmation(f"[sub-agent] wants to run a potentially dangerous action: {tool_call}. Proceed?"):
+                        sub_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
+                        continue
+
+                args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
+                self.uim.display_message(f"  ↳ [sub-agent] {tool_call['tool']}({args_preview})", level='tool')
+                result = self.tool_executor.execute_tool(tool_call)
+
+                sub_history.append({"role": "assistant", "content": json.dumps(tool_call)})
+                sub_history.append({"role": "tool", "content": json.dumps(result)})
+
+        return "Sub-agent reached its step limit without completing the task."
 
     def _compact_conversation_history(self, keep_tail: int = 60):
         """
@@ -487,6 +562,14 @@ if __name__ == "__main__":
     # --- Argument Parsing ---
     parser = argparse.ArgumentParser(description="Devin AGI - Self-Operating System")
     parser.add_argument("--voice", action="store_true", help="Enable voice input mode")
+    parser.add_argument(
+        "--permission-mode",
+        choices=["default", "auto_approve", "bypass", "plan"],
+        default=None,
+        help="How to handle dangerous tool calls: 'default' asks each time, "
+             "'auto_approve'/'bypass' run them without asking, 'plan' describes "
+             "every action without executing any of it. Defaults to $DEVIN_PERMISSION_MODE or 'default'.",
+    )
     args = parser.parse_args()
 
     # --- ASCII Art Banner ---
@@ -502,7 +585,7 @@ if __name__ == "__main__":
     
     agi = None
     try:
-        agi = DevinAGI(use_voice=args.voice)
+        agi = DevinAGI(use_voice=args.voice, permission_mode=args.permission_mode)
         agi.run()
     except KeyboardInterrupt:
         logger.info("User initiated shutdown (Ctrl+C).")
