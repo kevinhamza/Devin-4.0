@@ -375,19 +375,63 @@ class AIAgent:
         rather than requiring a paid Claude/OpenAI key. Ollama is the final
         fallback: a fully local, tool-capable model (e.g. llama3.1) that
         needs no API key and no internet connection at all.
+
+        This actually cascades through every *configured* provider in that
+        order until one produces a usable response, rather than picking the
+        first configured one and giving up entirely if it errors -- caught
+        live: with both an unreachable OpenAI key and a working Gemini key
+        configured, the old "pick the first non-None module" logic tried
+        OpenAI, got a connection error, and never even attempted Gemini.
         """
         logger.info("AIAgent is selecting a tool to achieve the goal...")
-        tool_selection_module = self.claude_module or self.openai_module or self.gemini_module or self.ollama_module
-        if not tool_selection_module:
+        candidates = [
+            ("Claude", self.claude_module),
+            ("OpenAI", self.openai_module),
+            ("Gemini", self.gemini_module),
+            ("Ollama", self.ollama_module),
+        ]
+        configured = [(name, module) for name, module in candidates if module]
+        if not configured:
             logger.error("No tool-calling-capable module (Claude, OpenAI, Gemini, or local Ollama) is configured.")
             return None
 
-        try:
-            # Use the most powerful model for this critical reasoning step
-            openai_tools = [{"type": "function", "function": tool} for tool in tools]
-            response_message = tool_selection_module.get_tool_calling_response(messages, openai_tools)
+        openai_tools = [{"type": "function", "function": tool} for tool in tools]
+        last_error: Optional[str] = None
 
-            if response_message and response_message.get("tool_calls"):
+        for name, module in configured:
+            try:
+                response_message = module.get_tool_calling_response(messages, openai_tools)
+            except Exception as e:
+                logger.warning(f"{name} raised an exception during tool selection; trying the next configured provider. Error: {e}")
+                last_error = str(e)
+                continue
+
+            if not response_message:
+                last_error = f"{name} returned no response."
+                continue
+
+            content = response_message.get("content")
+            # A provider reports its own failures without raising, but the
+            # shape differs by module: Claude/Gemini/Ollama return
+            # {"content": "Error: ...", ...}; ChatGPTModule returns
+            # {"error": str(e), "content": None} instead (caught live --
+            # the first version of this check only matched the "Error:"
+            # string prefix and let a None-content OpenAI failure through
+            # as if it were a legitimate "no tool needed" reply). Treat
+            # both shapes, and a bare None content, as a failure to cascade
+            # past rather than surfacing as Devin's answer.
+            is_error_response = (
+                response_message.get("error")
+                or (isinstance(content, str) and content.startswith("Error:"))
+                or content is None
+            )
+            if not response_message.get("tool_calls") and is_error_response:
+                error_detail = response_message.get("error") or content or "unknown error"
+                logger.warning(f"{name} reported an error; trying the next configured provider: {error_detail}")
+                last_error = str(error_detail)
+                continue
+
+            if response_message.get("tool_calls"):
                 # A single LLM turn can request more than one action (e.g.
                 # several independent reads before it needs their combined
                 # results) -- surface all of them under "tool_calls" rather
@@ -400,23 +444,28 @@ class AIAgent:
                     }
                     for call in response_message["tool_calls"]
                 ]
-                logger.info(f"AIAgent selected {len(selected_tools)} tool call(s): {[t['tool'] for t in selected_tools]}")
+                logger.info(f"AIAgent ({name}) selected {len(selected_tools)} tool call(s): {[t['tool'] for t in selected_tools]}")
                 result: Dict[str, Any] = {"tool_calls": selected_tools}
                 if response_message.get("thinking"):
                     result["thinking"] = response_message["thinking"]
                 return result
             else:
                 # The model decided not to call a tool and just responded with text.
-                # This can be interpreted as task completion or a request for clarification.
-                reason = response_message.get("content", "The model chose to respond instead of using a tool.")
+                # `or` (not dict.get's default) matters here: a provider that
+                # errors can return {"content": None}, where the key exists
+                # but the value doesn't -- .get(key, default) would still
+                # return None in that case, not the fallback text.
+                reason = content or "The model chose to respond instead of using a tool."
                 completion: Dict[str, Any] = {"tool": "task_complete", "parameters": {"reason": reason}}
                 if response_message.get("thinking"):
                     completion["thinking"] = response_message["thinking"]
                 return completion
 
-        except Exception as e:
-            logger.error(f"Failed to get or parse tool selection response: {e}")
-            return None
+        logger.error(f"All configured providers failed to produce a usable response. Last error: {last_error}")
+        return {
+            "tool": "task_complete",
+            "parameters": {"reason": f"Sorry, I couldn't reach any configured AI provider right now. (Last error: {last_error})"},
+        }
     
     def get_general_chat_response(self,
                                   messages: List[Dict[str, str]],

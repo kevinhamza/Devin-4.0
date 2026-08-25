@@ -151,8 +151,11 @@ class UserInteractionManager:
             # Render as markdown -- bold, code spans, lists in a reply
             # actually render instead of showing literal ** and backticks,
             # the same as Claude Code rendering its own responses.
+            # Markdown(None) raises TypeError -- caught live when a
+            # failed provider call propagated a None reply all the way
+            # here, so guard against it rather than crashing the session.
             console.print("[bold]Devin:[/bold]", end=" ")
-            console.print(Markdown(message))
+            console.print(Markdown(message) if message else "[dim](no response)[/dim]")
         else:
             console.print(message)
 
