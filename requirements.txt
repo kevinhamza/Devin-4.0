@@ -10,6 +10,7 @@ numpy
 pandas
 pyarrow
 websockets
+cmake
 
 # --- AI & Machine Learning ---
 openai
