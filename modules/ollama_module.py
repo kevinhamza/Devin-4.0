@@ -64,18 +64,22 @@ class OllamaModule:
         message = response.get("message", {}) if isinstance(response, dict) else dict(response.get("message", {}))
         tool_calls = message.get("tool_calls")
         if tool_calls:
-            call = tool_calls[0]
-            arguments = call["function"]["arguments"]
+            # Surface every requested call, not just the first, so a
+            # tool-capable local model can request more than one action
+            # per turn just like the cloud providers.
             return {
                 "role": "assistant",
                 "content": None,
-                "tool_calls": [{
-                    "id": f"ollama-{call['function']['name']}",
-                    "type": "function",
-                    "function": {
-                        "name": call["function"]["name"],
-                        "arguments": json.dumps(arguments) if isinstance(arguments, dict) else arguments,
-                    },
-                }],
+                "tool_calls": [
+                    {
+                        "id": f"ollama-{call['function']['name']}-{i}",
+                        "type": "function",
+                        "function": {
+                            "name": call["function"]["name"],
+                            "arguments": json.dumps(call["function"]["arguments"]) if isinstance(call["function"]["arguments"], dict) else call["function"]["arguments"],
+                        },
+                    }
+                    for i, call in enumerate(tool_calls)
+                ],
             }
         return {"role": "assistant", "content": message.get("content") or "Task appears complete."}

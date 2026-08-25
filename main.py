@@ -344,19 +344,30 @@ class DevinAGI:
 
             # Work through as many tool calls as this turn needs; a plain
             # conversational reply (task_complete) ends the turn immediately
-            # and hands control back to the user.
+            # and hands control back to the user. A single LLM response can
+            # now request multiple actions in one go (see
+            # AIAgent.get_tool_selection_response) -- each is still executed
+            # one at a time (true OS-level parallel execution would need
+            # threading the tool calls themselves), but the model is no
+            # longer truncated to one action per round-trip.
+            recent_signatures: List[str] = []
             for _ in range(20):
-                tool_call = self.agent.get_tool_selection_response(
+                response = self.agent.get_tool_selection_response(
                     self.conversation_history,
                     self.tool_executor.get_available_tools()
                 )
 
-                if not tool_call or not isinstance(tool_call, dict) or "tool" not in tool_call:
+                if not response or not isinstance(response, dict):
                     self.uim.display_message("Sorry, I didn't get a usable response there -- could you rephrase?", level='error')
                     break
 
-                if tool_call.get("tool") == "task_complete":
-                    reply = tool_call.get("parameters", {}).get("reason", "...")
+                if response.get("thinking"):
+                    # Real reasoning transparency (Claude's extended thinking) --
+                    # shown distinctly from the tool calls/final reply below.
+                    self.uim.display_message(f"(thinking) {response['thinking']}", level='tool')
+
+                if response.get("tool") == "task_complete":
+                    reply = response.get("parameters", {}).get("reason", "...")
                     self.uim.display_message(reply, level='assistant')
                     self.conversation_history.append({"role": "assistant", "content": reply})
                     self.long_term_memory.add_memory(
@@ -365,42 +376,103 @@ class DevinAGI:
                     )
                     break
 
-                # VERIFY & CONSENT: check the plan against ethical and utility functions
-                plan = Plan(steps=[tool_call])
-                violations = self.ethical_constraints.check_plan(plan)
-                if any(v.severity == "VETO" for v in violations):
-                    self.uim.display_message(f"That would violate a core safety principle, so I won't do it: {tool_call['tool']}", level='error')
-                    self.conversation_history.append({"role": "system", "content": f"Ethical VETO on {tool_call['tool']}."})
+                tool_calls = response.get("tool_calls") or ([response] if "tool" in response else [])
+                if not tool_calls:
+                    self.uim.display_message("Sorry, I didn't get a usable response there -- could you rephrase?", level='error')
                     break
 
-                utility_score = self.utility_function.evaluate_plan(plan, user_input, [])
-                if utility_score.total_utility < 0.1: # Arbitrary threshold for "good enough"
-                    self.conversation_history.append({"role": "system", "content": "That plan seems suboptimal or unsafe. Please propose a different approach."})
-                    continue
+                if len(tool_calls) > 1:
+                    self.uim.display_message(f"(requesting {len(tool_calls)} actions this turn)", level='tool')
 
-                if self.tool_executor.is_dangerous(tool_call['tool']):
-                    if not self.uim.ask_for_confirmation(f"The next action is potentially dangerous: {tool_call}. Do you want to proceed?"):
-                        self.conversation_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
-                        self.uim.display_message("Okay, I won't do that -- what would you like instead?", level='assistant')
+                denied = False
+                for tool_call in tool_calls:
+                    # Loop-detection: if the exact same call repeats three
+                    # times in a row, the agent is stuck, not making
+                    # progress -- pause and ask rather than burning the
+                    # whole step budget on a spinning wheel.
+                    signature = f"{tool_call['tool']}:{json.dumps(tool_call.get('parameters', {}), sort_keys=True)}"
+                    recent_signatures.append(signature)
+                    if len(recent_signatures) >= 3 and len(set(recent_signatures[-3:])) == 1:
+                        self.uim.display_message(f"I keep repeating the same action ({tool_call['tool']}) without new progress -- pausing here. What would you like to do?", level='assistant')
+                        denied = True
                         break
 
-                # ACT: show the call transparently, then execute it
-                args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
-                self.uim.display_message(f"● {tool_call['tool']}({args_preview})", level='tool')
-                result = self.tool_executor.execute_tool(tool_call)
-                self.uim.display_message(f"  → {result}", level='tool')
+                    # VERIFY & CONSENT: check the plan against ethical and utility functions
+                    plan = Plan(steps=[tool_call])
+                    violations = self.ethical_constraints.check_plan(plan)
+                    if any(v.severity == "VETO" for v in violations):
+                        self.uim.display_message(f"That would violate a core safety principle, so I won't do it: {tool_call['tool']}", level='error')
+                        self.conversation_history.append({"role": "system", "content": f"Ethical VETO on {tool_call['tool']}."})
+                        continue
 
-                # PERCEIVE & UPDATE: add the action and result to history
-                self.conversation_history.append({"role": "assistant", "content": json.dumps(tool_call)})
-                self.conversation_history.append({"role": "tool", "content": json.dumps(result)})
-                self.working_memory.add_item(f"step_{len(self.conversation_history)}", {"tool_call": tool_call, "result": result})
+                    utility_score = self.utility_function.evaluate_plan(plan, user_input, [])
+                    if utility_score.total_utility < 0.1: # Arbitrary threshold for "good enough"
+                        self.conversation_history.append({"role": "system", "content": f"Plan for {tool_call['tool']} seemed suboptimal or unsafe; skipped."})
+                        continue
+
+                    if self.tool_executor.is_dangerous(tool_call['tool']):
+                        if not self.uim.ask_for_confirmation(f"The next action is potentially dangerous: {tool_call}. Do you want to proceed?"):
+                            self.conversation_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
+                            self.uim.display_message("Okay, I won't do that -- what would you like instead?", level='assistant')
+                            denied = True
+                            break
+
+                    # ACT: show the call transparently, then execute it
+                    args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
+                    self.uim.display_message(f"● {tool_call['tool']}({args_preview})", level='tool')
+                    result = self.tool_executor.execute_tool(tool_call)
+                    self.uim.display_message(f"  → {result}", level='tool')
+
+                    # PERCEIVE & UPDATE: add the action and result to history
+                    self.conversation_history.append({"role": "assistant", "content": json.dumps(tool_call)})
+                    self.conversation_history.append({"role": "tool", "content": json.dumps(result)})
+                    self.working_memory.add_item(f"step_{len(self.conversation_history)}", {"tool_call": tool_call, "result": result})
+
+                if denied:
+                    break
             else:
                 self.uim.display_message("That's taking a lot of steps -- pausing here so we can check in. What would you like to do next?", level='assistant')
 
-            # Keep history from growing unbounded across a long session
-            # without ending the conversation the way a hard cap used to.
+            # Compact history instead of blindly discarding it once a long
+            # session gets big: summarize the older half into one system
+            # message via the LLM itself, then keep the recent tail intact,
+            # so context shrinks without losing what happened earlier.
             if len(self.conversation_history) > 200:
-                self.conversation_history = self.conversation_history[-100:]
+                self._compact_conversation_history()
+
+    def _compact_conversation_history(self, keep_tail: int = 60):
+        """
+        Summarizes the older portion of a long conversation into one
+        compact system message via the LLM itself, instead of blindly
+        discarding it -- what happened earlier stays available in
+        condensed form rather than being silently forgotten once history
+        gets long.
+        """
+        old_messages, recent_messages = self.conversation_history[:-keep_tail], self.conversation_history[-keep_tail:]
+        transcript = "\n".join(f"{m.get('role')}: {m.get('content')}" for m in old_messages if m.get("content"))
+
+        provider = (
+            AIProvider.ANTHROPIC if self.agent.claude_module else
+            AIProvider.OPENAI if self.agent.openai_module else
+            AIProvider.GOOGLE if self.agent.gemini_module else
+            AIProvider.OLLAMA
+        )
+        summary_prompt = [
+            {"role": "system", "content": "Summarize the following conversation transcript concisely -- keep any facts, decisions, file paths, or outcomes that might matter later. A few sentences is enough."},
+            {"role": "user", "content": transcript[:12000]},
+        ]
+        try:
+            summary = self.agent.get_general_chat_response(summary_prompt, provider=provider)
+        except Exception as e:
+            summary = None
+            logger.warning(f"History compaction failed, falling back to plain truncation: {e}")
+
+        if summary and not summary.startswith("Error:"):
+            self.conversation_history = [{"role": "system", "content": f"[Summary of earlier conversation]: {summary}"}] + recent_messages
+            logger.info(f"Compacted conversation history ({len(old_messages)} messages -> 1 summary).")
+        else:
+            self.conversation_history = recent_messages
+            logger.warning("Compaction summary unavailable; truncated history instead.")
 
     def shutdown(self):
         """Gracefully shuts down all components."""

@@ -388,18 +388,31 @@ class AIAgent:
             response_message = tool_selection_module.get_tool_calling_response(messages, openai_tools)
 
             if response_message and response_message.get("tool_calls"):
-                tool_call = response_message["tool_calls"][0]
-                selected_tool = {
-                    "tool": tool_call["function"]["name"],
-                    "parameters": json.loads(tool_call["function"]["arguments"])
-                }
-                logger.info(f"AIAgent selected tool: {selected_tool['tool']}")
-                return selected_tool
+                # A single LLM turn can request more than one action (e.g.
+                # several independent reads before it needs their combined
+                # results) -- surface all of them under "tool_calls" rather
+                # than truncating to the first, so the caller can actually
+                # execute a multi-action turn instead of one call at a time.
+                selected_tools = [
+                    {
+                        "tool": call["function"]["name"],
+                        "parameters": json.loads(call["function"]["arguments"]),
+                    }
+                    for call in response_message["tool_calls"]
+                ]
+                logger.info(f"AIAgent selected {len(selected_tools)} tool call(s): {[t['tool'] for t in selected_tools]}")
+                result: Dict[str, Any] = {"tool_calls": selected_tools}
+                if response_message.get("thinking"):
+                    result["thinking"] = response_message["thinking"]
+                return result
             else:
                 # The model decided not to call a tool and just responded with text.
                 # This can be interpreted as task completion or a request for clarification.
                 reason = response_message.get("content", "The model chose to respond instead of using a tool.")
-                return {"tool": "task_complete", "parameters": {"reason": reason}}
+                completion: Dict[str, Any] = {"tool": "task_complete", "parameters": {"reason": reason}}
+                if response_message.get("thinking"):
+                    completion["thinking"] = response_message["thinking"]
+                return completion
 
         except Exception as e:
             logger.error(f"Failed to get or parse tool selection response: {e}")

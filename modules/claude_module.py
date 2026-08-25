@@ -31,6 +31,10 @@ class ClaudeModule:
     """
     DEFAULT_MODEL = "claude-opus-5"
     DEFAULT_MAX_TOKENS = 4096
+    # Thinking output counts against max_tokens, so tool-calling requests
+    # (which enable adaptive thinking, see get_tool_calling_response) use a
+    # larger budget than plain chat.
+    THINKING_MAX_TOKENS = 8192
 
     def __init__(self, api_key: Optional[str] = None):
         if not ANTHROPIC_AVAILABLE:
@@ -128,9 +132,13 @@ class ClaudeModule:
         claude_tools = self._convert_tools(tools)
         kwargs: Dict[str, Any] = {
             "model": self.DEFAULT_MODEL,
-            "max_tokens": self.DEFAULT_MAX_TOKENS,
+            "max_tokens": self.THINKING_MAX_TOKENS,
             "tools": claude_tools,
             "messages": claude_messages,
+            # Real reasoning transparency for the "thinking" step, not just
+            # the final tool choice -- surfaced back to the caller below so
+            # it can be shown to the user, e.g. as a "Devin (thinking):" line.
+            "thinking": {"type": "adaptive"},
         }
         if system_prompt:
             kwargs["system"] = system_prompt
@@ -152,17 +160,25 @@ class ClaudeModule:
 
         text_blocks = [block.text for block in response.content if block.type == "text"]
         tool_use_blocks = [block for block in response.content if block.type == "tool_use"]
+        thinking = " ".join(block.thinking for block in response.content if block.type == "thinking" and getattr(block, "thinking", None))
 
         if tool_use_blocks:
-            block = tool_use_blocks[0]
+            # Claude can request multiple tool calls in a single response
+            # (e.g. independent reads before it needs to reason over their
+            # combined results) -- surface all of them instead of
+            # discarding everything but the first.
             return {
                 "role": "assistant",
                 "content": " ".join(text_blocks) or None,
-                "tool_calls": [{
-                    "id": block.id,
-                    "type": "function",
-                    "function": {"name": block.name, "arguments": json.dumps(block.input)},
-                }],
+                "thinking": thinking or None,
+                "tool_calls": [
+                    {
+                        "id": block.id,
+                        "type": "function",
+                        "function": {"name": block.name, "arguments": json.dumps(block.input)},
+                    }
+                    for block in tool_use_blocks
+                ],
             }
 
-        return {"role": "assistant", "content": " ".join(text_blocks) or "Task appears complete."}
+        return {"role": "assistant", "content": " ".join(text_blocks) or "Task appears complete.", "thinking": thinking or None}

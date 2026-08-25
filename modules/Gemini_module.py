@@ -631,15 +631,21 @@ class GeminiModule:
             return {"content": self._handle_api_error(error, "tool-calling request")}
 
         if response.function_calls:
-            call = response.function_calls[0]
+            # Gemini can return several function_calls in one response when
+            # a step decomposes into independent actions -- surface all of
+            # them instead of discarding everything but the first, so the
+            # agent loop can actually execute a parallel/multi-action turn.
             return {
                 "role": "assistant",
                 "content": None,
-                "tool_calls": [{
-                    "id": call.id or f"gemini-{call.name}",
-                    "type": "function",
-                    "function": {"name": call.name, "arguments": json.dumps(call.args or {})},
-                }],
+                "tool_calls": [
+                    {
+                        "id": call.id or f"gemini-{call.name}-{i}",
+                        "type": "function",
+                        "function": {"name": call.name, "arguments": json.dumps(call.args or {})},
+                    }
+                    for i, call in enumerate(response.function_calls)
+                ],
             }
 
         return {"role": "assistant", "content": response.text or "Task appears complete."}
