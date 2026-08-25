@@ -37,3 +37,12 @@
 [submodule "external/nishang"]
 	path = external/nishang
 	url = https://github.com/kevinhamza/nishang
+[submodule "external/Devin"]
+	path = external/Devin
+	url = https://github.com/kevinhamza/Devin
+[submodule "external/Devin-2.0"]
+	path = external/Devin-2.0
+	url = https://github.com/kevinhamza/Devin-2.0
+[submodule "external/Devin-3.0"]
+	path = external/Devin-3.0
+	url = https://github.com/kevinhamza/Devin-3.0
