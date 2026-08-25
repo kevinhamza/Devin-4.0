@@ -11,6 +11,10 @@ pandas
 pyarrow
 websockets
 cmake
+# Terminal UI (modules/user_interaction_module.py) -- markdown-rendered
+# replies, styled prompts/panels, and a thinking spinner, closer to Claude
+# Code's own CLI than hand-rolled ANSI escape codes.
+rich
 
 # --- AI & Machine Learning ---
 openai

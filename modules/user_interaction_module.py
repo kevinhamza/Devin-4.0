@@ -1,11 +1,24 @@
 # Devin/modules/user_interaction_module.py
 # Purpose: The central module for handling all text and voice-based interaction
 #          between the AGI and the human operator.
+#
+# Rendering uses `rich` (already a transitive dependency, now made explicit
+# in requirements.txt) instead of hand-rolled ANSI escape codes, so the
+# terminal experience -- markdown-rendered replies, a styled prompt, a
+# spinner while the model is thinking, dim/understated tool-call lines --
+# reads closer to Claude Code's CLI rather than a wall of [INFO]/[SUCCESS]
+# log-style lines.
 
+import contextlib
 import logging
 import sys
 import os
 from typing import Optional
+
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.prompt import Prompt
 
 # Try to import speech recognition
 try:
@@ -23,7 +36,11 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 logger.propagate = False
 
+console = Console()
+
 # --- ANSI Color Codes for Formatted Output ---
+# Kept for any code that still references Colors directly; display_message
+# itself now renders through `console` below.
 class Colors:
     """Container for ANSI color codes."""
     HEADER = '\033[95m'
@@ -61,71 +78,91 @@ class UserInteractionManager:
         Prompts the user for general input (text or voice).
         """
         if self.use_voice and self.recognizer:
-            print(f"{Colors.OKCYAN}{Colors.BOLD}[VOICE PROMPT] {prompt}{Colors.ENDC}")
-            print(f"{Colors.HEADER}Listening... (Press Ctrl+C to switch to text){Colors.ENDC}")
+            console.print(f"[bold cyan]🎙  {prompt.strip()}[/bold cyan]")
+            console.print("[dim]Listening... (Press Ctrl+C to switch to text)[/dim]")
             try:
                 text = self.recognizer.listen_and_transcribe(engine='google')
                 if text:
-                    print(f"{Colors.OKGREEN}[YOU SAID] {text}{Colors.ENDC}")
+                    console.print(f"[green]You said:[/green] {text}")
                     return text.strip()
                 else:
-                    print(f"{Colors.WARNING}No speech detected. Falling back to text input.{Colors.ENDC}")
+                    console.print("[yellow]No speech detected. Falling back to text input.[/yellow]")
             except KeyboardInterrupt:
-                print(f"\n{Colors.WARNING}Voice input interrupted. Switching to text for this prompt.{Colors.ENDC}")
+                console.print("\n[yellow]Voice input interrupted. Switching to text for this prompt.[/yellow]")
             except Exception as e:
                 logger.error(f"Error during voice input: {e}")
 
         try:
-            # Use a distinct color for user prompts
-            full_prompt = f"{Colors.OKCYAN}{Colors.BOLD}[PROMPT] {prompt}{Colors.ENDC} "
-            response = input(full_prompt)
-            return response.strip()
+            # A bare "❯" prompt, the same understated style Claude Code's
+            # own input line uses. Uses console.print + input() rather than
+            # rich's Prompt.ask, which always appends its own ": " suffix --
+            # main.py's callers already pass a trailing "label: " string
+            # (a leftover from the old [PROMPT] style), so Prompt.ask would
+            # double it up into "label: :".
+            label = prompt.strip()
+            console.print(f"[bold cyan]❯[/bold cyan] {label}" if label else "[bold cyan]❯[/bold cyan]", end=" ")
+            return input().strip()
         except KeyboardInterrupt:
             logger.warning("\nUser interrupted input. Returning empty string.")
             return ""
+        except EOFError:
+            return "exit"
 
     def ask_for_confirmation(self, prompt: str, is_dangerous: bool = False) -> bool:
         """
         Asks the user a yes/no question and returns a boolean.
         """
-        if is_dangerous:
-            warning_header = f"{Colors.FAIL}{Colors.BOLD}{'='*60}\n"
-            warning_header += "!!! DANGEROUS ACTION REQUIRES CONFIRMATION !!!\n"
-            warning_header += f"{'='*60}{Colors.ENDC}"
-            
-            full_prompt = f"\n{warning_header}\n{Colors.WARNING}{prompt}{Colors.ENDC}\n"
-            prompt_suffix = f"{Colors.BOLD}Are you absolutely sure you want to proceed? (yes/no):{Colors.ENDC} "
-        else:
-            full_prompt = f"{Colors.WARNING}[CONFIRM] {prompt}{Colors.ENDC}"
-            prompt_suffix = " (y/n): "
-
         try:
-            response = input(full_prompt + prompt_suffix).lower().strip()
-            if response in ['y', 'yes']:
-                return True
+            if is_dangerous:
+                console.print(Panel(
+                    prompt,
+                    title="[bold red]⚠ Dangerous action requires confirmation[/bold red]",
+                    border_style="red",
+                ))
+                response = Prompt.ask("[bold red]Are you absolutely sure you want to proceed?[/bold red] (yes/no)").lower().strip()
             else:
-                return False
+                response = Prompt.ask(f"[yellow]{prompt}[/yellow] (y/n)").lower().strip()
+            return response in ("y", "yes")
         except KeyboardInterrupt:
             logger.warning("\nUser interrupted confirmation. Defaulting to NO.")
+            return False
+        except EOFError:
             return False
 
     def display_message(self, message: str, level: str = 'info'):
         """Displays a formatted message to the user."""
         if level == 'info':
-            print(f"{Colors.OKBLUE}[INFO] {message}{Colors.ENDC}")
+            console.print(f"[blue]{message}[/blue]")
         elif level == 'success':
-            print(f"{Colors.OKGREEN}[SUCCESS] {message}{Colors.ENDC}")
+            console.print(f"[green]✓ {message}[/green]")
         elif level == 'warning':
-            print(f"{Colors.WARNING}[WARNING] {message}{Colors.ENDC}")
+            console.print(f"[yellow]⚠ {message}[/yellow]")
         elif level == 'error':
-            print(f"{Colors.FAIL}[ERROR] {message}{Colors.ENDC}")
+            console.print(f"[red]✗ {message}[/red]")
         elif level == 'tool':
-            # Distinct styling for a tool call/result, shown transparently
-            # as it happens -- the same visual role Claude Code's "●
-            # Running <tool>" line plays: the user sees exactly what
-            # Devin is doing, not just a final answer.
-            print(f"{Colors.OKCYAN}{message}{Colors.ENDC}")
+            # Dim, understated styling for a tool call/result shown
+            # transparently as it happens -- the same visual role Claude
+            # Code's own tool-call lines play: seen, but not shouting for
+            # attention the way the final reply should.
+            console.print(f"[dim cyan]{message}[/dim cyan]")
+        elif level == 'thinking':
+            console.print(f"[dim italic]∴ {message}[/dim italic]")
         elif level == 'assistant':
-            print(f"{Colors.BOLD}Devin:{Colors.ENDC} {message}")
+            # Render as markdown -- bold, code spans, lists in a reply
+            # actually render instead of showing literal ** and backticks,
+            # the same as Claude Code rendering its own responses.
+            console.print("[bold]Devin:[/bold]", end=" ")
+            console.print(Markdown(message))
         else:
-            print(message)
+            console.print(message)
+
+    @contextlib.contextmanager
+    def thinking_indicator(self, message: str = "Devin is thinking..."):
+        """
+        A spinner shown while waiting on a model response, the same role
+        Claude Code's own transient status line plays. Usage:
+            with self.uim.thinking_indicator():
+                response = self.agent.get_tool_selection_response(...)
+        """
+        with console.status(f"[cyan]{message}[/cyan]", spinner="dots"):
+            yield

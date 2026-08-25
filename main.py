@@ -368,10 +368,11 @@ class DevinAGI:
             # longer truncated to one action per round-trip.
             recent_signatures: List[str] = []
             for _ in range(20):
-                response = self.agent.get_tool_selection_response(
-                    self.conversation_history,
-                    self.tool_executor.get_available_tools()
-                )
+                with self.uim.thinking_indicator():
+                    response = self.agent.get_tool_selection_response(
+                        self.conversation_history,
+                        self.tool_executor.get_available_tools()
+                    )
 
                 if not response or not isinstance(response, dict):
                     self.uim.display_message("Sorry, I didn't get a usable response there -- could you rephrase?", level='error')
@@ -380,7 +381,7 @@ class DevinAGI:
                 if response.get("thinking"):
                     # Real reasoning transparency (Claude's extended thinking) --
                     # shown distinctly from the tool calls/final reply below.
-                    self.uim.display_message(f"(thinking) {response['thinking']}", level='tool')
+                    self.uim.display_message(response["thinking"], level='thinking')
 
                 if response.get("tool") == "task_complete":
                     reply = response.get("parameters", {}).get("reason", "...")
@@ -487,7 +488,8 @@ class DevinAGI:
         ]
 
         for _ in range(max_steps):
-            response = self.agent.get_tool_selection_response(sub_history, self.tool_executor.get_available_tools())
+            with self.uim.thinking_indicator("Sub-agent is thinking..."):
+                response = self.agent.get_tool_selection_response(sub_history, self.tool_executor.get_available_tools())
             if not response or not isinstance(response, dict):
                 return "Sub-agent failed to get a usable response from the model."
 
@@ -572,17 +574,22 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # --- ASCII Art Banner ---
-    print(r"""
-    ██████╗ ███████╗██╗   ██╗██╗███╗   ██╗
-    ██╔══██╗██╔════╝██║   ██║██║████╗  ██║
-    ██║  ██║█████╗  ██║   ██║██║██╔██╗ ██║
-    ██║  ██║██╔══╝  ╚██╗ ██╔╝██║██║╚██╗██║
-    ██████╔╝███████╗ ╚████╔╝ ██║██║ ╚████║
-    ╚═════╝ ╚══════╝  ╚═══╝  ╚═╝╚═╝  ╚═══╝
-    --- Artificial General Intelligence v1.0.0 ---
-    """)
-    
+    # --- Startup Banner ---
+    # A single bordered summary box -- name, mode, cwd, permission mode --
+    # the same role Claude Code's own startup panel plays, instead of a
+    # plain ASCII art print with no session context in it.
+    from rich.console import Console as _Console
+    from rich.panel import Panel as _Panel
+    _console = _Console()
+    _console.print(_Panel(
+        f"[bold]🦞 Devin AGI[/bold]  [dim]v1.0.0[/dim]\n"
+        f"[dim]cwd:[/dim] {os.getcwd()}\n"
+        f"[dim]mode:[/dim] {os.getenv('DEVIN_MODE', 'live')}"
+        f"   [dim]permission:[/dim] {args.permission_mode or os.getenv('DEVIN_PERMISSION_MODE', 'default')}"
+        f"   [dim]voice:[/dim] {'on' if args.voice else 'off'}",
+        border_style="cyan",
+    ))
+
     agi = None
     try:
         agi = DevinAGI(use_voice=args.voice, permission_mode=args.permission_mode)
