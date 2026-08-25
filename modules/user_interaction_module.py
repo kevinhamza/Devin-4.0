@@ -119,5 +119,13 @@ class UserInteractionManager:
             print(f"{Colors.WARNING}[WARNING] {message}{Colors.ENDC}")
         elif level == 'error':
             print(f"{Colors.FAIL}[ERROR] {message}{Colors.ENDC}")
+        elif level == 'tool':
+            # Distinct styling for a tool call/result, shown transparently
+            # as it happens -- the same visual role Claude Code's "●
+            # Running <tool>" line plays: the user sees exactly what
+            # Devin is doing, not just a final answer.
+            print(f"{Colors.OKCYAN}{message}{Colors.ENDC}")
+        elif level == 'assistant':
+            print(f"{Colors.BOLD}Devin:{Colors.ENDC} {message}")
         else:
             print(message)

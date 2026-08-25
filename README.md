@@ -78,14 +78,15 @@ Everything else in `.env` (Telegram, VirusTotal, cloud provider credentials, rob
 ### 4. Running Devin
 
 ```bash
-python main.py            # Text mode -- type your goal when prompted
-python main.py --voice    # Voice mode -- speak your goal instead
+python main.py            # Text mode -- chat with Devin
+python main.py --voice    # Voice mode -- speak instead of typing
 ```
 
 **What happens on startup**, so you're not surprised:
 1. Four background servers start (cloud integration, analytics, mobile integration, AI learning — ports 5002/5004/5006/5007). A cloud-integration error with no cloud credentials configured is expected and harmless.
 2. Devin indexes its own source code for the code-retrieval tool. This takes a few seconds.
-3. You're prompted for your goal.
+3. It logs exactly which vendored/integrated external repos (self-operating-computer, hexstrike-ai, every `external/` submodule) are wired in and how, so integration status is visible at every boot, not just documented.
+4. You land in a normal, continuous conversation -- ask a question, ask Devin to do something, or just chat, and keep talking after each reply instead of the process ending after one task. Every tool call it makes is shown transparently (`● tool_name(args)` then the result) before it continues, the same way Claude Code shows its tool use. Type `exit` to quit.
 
 ### 5. Accessing the Live Canvas
 

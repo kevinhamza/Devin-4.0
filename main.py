@@ -287,83 +287,120 @@ class DevinAGI:
         return threads
 
     def run(self):
-        """The main operational loop of the AGI."""
-        goal = self.uim.get_user_input("\nPlease state your high-level goal: ")
-        self.conversation_history.append({"role": "user", "content": f"My goal is: {goal}"})
+        """
+        The main interactive loop -- a genuine, continuous conversation
+        rather than a single goal-in/task-out run. Each user message can be
+        plain chat or a task; Devin replies conversationally when there's
+        nothing to do, or works through tool calls (shown transparently,
+        one line per call and result, the way Claude Code shows "Running
+        <tool>...") when there is. Control returns to the user after each
+        turn instead of the process ending once one goal completes.
+        """
+        self.uim.display_message(
+            "🦞 Devin is ready. Talk to it like you would talk to any capable assistant -- "
+            "ask a question, ask it to do something, or just chat. Type 'exit' to quit.",
+            level='info',
+        )
 
-        # Recall anything relevant from past sessions before planning, so the
-        # agent isn't starting from a blank slate every run.
-        relevant_memories = self.long_term_memory.retrieve_relevant_memories(goal, top_k=3)
-        if relevant_memories:
-            recalled = "\n".join(f"- {m['metadata'].get('content_preview', '')}" for m in relevant_memories)
-            self.conversation_history.append({
-                "role": "system",
-                "content": f"Relevant memories from past sessions:\n{recalled}",
-            })
-        self.working_memory.add_item("current_goal", goal)
+        # A conversation with no system prompt has no defined persona at
+        # all -- the model just sees a bare user message. This is what
+        # actually gives Devin a consistent, thoughtful voice across turns
+        # rather than a generic one that varies with whatever the
+        # underlying model defaults to.
+        self.conversation_history.append({
+            "role": "system",
+            "content": (
+                "You are Devin, a capable AI engineer and assistant with real control over this "
+                "computer: you can run shell commands, read/write files, operate the mouse and "
+                "keyboard, browse the web, and call dozens of other tools. Talk like a sharp, "
+                "direct colleague, not a chatbot -- be concise, get to the point, and skip filler "
+                "and hedging. Use a tool when the user's request needs one; otherwise just answer. "
+                "If a request is ambiguous, ask a short clarifying question instead of guessing. "
+                "If a request is genuinely dangerous or unauthorized (e.g. attacking a system you "
+                "don't have permission to test), say so plainly and decline, rather than doing it "
+                "quietly or refusing without explanation."
+            ),
+        })
 
         while self.is_running:
-            # 1. THINK: Agent decides the next step
-            tool_call = self.agent.get_tool_selection_response(
-                self.conversation_history,
-                self.tool_executor.get_available_tools()
-            )
-
-            if not tool_call or not isinstance(tool_call, dict) or "tool" not in tool_call:
-                logger.info("Agent decided no further action is needed or failed to select a tool. Concluding task.")
+            user_input = self.uim.get_user_input("\nYou: ")
+            if not user_input.strip():
+                continue
+            if user_input.strip().lower() in ("exit", "quit", "bye"):
+                self.uim.display_message("Goodbye!", level='info')
                 break
-            if tool_call.get("tool") == "task_complete":
-                reason = tool_call.get("parameters", {}).get("reason", "No specific reason provided.")
-                self.uim.display_message(f"Agent has concluded the task. Reason: {reason}", level='success')
-                self.long_term_memory.add_memory(
-                    f"Goal: {goal}\nOutcome: completed. {reason}",
-                    metadata={"type": "task_history", "outcome": "completed"},
+
+            # Recall anything relevant from past sessions before planning, so
+            # the agent isn't starting from a blank slate every turn.
+            relevant_memories = self.long_term_memory.retrieve_relevant_memories(user_input, top_k=3)
+            if relevant_memories:
+                recalled = "\n".join(f"- {m['metadata'].get('content_preview', '')}" for m in relevant_memories)
+                self.conversation_history.append({
+                    "role": "system",
+                    "content": f"Relevant memories from past sessions:\n{recalled}",
+                })
+            self.conversation_history.append({"role": "user", "content": user_input})
+            self.working_memory.add_item("current_goal", user_input)
+
+            # Work through as many tool calls as this turn needs; a plain
+            # conversational reply (task_complete) ends the turn immediately
+            # and hands control back to the user.
+            for _ in range(20):
+                tool_call = self.agent.get_tool_selection_response(
+                    self.conversation_history,
+                    self.tool_executor.get_available_tools()
                 )
-                break
 
-            # 2. VERIFY & CONSENT: Check the plan against ethical and utility functions
-            plan = Plan(steps=[tool_call])
-            violations = self.ethical_constraints.check_plan(plan)
-            if any(v.severity == "VETO" for v in violations):
-                logger.error(f"Ethical VETO: Plan '{tool_call}' violates a core principle. Aborting.")
-                break
-                
-            utility_score = self.utility_function.evaluate_plan(plan, goal, [])
-            if utility_score.total_utility < 0.1: # Arbitrary threshold for "good enough"
-                 logger.warning(f"Plan '{tool_call}' has low utility ({utility_score.total_utility:.2f}). Asking AI to reconsider.")
-                 self.conversation_history.append({"role": "system", "content": "That plan seems suboptimal or unsafe. Please propose a different approach."})
-                 continue
-            
-            if self.tool_executor.is_dangerous(tool_call['tool']):
-                if not self.uim.ask_for_confirmation(f"The next action is potentially dangerous: {tool_call}. Do you want to proceed?"):
-                    logger.warning("Action aborted by user consent.")
-                    self.conversation_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
+                if not tool_call or not isinstance(tool_call, dict) or "tool" not in tool_call:
+                    self.uim.display_message("Sorry, I didn't get a usable response there -- could you rephrase?", level='error')
+                    break
+
+                if tool_call.get("tool") == "task_complete":
+                    reply = tool_call.get("parameters", {}).get("reason", "...")
+                    self.uim.display_message(reply, level='assistant')
+                    self.conversation_history.append({"role": "assistant", "content": reply})
+                    self.long_term_memory.add_memory(
+                        f"User: {user_input}\nDevin: {reply}",
+                        metadata={"type": "conversation"},
+                    )
+                    break
+
+                # VERIFY & CONSENT: check the plan against ethical and utility functions
+                plan = Plan(steps=[tool_call])
+                violations = self.ethical_constraints.check_plan(plan)
+                if any(v.severity == "VETO" for v in violations):
+                    self.uim.display_message(f"That would violate a core safety principle, so I won't do it: {tool_call['tool']}", level='error')
+                    self.conversation_history.append({"role": "system", "content": f"Ethical VETO on {tool_call['tool']}."})
+                    break
+
+                utility_score = self.utility_function.evaluate_plan(plan, user_input, [])
+                if utility_score.total_utility < 0.1: # Arbitrary threshold for "good enough"
+                    self.conversation_history.append({"role": "system", "content": "That plan seems suboptimal or unsafe. Please propose a different approach."})
                     continue
 
-            # 3. ACT: Execute the approved plan
-            result = self.tool_executor.execute_tool(tool_call)
-            
-            # 4. PERCEIVE & UPDATE: Add the action and result to history
-            self.conversation_history.append({"role": "assistant", "content": json.dumps(tool_call)})
-            self.conversation_history.append({"role": "tool", "content": json.dumps(result)})
-            self.working_memory.add_item(f"step_{len(self.conversation_history)}", {"tool_call": tool_call, "result": result})
+                if self.tool_executor.is_dangerous(tool_call['tool']):
+                    if not self.uim.ask_for_confirmation(f"The next action is potentially dangerous: {tool_call}. Do you want to proceed?"):
+                        self.conversation_history.append({"role": "system", "content": f"User denied permission to execute {tool_call['tool']}."})
+                        self.uim.display_message("Okay, I won't do that -- what would you like instead?", level='assistant')
+                        break
 
-            # Check for completion (simplified)
-            if "complete" in str(result).lower() or "finished" in str(result).lower():
-                 logger.info("Agent reported task completion.")
-                 self.long_term_memory.add_memory(
-                     f"Goal: {goal}\nOutcome: completed via tool '{tool_call['tool']}'.",
-                     metadata={"type": "task_history", "outcome": "completed"},
-                 )
-                 break
+                # ACT: show the call transparently, then execute it
+                args_preview = ", ".join(f"{k}={v!r}" for k, v in tool_call.get("parameters", {}).items())
+                self.uim.display_message(f"● {tool_call['tool']}({args_preview})", level='tool')
+                result = self.tool_executor.execute_tool(tool_call)
+                self.uim.display_message(f"  → {result}", level='tool')
 
-            if len(self.conversation_history) > 20: # Safety break
-                logger.warning("Conversation limit reached. Ending session.")
-                self.long_term_memory.add_memory(
-                    f"Goal: {goal}\nOutcome: did not complete within the conversation limit.",
-                    metadata={"type": "task_history", "outcome": "incomplete"},
-                )
-                break
+                # PERCEIVE & UPDATE: add the action and result to history
+                self.conversation_history.append({"role": "assistant", "content": json.dumps(tool_call)})
+                self.conversation_history.append({"role": "tool", "content": json.dumps(result)})
+                self.working_memory.add_item(f"step_{len(self.conversation_history)}", {"tool_call": tool_call, "result": result})
+            else:
+                self.uim.display_message("That's taking a lot of steps -- pausing here so we can check in. What would you like to do next?", level='assistant')
+
+            # Keep history from growing unbounded across a long session
+            # without ending the conversation the way a hard cap used to.
+            if len(self.conversation_history) > 200:
+                self.conversation_history = self.conversation_history[-100:]
 
     def shutdown(self):
         """Gracefully shuts down all components."""
