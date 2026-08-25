@@ -7,16 +7,21 @@ import os
 from typing import Optional, Tuple, List
 
 try:
-    # liboqs-python's own import-time code auto-clones and builds the
-    # liboqs C library if it can't find a prebuilt copy, and raises a bare
-    # RuntimeError (not ImportError) when that build fails (e.g. no cmake
-    # installed) -- confirmed live: this crashed the whole app at import
-    # time instead of degrading to PQC-disabled, the same anti-pattern
-    # already fixed for sentence-transformers in long_term_memory.py and
-    # code_retriever.py.
+    # liboqs-python's own import-time code (oqs/oqs.py: _load_liboqs) tries
+    # to auto-clone and build the liboqs C library if it can't find a
+    # prebuilt copy, and when that second attempt also fails (e.g. no cmake
+    # installed) it does `raise SystemExit(msg) from None` -- confirmed by
+    # reading its actual source after `except Exception` alone turned out
+    # not to catch this live: SystemExit is a BaseException, not an
+    # Exception subclass, so it walked straight past a plain `except
+    # Exception` and killed the whole process. Must catch BaseException
+    # here specifically for that reason (this mirrors the existing
+    # BaseException guard in modules/quantum_tools.py around the vault
+    # loader, added for the same class of "third-party import raises
+    # something more exotic than ImportError" problem).
     import oqs
     OQS_AVAILABLE = True
-except Exception as e:
+except BaseException as e:
     OQS_AVAILABLE = False
     logging.getLogger("PostQuantumCrypto").warning(f"liboqs-python unavailable ({e}); post-quantum crypto disabled.")
 
