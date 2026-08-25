@@ -3,10 +3,17 @@
 #          desktop GUI applications and web browsers.
 
 import logging
+import os
 import time
 import platform
 from typing import Optional, List, Tuple
 from pathlib import Path
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 try:
     from selenium import webdriver
@@ -198,6 +205,55 @@ class DesktopAutomator:
         except Exception as e:
             logger.error(f"Error during image search for '{image_path}': {e}")
             return False
+
+    def close_application(self, app_name: str) -> bool:
+        """Terminates the first running process whose name contains app_name (case-insensitive)."""
+        if not PSUTIL_AVAILABLE:
+            logger.warning("Cannot close application: psutil is not available.")
+            return False
+        for process in psutil.process_iter(['name']):
+            try:
+                if app_name.lower() in (process.info['name'] or '').lower():
+                    process.terminate()
+                    logger.info(f"Terminated process matching '{app_name}' (pid {process.pid}).")
+                    return True
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        logger.warning(f"No running process found matching '{app_name}'.")
+        return False
+
+    def lock_system(self):
+        """Locks the current desktop session."""
+        sys_platform = platform.system()
+        logger.info(f"Locking the system ({sys_platform}).")
+        if sys_platform == "Windows":
+            os.system("rundll32.exe user32.dll,LockWorkStation")
+        elif sys_platform == "Darwin":
+            os.system('/System/Library/CoreServices/Menu\\ Extras/User.menu/Contents/Resources/CGSession -suspend')
+        else:
+            os.system("loginctl lock-session || gnome-screensaver-command -l || xdg-screensaver lock")
+
+    def restart_system(self):
+        """Restarts the computer. Irreversible and immediately disruptive -- always gate behind explicit confirmation."""
+        sys_platform = platform.system()
+        logger.warning(f"Restarting the system ({sys_platform}).")
+        if sys_platform == "Windows":
+            os.system("shutdown /r /t 5")
+        elif sys_platform == "Darwin":
+            os.system("sudo shutdown -r now")
+        else:
+            os.system("shutdown -r now")
+
+    def shutdown_system(self):
+        """Shuts down the computer. Irreversible and immediately disruptive -- always gate behind explicit confirmation."""
+        sys_platform = platform.system()
+        logger.warning(f"Shutting down the system ({sys_platform}).")
+        if sys_platform == "Windows":
+            os.system("shutdown /s /t 5")
+        elif sys_platform == "Darwin":
+            os.system("sudo shutdown -h now")
+        else:
+            os.system("shutdown -h now")
 
 
 class WebAutomator:

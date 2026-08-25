@@ -52,6 +52,7 @@ PrivacyFacade = _optional_import("modules.privacy_tools", "PrivacyFacade")
 ResilienceFacade = _optional_import("modules.resilience_tools", "ResilienceFacade")
 ThreatIntelFacade = _optional_import("modules.threat_intel_tools", "ThreatIntelFacade")
 CyberRangeFacade = _optional_import("modules.cyber_range_tools", "CyberRangeFacade")
+ConsentedFaceRecognizer = _optional_import("modules.face_recognition_tools", "ConsentedFaceRecognizer")
 
 class ToolExecutor:
     """
@@ -175,6 +176,10 @@ class ToolExecutor:
             self._register_tool("click_mouse", self.desktop_automator.mouse_click, "Clicks the mouse (left or right).")
             self._register_tool("type_text", self.desktop_automator.type_text, "Types text on the keyboard.")
             self._register_tool("take_screenshot", self.desktop_automator.take_screenshot, "Takes a screenshot of the current screen.")
+            self._register_tool("close_application", self.desktop_automator.close_application, "Terminates a running application by (partial) process name.", is_dangerous=True)
+            self._register_tool("lock_system", self.desktop_automator.lock_system, "Locks the current desktop session.")
+            self._register_tool("restart_system", self.desktop_automator.restart_system, "Restarts the computer. Irreversible and immediately disruptive.", is_dangerous=True)
+            self._register_tool("shutdown_system", self.desktop_automator.shutdown_system, "Shuts down the computer. Irreversible and immediately disruptive.", is_dangerous=True)
 
         # --- Pentesting ---
         # PentestingFacade was wired to real scanners earlier this session
@@ -222,6 +227,8 @@ class ToolExecutor:
         # --- Social Media Tools ---
         if self.social_manager:
             self._register_tool("search_social_media", self.social_manager.search_posts, "Searches for posts on Twitter or Reddit.")
+            self._register_tool("post_social_media_update", self.social_manager.post_update, "Posts a status update to Facebook, Instagram, or LinkedIn (Instagram requires an image_url).", is_dangerous=True)
+            self._register_tool("get_social_media_feed", self.social_manager.get_feed, "Fetches the authenticated user's own recent posts from Facebook or Instagram.")
             
         # --- Email Tools ---
         if self.email_client:
@@ -282,6 +289,16 @@ class ToolExecutor:
                 self._register_facade_tools(QuantumFacade())
             except Exception as e:
                 logger.warning(f"QuantumFacade unavailable: {e}")
+
+        # --- Consented Face Recognition ---
+        # Matches faces only against a closed set of people explicitly added
+        # via add_known_face() -- never attempts to identify anyone outside
+        # that set (see modules/face_recognition_tools.py for why).
+        if ConsentedFaceRecognizer:
+            try:
+                self._register_facade_tools(ConsentedFaceRecognizer())
+            except Exception as e:
+                logger.warning(f"ConsentedFaceRecognizer unavailable: {e}")
 
         # --- Extended Capabilities: Privacy (differential privacy, PII redaction, GDPR export) ---
         if PrivacyFacade:

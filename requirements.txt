@@ -62,6 +62,10 @@ simpleaudio
 pyserial
 opencv-python
 
+# --- Consented Face Recognition (ConsentedFaceRecognizer) ---
+# Needs cmake + a C++ compiler to build dlib from source on most systems.
+face_recognition
+
 # --- Threat Intelligence & Pentesting ---
 python-nmap
 beautifulsoup4

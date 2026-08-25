@@ -364,7 +364,8 @@
 
 # Devin/modules/social_media_api.py
 # Purpose: A functional, integrated interface for interacting with social media
-#          platforms like Twitter and Reddit for OSINT and automation.
+#          platforms like Twitter, Reddit, Facebook, Instagram, and LinkedIn for
+#          OSINT and automation.
 
 import logging
 import os
@@ -372,6 +373,8 @@ from datetime import datetime, timezone
 from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+
+import requests
 
 try:
     import tweepy
@@ -397,6 +400,9 @@ logger.propagate = False
 class SocialMediaPlatform(Enum):
     TWITTER = "Twitter"
     REDDIT = "Reddit"
+    FACEBOOK = "Facebook"
+    INSTAGRAM = "Instagram"
+    LINKEDIN = "LinkedIn"
 
 @dataclass
 class Post:
@@ -497,23 +503,155 @@ class RedditTools:
         )
 
 
+class FacebookTools:
+    """Interacts with the Facebook Graph API (posting to/reading the user's own feed)."""
+    def __init__(self, access_token: str):
+        self.access_token = access_token
+        self.base_url = "https://graph.facebook.com/v19.0"
+
+    def post_update(self, message: str) -> Dict[str, Any]:
+        try:
+            response = requests.post(
+                f"{self.base_url}/me/feed",
+                params={"access_token": self.access_token},
+                data={"message": message},
+                timeout=15,
+            )
+            response.raise_for_status()
+            return {"status": "success", "result": response.json()}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error posting to Facebook: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def get_feed(self, limit: int = 10) -> Dict[str, Any]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/me/feed",
+                params={"access_token": self.access_token, "limit": limit},
+                timeout=15,
+            )
+            response.raise_for_status()
+            return {"status": "success", "posts": response.json().get("data", [])}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching Facebook feed: {e}")
+            return {"status": "error", "message": str(e)}
+
+
+class InstagramTools:
+    """Interacts with the Instagram Graph API (via a connected Facebook Page/Business account)."""
+    def __init__(self, access_token: str, ig_user_id: str):
+        self.access_token = access_token
+        self.ig_user_id = ig_user_id
+        self.base_url = "https://graph.facebook.com/v19.0"
+
+    def post_image(self, image_url: str, caption: str) -> Dict[str, Any]:
+        try:
+            create_response = requests.post(
+                f"{self.base_url}/{self.ig_user_id}/media",
+                params={"access_token": self.access_token},
+                data={"image_url": image_url, "caption": caption},
+                timeout=30,
+            )
+            create_response.raise_for_status()
+            creation_id = create_response.json().get("id")
+            publish_response = requests.post(
+                f"{self.base_url}/{self.ig_user_id}/media_publish",
+                params={"access_token": self.access_token},
+                data={"creation_id": creation_id},
+                timeout=30,
+            )
+            publish_response.raise_for_status()
+            return {"status": "success", "result": publish_response.json()}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error posting to Instagram: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def get_recent_posts(self, limit: int = 10) -> Dict[str, Any]:
+        try:
+            response = requests.get(
+                f"{self.base_url}/{self.ig_user_id}/media",
+                params={"access_token": self.access_token, "fields": "caption,timestamp,permalink", "limit": limit},
+                timeout=15,
+            )
+            response.raise_for_status()
+            return {"status": "success", "posts": response.json().get("data", [])}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching Instagram posts: {e}")
+            return {"status": "error", "message": str(e)}
+
+
+class LinkedInTools:
+    """Interacts with the LinkedIn API (UGC Posts) for the authenticated member."""
+    def __init__(self, access_token: str, member_urn: str):
+        self.access_token = access_token
+        self.member_urn = member_urn  # e.g. "urn:li:person:abc123"
+        self.base_url = "https://api.linkedin.com/v2"
+
+    def post_update(self, message: str) -> Dict[str, Any]:
+        try:
+            response = requests.post(
+                f"{self.base_url}/ugcPosts",
+                headers={
+                    "Authorization": f"Bearer {self.access_token}",
+                    "Content-Type": "application/json",
+                    "X-Restli-Protocol-Version": "2.0.0",
+                },
+                json={
+                    "author": self.member_urn,
+                    "lifecycleState": "PUBLISHED",
+                    "specificContent": {
+                        "com.linkedin.ugc.ShareContent": {
+                            "shareCommentary": {"text": message},
+                            "shareMediaCategory": "NONE",
+                        }
+                    },
+                    "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"},
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+            return {"status": "success", "result": response.json()}
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error posting to LinkedIn: {e}")
+            return {"status": "error", "message": str(e)}
+
+
 class SocialMediaManager:
     """A high-level facade for interacting with social media platforms."""
-    def __init__(self, twitter_bearer: Optional[str] = None, reddit_creds: Optional[Dict] = None):
+    def __init__(
+        self,
+        twitter_bearer: Optional[str] = None,
+        reddit_creds: Optional[Dict] = None,
+        facebook_access_token: Optional[str] = None,
+        instagram_creds: Optional[Dict] = None,
+        linkedin_creds: Optional[Dict] = None,
+    ):
         self.twitter: Optional[TwitterTools] = None
         self.reddit: Optional[RedditTools] = None
+        self.facebook: Optional[FacebookTools] = None
+        self.instagram: Optional[InstagramTools] = None
+        self.linkedin: Optional[LinkedInTools] = None
 
         if twitter_bearer:
             try:
                 self.twitter = TwitterTools(bearer_token=twitter_bearer)
             except (ImportError, ConnectionError) as e:
                 logger.error(f"Failed to initialize TwitterTools: {e}")
-        
+
         if reddit_creds:
             try:
                 self.reddit = RedditTools(**reddit_creds)
             except (ImportError, ConnectionError) as e:
                 logger.error(f"Failed to initialize RedditTools: {e}")
+
+        if facebook_access_token:
+            self.facebook = FacebookTools(access_token=facebook_access_token)
+
+        if instagram_creds:
+            self.instagram = InstagramTools(**instagram_creds)
+
+        if linkedin_creds:
+            self.linkedin = LinkedInTools(**linkedin_creds)
 
     def search_posts(self, platform: SocialMediaPlatform, query: str, count: int = 5) -> Optional[List[Post]]:
         if platform == SocialMediaPlatform.TWITTER and self.twitter:
@@ -521,8 +659,30 @@ class SocialMediaManager:
         elif platform == SocialMediaPlatform.REDDIT and self.reddit:
             return self.reddit.search_submissions("all", query, limit=count)
         else:
-            logger.error(f"Platform {platform.value} is not configured or supported.")
+            logger.error(f"Platform {platform.value} is not configured or supported for search.")
             return None
+
+    def post_update(self, platform: SocialMediaPlatform, message: str, image_url: Optional[str] = None) -> Dict[str, Any]:
+        """Posts a status update to the given platform (Facebook, Instagram, or LinkedIn)."""
+        if platform == SocialMediaPlatform.FACEBOOK and self.facebook:
+            return self.facebook.post_update(message)
+        elif platform == SocialMediaPlatform.INSTAGRAM and self.instagram:
+            if not image_url:
+                return {"status": "error", "message": "Instagram posts require an image_url."}
+            return self.instagram.post_image(image_url, message)
+        elif platform == SocialMediaPlatform.LINKEDIN and self.linkedin:
+            return self.linkedin.post_update(message)
+        else:
+            return {"status": "error", "message": f"Platform {platform.value} is not configured or supported for posting."}
+
+    def get_feed(self, platform: SocialMediaPlatform, limit: int = 10) -> Dict[str, Any]:
+        """Fetches the authenticated user's own recent posts/feed from the given platform."""
+        if platform == SocialMediaPlatform.FACEBOOK and self.facebook:
+            return self.facebook.get_feed(limit)
+        elif platform == SocialMediaPlatform.INSTAGRAM and self.instagram:
+            return self.instagram.get_recent_posts(limit)
+        else:
+            return {"status": "error", "message": f"Platform {platform.value} is not configured or supported for feed retrieval."}
 
 
 # --- Example Usage ---

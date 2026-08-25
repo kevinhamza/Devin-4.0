@@ -153,7 +153,16 @@ class DevinAGI:
                 "client_id": os.getenv("REDDIT_CLIENT_ID"),
                 "client_secret": os.getenv("REDDIT_CLIENT_SECRET"),
                 "user_agent": "DevinAI/1.0"
-            } if os.getenv("REDDIT_CLIENT_ID") else None
+            } if os.getenv("REDDIT_CLIENT_ID") else None,
+            facebook_access_token=os.getenv("FACEBOOK_ACCESS_TOKEN"),
+            instagram_creds={
+                "access_token": os.getenv("INSTAGRAM_ACCESS_TOKEN"),
+                "ig_user_id": os.getenv("INSTAGRAM_USER_ID"),
+            } if os.getenv("INSTAGRAM_ACCESS_TOKEN") else None,
+            linkedin_creds={
+                "access_token": os.getenv("LINKEDIN_ACCESS_TOKEN"),
+                "member_urn": os.getenv("LINKEDIN_MEMBER_URN"),
+            } if os.getenv("LINKEDIN_ACCESS_TOKEN") else None,
         )
         
         self.email_client = EmailClient(
