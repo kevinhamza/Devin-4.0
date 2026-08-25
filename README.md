@@ -78,15 +78,26 @@ Everything else in `.env` (Telegram, VirusTotal, cloud provider credentials, rob
 ### 4. Running Devin
 
 ```bash
-python main.py            # Text mode -- chat with Devin
-python main.py --voice    # Voice mode -- speak instead of typing
+python main.py                               # Text mode -- chat with Devin
+python main.py --voice                       # Voice mode -- speak instead of typing
+python main.py --permission-mode plan        # Describe every action instead of running any of it
+python main.py --permission-mode auto_approve  # Run dangerous tools without asking each time
 ```
+
+`--permission-mode` (or `$DEVIN_PERMISSION_MODE`) mirrors Claude Code's permission modes: `default` (ask before each dangerous tool, the default), `auto_approve`/`bypass` (run dangerous tools without asking), `plan` (describe every tool call in a turn instead of executing any of them, so you can review the whole plan first). The ethical VETO check is never affected by permission mode -- it's a safety floor, not a confirmation step.
 
 **What happens on startup**, so you're not surprised:
 1. Four background servers start (cloud integration, analytics, mobile integration, AI learning — ports 5002/5004/5006/5007). A cloud-integration error with no cloud credentials configured is expected and harmless.
 2. Devin indexes its own source code for the code-retrieval tool. This takes a few seconds.
 3. It logs exactly which vendored/integrated external repos (self-operating-computer, hexstrike-ai, every `external/` submodule) are wired in and how, so integration status is visible at every boot, not just documented.
-4. You land in a normal, continuous conversation -- ask a question, ask Devin to do something, or just chat, and keep talking after each reply instead of the process ending after one task. Every tool call it makes is shown transparently (`● tool_name(args)` then the result) before it continues, the same way Claude Code shows its tool use. Type `exit` to quit.
+4. You land in a normal, continuous conversation -- ask a question, ask Devin to do something, or just chat, and keep talking after each reply instead of the process ending after one task. Every tool call it makes is shown transparently (`● tool_name(args)` then the result) before it continues, the same way Claude Code shows its tool use. A single turn can request more than one action, and Devin will work through all of them before handing control back to you. Type `exit` to quit.
+
+**Also available, closing the gap with Claude Code's more advanced agentic behavior:**
+- **Parallel/multi-action turns** -- a single LLM response can request several tool calls at once (e.g. reading two files); all of them are executed in sequence rather than truncating to just the first, for every provider (Claude, OpenAI, Gemini, local Ollama).
+- **Real reasoning transparency** -- with `ANTHROPIC_API_KEY` set, Claude's extended thinking is enabled for the tool-selection step and shown as a distinct `(thinking)` line before the action, not just the final tool choice.
+- **Loop detection** -- if the exact same action repeats three times in a row, Devin pauses and asks instead of burning its whole step budget on a stuck plan.
+- **History compaction** -- a long conversation is summarized (via the LLM itself) rather than blindly truncated once it gets big, so earlier context is condensed, not silently discarded.
+- **Sub-agent delegation** -- the `delegate_subtask` tool hands a bounded, self-contained goal to a fresh isolated conversation (same tools/models) and returns just its summary, the same role Claude Code's Task tool plays.
 
 ### 5. Accessing the Live Canvas
 
