@@ -7,10 +7,18 @@ import os
 from typing import Optional, Tuple, List
 
 try:
+    # liboqs-python's own import-time code auto-clones and builds the
+    # liboqs C library if it can't find a prebuilt copy, and raises a bare
+    # RuntimeError (not ImportError) when that build fails (e.g. no cmake
+    # installed) -- confirmed live: this crashed the whole app at import
+    # time instead of degrading to PQC-disabled, the same anti-pattern
+    # already fixed for sentence-transformers in long_term_memory.py and
+    # code_retriever.py.
     import oqs
     OQS_AVAILABLE = True
-except ImportError:
+except Exception as e:
     OQS_AVAILABLE = False
+    logging.getLogger("PostQuantumCrypto").warning(f"liboqs-python unavailable ({e}); post-quantum crypto disabled.")
 
 # Configure basic logging
 logger = logging.getLogger("PostQuantumCrypto")
