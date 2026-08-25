@@ -41,6 +41,11 @@ sentence-transformers
 tweepy
 praw
 cryptography
+# Multi-channel messaging (modules/messaging_gateway.py) -- Telegram is
+# covered by python-telegram-bot above; these add Discord and Slack,
+# following openclaw's pattern of pluggable channel integrations.
+discord.py
+slack-bolt
 
 # --- OS & Automation ---
 psutil

@@ -65,6 +65,86 @@ class TelegramChannel(MessagingChannel):
 
         threading.Thread(target=_run, daemon=True).start()
 
+class DiscordChannel(MessagingChannel):
+    """Discord implementation using discord.py, matching openclaw's discord extension pattern."""
+    def __init__(self, token: str):
+        self.token = token
+        self.client = None
+        try:
+            import discord
+            self.discord = discord
+            logger.info("Discord dependencies loaded.")
+        except ImportError:
+            logger.error("discord.py not installed. Discord channel will not work.")
+            self.discord = None
+
+    def send_message(self, recipient_id: str, text: str):
+        if not self.discord or not self.client:
+            return
+        import asyncio
+        channel = self.client.get_channel(int(recipient_id))
+        if channel:
+            asyncio.run_coroutine_threadsafe(channel.send(text), self.client.loop)
+
+    def start_listening(self, on_message_received: Callable[[str, str, str], None]):
+        if not self.discord:
+            return
+
+        intents = self.discord.Intents.default()
+        intents.message_content = True
+        self.client = self.discord.Client(intents=intents)
+
+        @self.client.event
+        async def on_message(message):
+            if message.author == self.client.user:
+                return
+            on_message_received("Discord", str(message.channel.id), message.content)
+
+        def _run():
+            logger.info("Discord bot started listening...")
+            self.client.run(self.token)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+class SlackChannel(MessagingChannel):
+    """Slack implementation using slack-bolt's Socket Mode (no public URL needed)."""
+    def __init__(self, bot_token: str, app_token: str):
+        self.bot_token = bot_token
+        self.app_token = app_token
+        self.app = None
+        try:
+            from slack_bolt import App
+            from slack_bolt.adapter.socket_mode import SocketModeHandler
+            self.App = App
+            self.SocketModeHandler = SocketModeHandler
+            logger.info("Slack dependencies loaded.")
+        except ImportError:
+            logger.error("slack-bolt not installed. Slack channel will not work.")
+            self.App = None
+
+    def send_message(self, recipient_id: str, text: str):
+        if not self.app:
+            return
+        self.app.client.chat_postMessage(channel=recipient_id, text=text)
+
+    def start_listening(self, on_message_received: Callable[[str, str, str], None]):
+        if not self.App:
+            return
+
+        self.app = self.App(token=self.bot_token)
+
+        @self.app.event("message")
+        def _handler(event, say):
+            if event.get("subtype") == "bot_message":
+                return
+            on_message_received("Slack", event.get("channel", ""), event.get("text", ""))
+
+        def _run():
+            logger.info("Slack bot started listening (Socket Mode)...")
+            self.SocketModeHandler(self.app, self.app_token).start()
+
+        threading.Thread(target=_run, daemon=True).start()
+
 class MessagingGateway:
     """The central gateway for managing multiple messaging channels."""
     def __init__(self):

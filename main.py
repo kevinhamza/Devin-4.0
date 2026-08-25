@@ -39,7 +39,7 @@ from modules.user_interaction_module import UserInteractionManager
 from security.security_dashboard import SecurityDashboard
 
 # Ported OpenClaw Modules
-from modules.messaging_gateway import MessagingGateway, TelegramChannel
+from modules.messaging_gateway import MessagingGateway, TelegramChannel, DiscordChannel, SlackChannel
 from modules.canvas_server import CanvasServer
 
 # Tool-Providing Facades and Managers
@@ -107,7 +107,13 @@ class DevinAGI:
         telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
         if telegram_token:
             self.messaging_gateway.register_channel("Telegram", TelegramChannel(telegram_token))
-        
+        discord_token = os.getenv("DISCORD_BOT_TOKEN")
+        if discord_token:
+            self.messaging_gateway.register_channel("Discord", DiscordChannel(discord_token))
+        slack_bot_token, slack_app_token = os.getenv("SLACK_BOT_TOKEN"), os.getenv("SLACK_APP_TOKEN")
+        if slack_bot_token and slack_app_token:
+            self.messaging_gateway.register_channel("Slack", SlackChannel(slack_bot_token, slack_app_token))
+
         self.canvas_server = CanvasServer()
         self.canvas_server.start_background()
 

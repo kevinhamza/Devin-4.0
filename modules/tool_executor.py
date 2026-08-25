@@ -231,11 +231,12 @@ class ToolExecutor:
         
         # --- OpenClaw Ported Tools ---
         if self.messaging_gateway:
-            self._register_tool("send_message", self.messaging_gateway.send_message, "Sends a message via a specified channel (e.g., 'Telegram') to a recipient.")
+            self._register_tool("send_message", self.messaging_gateway.send_message, "Sends a message via a specified channel ('Telegram', 'Discord', or 'Slack') to a recipient.")
         
         if self.canvas_server:
             self._register_tool("update_canvas", self.canvas_server.log, "Updates the live visual canvas with a message and status level (info, success, error).")
             self._register_tool("clear_canvas", self.canvas_server.clear, "Clears all content from the live visual canvas.")
+            self._register_tool("show_canvas_widget", self.canvas_server.widget, "Shows a structured widget on the live canvas: 'status' (pass/fail card), 'table' (rows of cells), or 'image' (a URL/data URI) -- for showing scan results, comparisons, or screenshots instead of a plain log line.")
             
         # --- Robotics Tools ---
         if self.robotics_manager:
