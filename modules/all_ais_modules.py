@@ -237,6 +237,7 @@ try:
     from modules.perplexity_module import PerplexityModule
     from modules.pentestgpt_ai_module import PentestGPTAIModule
     from modules.claude_module import ClaudeModule
+    from modules.ollama_module import OllamaModule
     DEVIN_CORE_AVAILABLE = True
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
@@ -251,6 +252,7 @@ class AIProvider(Enum):
     PERPLEXITY = auto()
     PENTEST_GPT = auto()
     ANTHROPIC = auto()
+    OLLAMA = auto()
 
 # --- ADDED FEATURE: Mock AI Modules for Offline/Free Use ---
 
@@ -304,6 +306,11 @@ class MockPerplexityModule:
     def get_chat_completion_content(self, messages: List[Dict], config: Optional[Dict] = None) -> str:
         return "This is a mocked response from the offline Perplexity module."
 
+class MockOllamaModule:
+    def __init__(self, model=None): logger.info("Initialized MOCK OllamaModule.")
+    def get_chat_completion_content(self, messages: List[Dict], config: Optional[Dict] = None) -> str:
+        return "This is a mocked response from the offline local Ollama module."
+
 class MockPentestGPTModule:
     def __init__(self, llm_interface=None): logger.info("Initialized MOCK PentestGPTModule.")
     def analyze_tool_output(self, tool_name: str, tool_output: str) -> Dict:
@@ -330,6 +337,15 @@ class AIAgent:
             self.perplexity_module = PerplexityModule(api_key=kwargs.get("perplexity_api_key")) if kwargs.get("perplexity_api_key") else None
             self.claude_module = ClaudeModule(api_key=kwargs.get("anthropic_api_key")) if kwargs.get("anthropic_api_key") else None
             self.pentest_gpt_module = PentestGPTAIModule(llm_interface=self.openai_module) if self.openai_module else None
+            # Ollama needs no API key and no billing -- unlike the providers
+            # above, enable it by default (not gated behind a key kwarg) so
+            # there's always a fully local, zero-cost model available. Only
+            # degrades if the 'ollama' package genuinely isn't installed.
+            try:
+                self.ollama_module = OllamaModule(model=kwargs.get("ollama_model", "llama3.1"), host=kwargs.get("ollama_host"))
+            except ImportError as e:
+                logger.warning(f"Local Ollama provider unavailable: {e}")
+                self.ollama_module = None
         else:
             # --- MOCK MODE: Initialize mock clients ---
             self.openai_module = MockChatGPTModule()
@@ -337,6 +353,7 @@ class AIAgent:
             self.perplexity_module = MockPerplexityModule()
             self.claude_module = None
             self.pentest_gpt_module = MockPentestGPTModule()
+            self.ollama_module = MockOllamaModule()
 
         self.provider_map = {
             AIProvider.OPENAI: self.openai_module,
@@ -344,6 +361,7 @@ class AIAgent:
             AIProvider.PERPLEXITY: self.perplexity_module,
             AIProvider.PENTEST_GPT: self.pentest_gpt_module,
             AIProvider.ANTHROPIC: self.claude_module,
+            AIProvider.OLLAMA: self.ollama_module,
         }
         logger.info("AIAgent initialization complete.")
 
@@ -354,12 +372,14 @@ class AIAgent:
         Prefers Claude, then OpenAI, then falls back to Gemini -- Gemini has a
         genuine free tier (a Google AI Studio key needs no billing setup), so
         this fallback is what makes the full assistant usable at zero cost
-        rather than requiring a paid Claude/OpenAI key.
+        rather than requiring a paid Claude/OpenAI key. Ollama is the final
+        fallback: a fully local, tool-capable model (e.g. llama3.1) that
+        needs no API key and no internet connection at all.
         """
         logger.info("AIAgent is selecting a tool to achieve the goal...")
-        tool_selection_module = self.claude_module or self.openai_module or self.gemini_module
+        tool_selection_module = self.claude_module or self.openai_module or self.gemini_module or self.ollama_module
         if not tool_selection_module:
-            logger.error("No tool-calling-capable module (Claude, OpenAI, or Gemini) is configured.")
+            logger.error("No tool-calling-capable module (Claude, OpenAI, Gemini, or local Ollama) is configured.")
             return None
 
         try:

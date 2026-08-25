@@ -1,0 +1,39 @@
+[submodule "external/gemini-cli"]
+	path = external/gemini-cli
+	url = https://github.com/google-gemini/gemini-cli
+[submodule "external/claude-code"]
+	path = external/claude-code
+	url = https://github.com/anthropics/claude-code
+[submodule "external/openclaw"]
+	path = external/openclaw
+	url = https://github.com/openclaw/openclaw
+[submodule "external/shannon"]
+	path = external/shannon
+	url = https://github.com/KeygraphHQ/shannon
+[submodule "external/PowerTools"]
+	path = external/PowerTools
+	url = https://github.com/kevinhamza/PowerTools
+[submodule "external/Responder"]
+	path = external/Responder
+	url = https://github.com/kevinhamza/Responder
+[submodule "external/hackability"]
+	path = external/hackability
+	url = https://github.com/PortSwigger/hackability
+[submodule "external/AIA"]
+	path = external/AIA
+	url = https://github.com/kevinhamza/AIA
+[submodule "external/moltbots.github.io"]
+	path = external/moltbots.github.io
+	url = https://github.com/kevinhamza/moltbots.github.io
+[submodule "external/vulnerability-analysis"]
+	path = external/vulnerability-analysis
+	url = https://github.com/kevinhamza/vulnerability-analysis
+[submodule "external/airgorah"]
+	path = external/airgorah
+	url = https://github.com/martin-olivier/airgorah
+[submodule "external/metasploit-framework"]
+	path = external/metasploit-framework
+	url = https://github.com/rapid7/metasploit-framework
+[submodule "external/nishang"]
+	path = external/nishang
+	url = https://github.com/kevinhamza/nishang

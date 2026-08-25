@@ -71,7 +71,10 @@ class CodeRetriever:
     # .git, which can contain tens of thousands of loose objects) is what
     # made indexing take over a minute on this repo despite it having well
     # under 1,000 real .py files.
-    _EXCLUDED_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".tox", "dist", "build", ".eggs"}
+    # "external" holds vendored third-party repos (git submodules) -- reference
+    # material, not Devin's own source, so indexing it would slow builds down
+    # for results that are never what self-modification/search actually wants.
+    _EXCLUDED_DIRS = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", ".mypy_cache", ".pytest_cache", ".tox", "dist", "build", ".eggs", "external"}
 
     def _iter_python_files(self):
         for root, dirnames, filenames in os.walk(self.project_root):

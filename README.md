@@ -30,8 +30,10 @@ This guide gets you from a fresh clone to a running agent with the fewest surpri
 ### 2. Clone and Install
 
 ```bash
-git clone https://github.com/kevinhamza/Devin-4.0.git
+git clone --recurse-submodules https://github.com/kevinhamza/Devin-4.0.git
 cd Devin-4.0
+# Already cloned without --recurse-submodules? Fetch them now:
+# git submodule update --init --recursive
 
 # A virtual environment is strongly recommended -- this repo's own
 # code-indexer walks the project directory on startup, and a heavy venv
@@ -148,6 +150,38 @@ pytest tests/
 - `ai_core/cognitive_arch/` — working memory and persistent long-term (vector) memory.
 - `singularity/goal_system/` — the ethical-constraint checks and utility-function scoring every plan passes through before execution.
 - `security/security_dashboard.py` — rule-based detection of dangerous commands.
+- `external/` — the complete, unmodified source of every external tool this project integrates, vendored as git submodules (pinned at a fixed commit each). See below.
+
+---
+
+## 🔗 External Repos (`external/`)
+
+These are separate, independently-maintained projects vendored as git submodules (full source, not cherry-picked files) so the complete history and every module of each is available to read, audit, or build from inside this repo:
+
+| Submodule | Upstream | How Devin uses it |
+|---|---|---|
+| `external/claude-code` | [anthropics/claude-code](https://github.com/anthropics/claude-code) | Shelled out to via `delegate_to_claude_code` (needs `npm install -g @anthropic-ai/claude-code`) |
+| `external/gemini-cli` | [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) | Shelled out to via `delegate_to_gemini_cli` (needs `npm install -g @google/gemini-cli`) |
+| `external/openclaw` | [openclaw/openclaw](https://github.com/openclaw/openclaw) | Shelled out to via `run_openclaw_command` (needs its own `pnpm install` + build) |
+| `external/shannon` | [KeygraphHQ/shannon](https://github.com/KeygraphHQ/shannon) | Shelled out to via `run_shannon_pentest` (needs Docker + `npx @keygraph/shannon`) |
+| `external/airgorah` | [martin-olivier/airgorah](https://github.com/martin-olivier/airgorah) | Rust/GTK4 GUI, can't run headlessly; Devin instead drives the aircrack-ng suite it wraps directly via `run_aircrack_suite_command` |
+| `external/metasploit-framework` | [rapid7/metasploit-framework](https://github.com/rapid7/metasploit-framework) | Reference source; Devin talks to a running `msfrpcd` via `pymetasploit3` (`run_full_pentest_scan`'s exploitation path) rather than invoking the Ruby CLI directly |
+| `external/PowerTools` | [kevinhamza/PowerTools](https://github.com/kevinhamza/PowerTools) | PowerShell toolkit; run via `execute_shell` on Windows/pwsh targets |
+| `external/Responder` | [kevinhamza/Responder](https://github.com/kevinhamza/Responder) | LLMNR/NBT-NS/mDNS poisoner; run via `execute_shell` (requires root and an authorized network) |
+| `external/nishang` | [kevinhamza/nishang](https://github.com/kevinhamza/nishang) | PowerShell offensive scripts; run via `execute_shell` on Windows/pwsh targets |
+| `external/hackability` | [PortSwigger/hackability](https://github.com/PortSwigger/hackability) | Burp Suite extension source; reference/manual use inside Burp, not invoked by Devin directly |
+| `external/AIA` | [kevinhamza/AIA](https://github.com/kevinhamza/AIA) | Reference copy; individual modules (social media APIs, device control, face recognition) are ported natively into `modules/*` rather than imported from here, since AIA's own agent loop duplicates what `main.py`/`tool_executor.py` already do |
+| `external/vulnerability-analysis` | [kevinhamza/vulnerability-analysis](https://github.com/kevinhamza/vulnerability-analysis) | Reference copy of the user's Docker-based scanning pipeline |
+| `external/moltbots.github.io` | [kevinhamza/moltbots.github.io](https://github.com/kevinhamza/moltbots.github.io) | Static site; reference only |
+
+**Why submodules and not a subprocess-only integration:** for actively-maintained external tools with their own runtime (Node, Ruby, Rust, PowerShell), Python can't execute their code directly either way — a submodule vendors the *complete, exact* source into this repo (satisfying "the whole repo, not just a module") without duplicating its git history into Devin-4.0's own, while the actual invocation still goes through each project's own documented entry point (installed CLI, `npx`, `msfrpcd`, `pwsh`), exactly as that project intends to be run.
+
+**Why some repos aren't vendored:** `Devin`, `Devin-2.0`, and `Devin-3.0` were merged natively into this codebase at the start of the project (see `## 🏗️ Architecture` — their working subsystems are already part of `modules/`, so a submodule would just be a redundant, stale copy of code that's already been absorbed). `OpenDevin` (the `AI-App/OpenDevin.OpenDevin` mirror) is a stale snapshot from April 2024 predating its rename to OpenHands, with no packaged CLI entrypoint and an agent-loop architecture already superseded by this project's own `tool_executor.py`/autonomous-reasoning stack — not vendored. `Holomat` (both `Concept-Bytes/Holomat` and `itachity/Holomat`) is a physical hologram-table/hand-tracking hardware project (camera-rig calibration) with no portable module for a general OS-controlling assistant. `microsoft/JARVIS` (HuggingGPT) and the simple `Concept-Bytes/Jarvis`/`itachity` voice-assistant scripts largely duplicate capability Devin already has (see `modules/robotics/voice_assistant.py`, `modules/user_interaction_module.py`) or would need a much larger dedicated integration effort (HuggingGPT's model-orchestration research codebase); `modules/ollama_module.py` ports the one genuinely new idea from `itachity/Holomat`'s `assist_local.py` -- a fully local, zero-cost LLM fallback -- as a proper `AIAgent` provider instead.
+
+To fetch/update all vendored submodules at once:
+```bash
+git submodule update --init --recursive
+```
 
 ---
 
