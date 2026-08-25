@@ -88,6 +88,24 @@ class ExternalAgentTools:
             "Install with: npm install -g @google/gemini-cli",
         )
 
+    def run_shannon_pentest(self, target_url: str, repo_path: str) -> Dict[str, Any]:
+        """
+        Runs a full AI-driven pentest against a source-available target
+        using Shannon (Keygraph), via 'npx @keygraph/shannon start'. Shannon
+        analyzes the given repo's source code and then executes real
+        exploits against the running target -- requires Docker and AI
+        provider credentials already configured via
+        'npx @keygraph/shannon setup'. Only run this against applications
+        and environments you own or have explicit written authorization to
+        test; never against production systems.
+        """
+        return self._run(
+            "npx",
+            ["@keygraph/shannon", "start", "-u", target_url, "-r", repo_path],
+            None,
+            "Requires Node.js 18+ and Docker. Run 'npx @keygraph/shannon setup' once first to configure AI provider credentials.",
+        )
+
     def run_openclaw_command(self, args: List[str]) -> Dict[str, Any]:
         """
         Runs a raw command against a local OpenClaw installation (plugin

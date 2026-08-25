@@ -12,6 +12,7 @@ from security.security_dashboard import SecurityDashboard
 from modules.cloud_integration_services import CloudServicesManager
 from modules.pentesting_tools.pentesting_facade import PentestingFacade
 from modules.pentesting_tools.hexstrike_client import HexStrikeClient
+from modules.pentesting_tools.wifi_audit_tools import WifiAuditTools
 from modules.external_agent_tools import ExternalAgentTools
 from modules.automation_tools import DesktopAutomator, WebAutomator
 from modules.system_monitor_module import SystemMonitorFacade
@@ -73,6 +74,7 @@ class ToolExecutor:
         self.pentesting_facade: PentestingFacade = managers.get("pentesting_facade")
         self.hexstrike_client: HexStrikeClient = managers.get("hexstrike_client", HexStrikeClient())
         self.external_agent_tools: ExternalAgentTools = managers.get("external_agent_tools", ExternalAgentTools())
+        self.wifi_audit_tools: WifiAuditTools = managers.get("wifi_audit_tools", WifiAuditTools())
         self.desktop_automator: DesktopAutomator = managers.get("desktop_automator")
         self.web_automator: WebAutomator = managers.get("web_automator")
         self.system_monitor: SystemMonitorFacade = managers.get("system_monitor_facade")
@@ -202,6 +204,12 @@ class ToolExecutor:
         self._register_tool("delegate_to_claude_code", self.external_agent_tools.delegate_to_claude_code, "Delegates a coding/agentic task to a local Claude Code CLI installation (headless one-shot mode) for complex multi-file codebase work.", is_dangerous=True)
         self._register_tool("delegate_to_gemini_cli", self.external_agent_tools.delegate_to_gemini_cli, "Delegates a task to a local Gemini CLI installation (headless one-shot mode).", is_dangerous=True)
         self._register_tool("run_openclaw_command", self.external_agent_tools.run_openclaw_command, "Runs a raw command against a local OpenClaw installation (plugin/channel management, messaging, gateway status).", is_dangerous=True)
+        self._register_tool("run_shannon_pentest", self.external_agent_tools.run_shannon_pentest, "Runs a full AI-driven source-aware pentest against an authorized target using Shannon (Keygraph), via a local Docker + npx installation.", is_dangerous=True)
+
+        # --- WiFi Security Auditing (aircrack-ng suite / airgorah) ---
+        # airgorah itself is a Rust/GTK4 GUI that can't be driven headlessly;
+        # this wraps the same underlying aircrack-ng CLI tools it uses.
+        self._register_tool("run_aircrack_suite_command", self.wifi_audit_tools.run_aircrack_suite_command, "Runs an aircrack-ng suite command (airmon-ng, airodump-ng, aireplay-ng, or aircrack-ng) for WiFi security auditing on a network you own or are authorized to test.", is_dangerous=True)
 
         # --- Vision-Based Computer Operation (self-operating-computer) ---
         # Unlike move_mouse/click_mouse above (which need exact coordinates the
