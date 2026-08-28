@@ -19,17 +19,15 @@ export class GeminiProvider extends BaseProvider {
   private apiKey: string;
 
   private static readonly FALLBACK_MODELS = [
-    'gemini-3.5-flash',
-    'gemini-3.1-flash-lite',
-    'gemini-3.6-flash',
-    'gemini-3.7-flash',
-    'gemini-flash-latest',
     'gemini-2.5-flash',
-    'gemini-2.5-flash-lite',
-    'gemini-pro-latest',
+    'gemini-2.5-pro',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash',
   ];
 
-  constructor(apiKey: string, model = 'gemini-3.6-flash') {
+  constructor(apiKey: string, model = 'gemini-2.5-flash') {
     super();
     this.apiKey = apiKey;
     this.model = model;
@@ -39,35 +37,59 @@ export class GeminiProvider extends BaseProvider {
     // Regex to detect embedded screenshots: __IMG__mime__base64data__ENDIMG__
     const IMG_RE = /__IMG__([\w/]+)__([A-Za-z0-9+/=]+)__ENDIMG__/g;
 
-    return messages
+    type GeminiPart = { text?: string; inlineData?: { mimeType: string; data: string } };
+    type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] };
+
+    const makeParts = (text: string): GeminiPart[] => {
+      if (!text.includes('__IMG__')) return [{ text: text || ' ' }];
+      const parts: GeminiPart[] = [];
+      let cursor = 0;
+      IMG_RE.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = IMG_RE.exec(text)) !== null) {
+        const before = text.slice(cursor, match.index).trim();
+        if (before) parts.push({ text: before });
+        parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+        cursor = match.index + match[0].length;
+      }
+      const after = text.slice(cursor).trim();
+      if (after) parts.push({ text: after });
+      if (parts.length === 0) parts.push({ text: text || ' ' });
+      return parts;
+    };
+
+    const raw: GeminiContent[] = messages
       .filter(m => m.role !== 'system')
-      .map(m => {
-        const role = m.role === 'assistant' ? 'model' : 'user';
-        const text = m.content;
+      .map(m => ({
+        role: m.role === 'assistant' ? 'model' as const : 'user' as const,
+        parts: makeParts(m.content),
+      }));
 
-        // Fast path — no embedded image
-        if (!text.includes('__IMG__')) {
-          return { role, parts: [{ text }] };
+    // Gemini requires strict user↔model alternation. When the model makes ONLY
+    // tool calls (no text), we skip the assistant push in cli.ts so consecutive
+    // user-role messages appear (tool results). Insert a neutral model turn to fix that.
+    const fixed: GeminiContent[] = [];
+    for (const msg of raw) {
+      const prev = fixed[fixed.length - 1];
+      if (prev && prev.role === msg.role) {
+        if (msg.role === 'user') {
+          // Two user turns in a row — insert a minimal model acknowledgement
+          fixed.push({ role: 'model', parts: [{ text: ' ' }] });
+        } else {
+          // Two model turns — merge parts
+          prev.parts.push(...msg.parts);
+          continue;
         }
+      }
+      fixed.push(msg);
+    }
 
-        // Build multimodal parts: text fragments + inlineData
-        const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
-        let cursor = 0;
-        IMG_RE.lastIndex = 0;
-        let match: RegExpExecArray | null;
+    // Must start with user
+    if (fixed.length > 0 && fixed[0].role === 'model') {
+      fixed.unshift({ role: 'user', parts: [{ text: ' ' }] });
+    }
 
-        while ((match = IMG_RE.exec(text)) !== null) {
-          const before = text.slice(cursor, match.index).trim();
-          if (before) parts.push({ text: before });
-          parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
-          cursor = match.index + match[0].length;
-        }
-        const after = text.slice(cursor).trim();
-        if (after) parts.push({ text: after });
-        if (parts.length === 0) parts.push({ text });
-
-        return { role, parts };
-      });
+    return fixed;
   }
 
   private toGeminiTools(tools: ToolDefinition[]) {
@@ -186,29 +208,53 @@ export class GeminiProvider extends BaseProvider {
     let accText = '';
     const toolUses: Array<{ name: string; input: Record<string, unknown> }> = [];
 
-    const responseStream = await genai.models.generateContentStream({
-      model: this.model,
-      contents,
-      config: {
-        maxOutputTokens: options.maxTokens ?? 8192,
-        systemInstruction,
-        tools: geminiTools as Parameters<typeof genai.models.generateContent>[0]['config'] extends { tools?: infer T } ? T : never,
-      },
-    });
+    // Try models in fallback order (same as chat())
+    const models = [this.model, ...GeminiProvider.FALLBACK_MODELS.filter(m => m !== this.model)];
+    let lastStreamError: Error | null = null;
 
-    for await (const chunk of responseStream) {
-      for (const part of chunk.candidates?.[0]?.content?.parts ?? []) {
-        if (part.text) {
-          accText += part.text;
-          onChunk({ type: 'text', content: part.text });
-        } else if (part.functionCall) {
-          const tu = {
-            name: part.functionCall.name ?? '',
-            input: (part.functionCall.args as Record<string, unknown>) ?? {},
-          };
-          toolUses.push(tu);
-          onChunk({ type: 'tool_use', toolName: tu.name, toolInput: tu.input, toolUseId: `tool_${Date.now()}` });
+    for (const modelId of models) {
+      try {
+        accText = '';
+        toolUses.length = 0;
+
+        const responseStream = await genai.models.generateContentStream({
+          model: modelId,
+          contents,
+          config: {
+            maxOutputTokens: options.maxTokens ?? 8192,
+            systemInstruction,
+            tools: geminiTools as Parameters<typeof genai.models.generateContent>[0]['config'] extends { tools?: infer T } ? T : never,
+          },
+        });
+
+        for await (const chunk of responseStream) {
+          for (const part of chunk.candidates?.[0]?.content?.parts ?? []) {
+            if (part.text) {
+              accText += part.text;
+              onChunk({ type: 'text', content: part.text });
+            } else if (part.functionCall) {
+              const tu = {
+                name: part.functionCall.name ?? '',
+                input: (part.functionCall.args as Record<string, unknown>) ?? {},
+              };
+              toolUses.push(tu);
+              onChunk({ type: 'tool_use', toolName: tu.name, toolInput: tu.input, toolUseId: `tool_${Date.now()}` });
+            }
+          }
         }
+        break; // success — exit model loop
+      } catch (err) {
+        lastStreamError = err instanceof Error ? err : new Error(String(err));
+        const msg = lastStreamError.message.toLowerCase();
+        const shouldTryNext = msg.includes('503') || msg.includes('unavailable') ||
+          msg.includes('overloaded') || msg.includes('429') || msg.includes('quota') ||
+          msg.includes('rate') || msg.includes('resource_exhausted') ||
+          msg.includes('fetch failed') || msg.includes('econnreset') ||
+          msg.includes('socket') || msg.includes('network') || msg.includes('enotfound') ||
+          msg.includes('etimedout') || msg.includes('404') || msg.includes('not found') ||
+          msg.includes('not_found') || msg.includes('connection');
+        if (!shouldTryNext) throw lastStreamError;
+        await new Promise(r => setTimeout(r, 500));
       }
     }
 

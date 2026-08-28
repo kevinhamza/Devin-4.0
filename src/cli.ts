@@ -160,11 +160,13 @@ async function runConversation(
       process.stdout.write('\n');
     }
 
-    // Build assistant history entry — do NOT include [Tool: ...] text, it confuses Gemini
-    // into mimicking that format as plain text instead of using real function calls.
-    const assistantContent = textContent || (toolUses.length > 0 ? '(acting)' : '');
-    if (assistantContent) {
-      history.push({ role: 'assistant', content: assistantContent });
+    // Build assistant history entry. Do NOT store '(acting)' or any placeholder —
+    // Gemini reads history verbatim and will mimic whatever text it sees here, causing
+    // it to output '(acting)' and repeat the user's query on the very next turn.
+    // When the model only returns tool calls (no text), skip the assistant history push
+    // entirely; toGeminiContents() will insert a neutral model turn to keep alternation valid.
+    if (textContent) {
+      history.push({ role: 'assistant', content: textContent });
     }
 
     // Detect when Gemini outputs "[Tool: name({args})]" as plain text instead of a real call.
