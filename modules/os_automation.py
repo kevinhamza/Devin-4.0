@@ -58,6 +58,12 @@ try:
 except Exception:
     HAS_MSS = False
 
+try:
+    import pygetwindow as gw
+    HAS_GW = True
+except Exception:
+    HAS_GW = False
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -334,16 +340,49 @@ def get_mouse_position():
 
 # ── Keyboard ─────────────────────────────────────────────────────────────────
 
+def _type_via_clipboard(text):
+    """Paste text via clipboard — handles unicode on all platforms."""
+    old = None
+    try:
+        old = clipboard_get()
+    except Exception:
+        pass
+    clipboard_set(text)
+    time.sleep(0.05)
+    if PLATFORM == 'Darwin':
+        keyboard_hotkey('command', 'v')
+    else:
+        keyboard_hotkey('ctrl', 'v')
+    time.sleep(0.05)
+    if old is not None:
+        try:
+            clipboard_set(old)
+        except Exception:
+            pass
+
 def keyboard_type(text, interval=0.03, human_like=True):
-    """Type text with human-like timing."""
-    if HAS_PYAUTOGUI:
+    """Type text. Uses write() for ASCII, clipboard paste for unicode."""
+    if not text:
+        return "Typed 0 chars"
+
+    # Split into ASCII-safe and non-ASCII chunks
+    ascii_safe = all(ord(c) < 128 for c in text)
+
+    if HAS_PYAUTOGUI and ascii_safe:
         if human_like:
             import random
+            # pyautogui.write() handles regular printable chars correctly
             for ch in text:
-                pyautogui.press(ch)
+                try:
+                    pyautogui.write(ch, interval=0)
+                except Exception:
+                    pass
                 time.sleep(interval + random.uniform(0, 0.02))
         else:
-            pyautogui.typewrite(text, interval=interval)
+            pyautogui.write(text, interval=interval)
+    elif HAS_PYAUTOGUI:
+        # Non-ASCII: use clipboard paste for reliability on all platforms
+        _type_via_clipboard(text)
     else:
         _xdotool('type', '--clearmodifiers', '--delay', str(int(interval * 1000)), text)
     return f"Typed {len(text)} chars"
@@ -482,60 +521,102 @@ def close_application(app_name):
 # ── Window Management ─────────────────────────────────────────────────────────
 
 def list_windows():
-    """List all open windows. Cross-platform."""
+    """List all open windows. Cross-platform (pygetwindow → platform fallbacks)."""
+    if HAS_GW:
+        try:
+            titles = [t for t in gw.getAllTitles() if t.strip()]
+            return '\n'.join(titles[:30]) if titles else "No windows found"
+        except Exception:
+            pass
     if PLATFORM == 'Linux':
         out, _ = _xdotool('search', '--onlyvisible', '--name', '.')
-        if not out:
-            out2, _ = _run('wmctrl -l 2>/dev/null')
-            return out2 or "No windows found"
-        lines = []
-        for wid in out.strip().split('\n')[:20]:
-            name, _ = _xdotool('getwindowname', wid)
-            if name:
-                lines.append(f"{wid}: {name}")
-        return '\n'.join(lines) if lines else out
+        if out:
+            lines = []
+            for wid in out.strip().split('\n')[:20]:
+                name, _ = _xdotool('getwindowname', wid)
+                if name:
+                    lines.append(f"{wid}: {name}")
+            return '\n'.join(lines) if lines else out
+        out2, _ = _run('wmctrl -l 2>/dev/null')
+        return out2 or "No windows found"
     elif PLATFORM == 'Darwin':
         out, _ = _run("osascript -e 'tell application \"System Events\" to get name of every process whose visible is true'")
         return out or "No windows found"
     elif PLATFORM == 'Windows':
-        out, _ = _run('powershell -command "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object MainWindowTitle | ForEach-Object { $_.MainWindowTitle }"')
+        out, _ = _run('powershell -NoProfile -command "Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Select-Object -ExpandProperty MainWindowTitle"')
         return out or "No windows found"
     return "Window listing not supported on this platform"
 
 def focus_window(window_name):
-    """Focus window by name. Cross-platform."""
+    """Focus window by partial name. Cross-platform (pygetwindow → platform fallbacks)."""
+    if HAS_GW:
+        try:
+            matches = gw.getWindowsWithTitle(window_name)
+            if not matches:
+                # partial match
+                all_wins = gw.getAllWindows()
+                matches = [w for w in all_wins if window_name.lower() in (w.title or '').lower()]
+            if matches:
+                w = matches[0]
+                w.restore()
+                w.activate()
+                return f"Focused: {w.title}"
+        except Exception:
+            pass
     if PLATFORM == 'Linux':
         out, code = _xdotool('search', '--onlyvisible', '--name', window_name)
         if code == 0 and out:
             wid = out.strip().split('\n')[0]
             _xdotool('windowfocus', '--sync', wid)
             _xdotool('windowactivate', '--sync', wid)
-            return f"Focused window: {window_name} (id={wid})"
+            return f"Focused: {window_name} (id={wid})"
         return f"Window not found: {window_name}"
     elif PLATFORM == 'Darwin':
-        _run(f"osascript -e 'tell application \"{window_name}\" to activate'")
+        _run(f"osascript -e 'tell application \"{window_name}\" to activate' 2>/dev/null || true")
         return f"Focused: {window_name}"
     elif PLATFORM == 'Windows':
-        _run(f'powershell -command "(New-Object -ComObject Shell.Application).Windows() | Where-Object {{$_.LocationName -like \'*{window_name}*\'}} | ForEach-Object {{ $_.Visible = $true }}"')
+        script = f'$p=(Get-Process|Where-Object{{$_.MainWindowTitle-like\'*{window_name}*\'}}|Select-Object -First 1);if($p){{$p.MainWindowHandle|ForEach-Object{{[void][System.Runtime.InteropServices.Marshal]::GetFunctionPointerForDelegate((New-Object System.Delegate))}}};Add-Type -Name W -Member \'[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);\' -Namespace A;[A.W]::SetForegroundWindow($p.MainWindowHandle)}}'
+        _run(f'powershell -NoProfile -command "{script}"')
         return f"Focused: {window_name}"
     return f"Focus not supported on this platform"
 
 def maximize_window(window_name=None):
-    """Maximize current or named window."""
+    """Maximize window. Cross-platform."""
     if window_name:
         focus_window(window_name)
+    if HAS_GW:
+        try:
+            w = gw.getActiveWindow()
+            if w:
+                w.maximize()
+                return "Window maximized"
+        except Exception:
+            pass
     if PLATFORM == 'Windows':
-        keyboard_hotkey('win', 'Up')
+        keyboard_hotkey('win', 'up')
+    elif PLATFORM == 'Darwin':
+        # macOS doesn't have a universal maximize shortcut; use green button simulation
+        _run("osascript -e 'tell application \"System Events\" to keystroke \"f\" using {control down, command down}'")
     else:
-        keyboard_hotkey('super', 'Up')
+        keyboard_hotkey('super', 'up')
     return "Window maximized"
 
 def minimize_window():
-    """Minimize active window."""
+    """Minimize active window. Cross-platform."""
+    if HAS_GW:
+        try:
+            w = gw.getActiveWindow()
+            if w:
+                w.minimize()
+                return "Window minimized"
+        except Exception:
+            pass
     if PLATFORM == 'Windows':
-        keyboard_hotkey('win', 'Down')
+        keyboard_hotkey('win', 'down')
+    elif PLATFORM == 'Darwin':
+        keyboard_hotkey('command', 'm')
     else:
-        keyboard_hotkey('super', 'Down')
+        keyboard_hotkey('super', 'down')
     return "Window minimized"
 
 def switch_to_window(window_name):
@@ -544,6 +625,13 @@ def switch_to_window(window_name):
 
 def get_active_window():
     """Get currently active window title. Cross-platform."""
+    if HAS_GW:
+        try:
+            w = gw.getActiveWindow()
+            if w:
+                return f"Active: {w.title}"
+        except Exception:
+            pass
     if PLATFORM == 'Linux':
         out, _ = _xdotool('getactivewindow')
         if out:
@@ -554,7 +642,7 @@ def get_active_window():
         out, _ = _run("osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true'")
         return f"Active: {out}"
     elif PLATFORM == 'Windows':
-        out, _ = _run('powershell -command "(Get-Process | Where-Object {$_.MainWindowTitle} | Sort-Object StartTime -Descending | Select-Object -First 1).MainWindowTitle"')
+        out, _ = _run('powershell -NoProfile -command "(Get-Process | Where-Object {$_.MainWindowTitle -ne \'\'} | Sort-Object StartTime -Descending | Select-Object -First 1 -ExpandProperty MainWindowTitle)"')
         return f"Active: {out}"
     return "Unknown active window"
 
@@ -680,19 +768,151 @@ def lock_screen():
         _run('loginctl lock-session 2>/dev/null || xdg-screensaver lock 2>/dev/null || gnome-screensaver-command -l 2>/dev/null')
     return "Screen locked"
 
+def _volume_set_windows(level):
+    """Set Windows volume 0-100 using pycaw or nircmd."""
+    try:
+        from ctypes import cast, POINTER
+        from comtypes import CLSCTX_ALL
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume = cast(interface, POINTER(IAudioEndpointVolume))
+        volume.SetMasterVolumeLevelScalar(max(0.0, min(1.0, level / 100.0)), None)
+        return True
+    except Exception:
+        pass
+    try:
+        subprocess.run(['nircmd.exe', 'setsysvolume', str(int(level / 100 * 65535))], capture_output=True)
+        return True
+    except Exception:
+        return False
+
 def volume_up(steps=5):
-    for _ in range(steps):
-        keyboard_press('XF86AudioRaiseVolume')
-    return f"Volume raised by {steps}"
+    """Raise volume. Cross-platform."""
+    if PLATFORM == 'Windows':
+        for _ in range(steps):
+            keyboard_press('volumeup')
+        return f"Volume raised by {steps}"
+    elif PLATFORM == 'Darwin':
+        for _ in range(steps):
+            _run('osascript -e "set volume output volume ((output volume of (get volume settings)) + 6)"')
+        return f"Volume raised by {steps}"
+    else:
+        for _ in range(steps):
+            keyboard_press('XF86AudioRaiseVolume')
+        _run('pactl set-sink-volume @DEFAULT_SINK@ +10% 2>/dev/null')
+        return f"Volume raised by {steps}"
 
 def volume_down(steps=5):
-    for _ in range(steps):
-        keyboard_press('XF86AudioLowerVolume')
-    return f"Volume lowered by {steps}"
+    """Lower volume. Cross-platform."""
+    if PLATFORM == 'Windows':
+        for _ in range(steps):
+            keyboard_press('volumedown')
+        return f"Volume lowered by {steps}"
+    elif PLATFORM == 'Darwin':
+        for _ in range(steps):
+            _run('osascript -e "set volume output volume ((output volume of (get volume settings)) - 6)"')
+        return f"Volume lowered by {steps}"
+    else:
+        for _ in range(steps):
+            keyboard_press('XF86AudioLowerVolume')
+        _run('pactl set-sink-volume @DEFAULT_SINK@ -10% 2>/dev/null')
+        return f"Volume lowered by {steps}"
 
 def volume_mute():
-    keyboard_press('XF86AudioMute')
+    """Toggle mute. Cross-platform."""
+    if PLATFORM == 'Windows':
+        keyboard_press('volumemute')
+    elif PLATFORM == 'Darwin':
+        _run('osascript -e "set volume with output muted"')
+    else:
+        keyboard_press('XF86AudioMute')
+        _run('pactl set-sink-mute @DEFAULT_SINK@ toggle 2>/dev/null')
     return "Volume muted"
+
+def volume_set(level):
+    """Set volume to exact level 0-100. Cross-platform."""
+    level = max(0, min(100, int(level)))
+    if PLATFORM == 'Windows':
+        if not _volume_set_windows(level):
+            return f"Volume set failed (install pycaw or nircmd)"
+    elif PLATFORM == 'Darwin':
+        _run(f'osascript -e "set volume output volume {level}"')
+    else:
+        _run(f'pactl set-sink-volume @DEFAULT_SINK@ {level}% 2>/dev/null || amixer set Master {level}% 2>/dev/null')
+    return f"Volume set to {level}%"
+
+
+# ── System Info ──────────────────────────────────────────────────────────────
+
+def get_system_info():
+    """Return CPU, RAM, disk, OS info. Cross-platform."""
+    info = {'platform': PLATFORM, 'os': platform.platform()}
+    try:
+        import psutil
+        info['cpu_percent'] = psutil.cpu_percent(interval=0.5)
+        info['cpu_count'] = psutil.cpu_count()
+        m = psutil.virtual_memory()
+        info['ram_total_gb'] = round(m.total / 1e9, 1)
+        info['ram_used_percent'] = m.percent
+        d = psutil.disk_usage('/' if PLATFORM != 'Windows' else 'C:\\')
+        info['disk_total_gb'] = round(d.total / 1e9, 1)
+        info['disk_used_percent'] = d.percent
+    except ImportError:
+        if PLATFORM == 'Windows':
+            out, _ = _run('wmic cpu get loadpercentage /value')
+            info['cpu_raw'] = out
+        elif PLATFORM == 'Darwin':
+            out, _ = _run('top -l 1 -n 0 | grep "CPU usage"')
+            info['cpu_raw'] = out
+        else:
+            out, _ = _run('uptime')
+            info['cpu_raw'] = out
+    return info
+
+def get_running_processes(top_n=20):
+    """List top processes by CPU. Cross-platform."""
+    try:
+        import psutil
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            try:
+                procs.append(p.info)
+            except Exception:
+                pass
+        procs.sort(key=lambda x: x.get('cpu_percent', 0) or 0, reverse=True)
+        lines = [f"PID={p['pid']} CPU={p.get('cpu_percent',0):.1f}% MEM={p.get('memory_percent',0):.1f}% {p['name']}"
+                 for p in procs[:top_n]]
+        return '\n'.join(lines)
+    except ImportError:
+        pass
+    if PLATFORM == 'Windows':
+        out, _ = _run('tasklist /FO TABLE /NH')
+    elif PLATFORM == 'Darwin':
+        out, _ = _run('ps aux -r | head -20')
+    else:
+        out, _ = _run('ps aux --sort=-%cpu | head -20')
+    return out
+
+def screenshot_all_monitors():
+    """Capture all monitors and return list of file paths."""
+    paths = []
+    if HAS_MSS:
+        try:
+            with mss.MSS() as sct:
+                for i, mon in enumerate(sct.monitors[1:], 1):  # skip monitors[0] (all-in-one)
+                    p = os.path.join(tempfile.gettempdir(), f'devin_mon{i}_{int(time.time())}.png')
+                    shot = sct.grab(mon)
+                    mss.tools.to_png(shot.rgb, shot.size, output=p)
+                    if os.path.exists(p) and os.path.getsize(p) > 1000:
+                        paths.append(p)
+        except Exception:
+            pass
+    if not paths:
+        p = take_screenshot()
+        if isinstance(p, str) and 'failed' not in p:
+            paths.append(p.split(' ')[0])
+    return paths
 
 
 # ── Task Automation ───────────────────────────────────────────────────────────
@@ -916,9 +1136,14 @@ ACTIONS = {
     'volume_up':        lambda a: volume_up(a.get('steps', 5)),
     'volume_down':      lambda a: volume_down(a.get('steps', 5)),
     'volume_mute':      lambda a: volume_mute(),
+    'volume_set':       lambda a: volume_set(a['level']),
     'open_file_manager':lambda a: open_file_manager(a.get('path')),
     'speak':            lambda a: speak(a['text'], a.get('rate', 180), a.get('volume', 1.0)),
     'listen':           lambda a: listen(a.get('timeout', 5), a.get('phrase_limit', 15)),
+    'system_info':      lambda a: get_system_info(),
+    'processes':        lambda a: get_running_processes(a.get('top', 20)),
+    'screenshot_all':   lambda a: screenshot_all_monitors(),
+    'type_unicode':     lambda a: (_type_via_clipboard(a['text']), f"Pasted {len(a['text'])} chars")[1],
 }
 
 if __name__ == '__main__':

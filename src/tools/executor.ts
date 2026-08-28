@@ -415,35 +415,35 @@ except Exception as e:
 
   // ── System Info ──────────────────────────────────────────────────────────────
   async get_system_info({ include }) {
-    const metrics = String(include || 'all').split(',').map(s => s.trim());
-    const all = metrics.includes('all');
-    const parts: string[] = [];
-    if (all || metrics.includes('cpu')) {
-      const cpu = runShell('top -bn1 | head -5');
-      if (!cpu.isError) parts.push('=== CPU ===\n' + cpu.content);
-    }
-    if (all || metrics.includes('memory')) {
-      const mem = runShell('free -h');
-      if (!mem.isError) parts.push('=== Memory ===\n' + mem.content);
-    }
-    if (all || metrics.includes('disk')) {
-      const disk = runShell('df -h');
-      if (!disk.isError) parts.push('=== Disk ===\n' + disk.content);
-    }
-    if (all || metrics.includes('network')) {
-      const net = runShell('ip addr show 2>/dev/null || ifconfig 2>/dev/null');
-      if (!net.isError) parts.push('=== Network ===\n' + net.content.slice(0, 1000));
-    }
-    if (all || metrics.includes('os')) {
-      parts.push(`=== OS ===\nPlatform: ${os.platform()}\nArch: ${os.arch()}\nHostname: ${os.hostname()}\nUptime: ${Math.floor(os.uptime() / 3600)}h\nCPUs: ${os.cpus().length}\nFree RAM: ${Math.round(os.freemem() / 1024 / 1024)}MB`);
-    }
-    return ok(parts.join('\n\n') || 'No metrics');
+    // Use Python psutil layer — works on all platforms
+    const pyInfo = automate('system_info', {}, 10000);
+    const nodeParts = [
+      `Platform: ${os.platform()} ${os.arch()}`,
+      `Hostname: ${os.hostname()}`,
+      `Uptime: ${Math.floor(os.uptime() / 3600)}h`,
+      `CPUs: ${os.cpus().length}`,
+      `Free RAM: ${Math.round(os.freemem() / 1024 / 1024)}MB / ${Math.round(os.totalmem() / 1024 / 1024)}MB`,
+    ].join('\n');
+    const pyStr = pyInfo.isError ? '' : '\n' + String(pyInfo.content);
+    return ok(nodeParts + pyStr);
   },
 
   async list_processes({ filter, sort_by }) {
-    const f = filter ? `grep -i "${filter}"` : 'cat';
-    const sort = sort_by === 'cpu' ? '--sort=-%cpu' : sort_by === 'memory' ? '--sort=-%mem' : '';
-    return runShell(`ps aux ${sort} | ${f} | head -30`);
+    const result = automate('processes', { top: 30 }, 10000);
+    if (!result.isError && filter) {
+      const lines = String(result.content).split('\n')
+        .filter(l => l.toLowerCase().includes(String(filter).toLowerCase()));
+      return ok(lines.join('\n') || 'No matching processes');
+    }
+    return result;
+  },
+
+  async screenshot_all_monitors() {
+    return automate('screenshot_all', {}, 30000);
+  },
+
+  async set_volume({ level }) {
+    return automate('volume_set', { level: Number(level) });
   },
 
   // ── Memory ───────────────────────────────────────────────────────────────────
@@ -527,10 +527,11 @@ except Exception as e:
   },
 
   // ── Volume ───────────────────────────────────────────────────────────────────
-  async volume_control({ action, steps }) {
+  async volume_control({ action, steps, level }) {
     const a = String(action || 'up');
     const n = Number(steps || 5);
     if (a === 'mute') return automate('volume_mute', {});
+    if (a === 'set' && level !== undefined) return automate('volume_set', { level: Number(level) });
     if (a === 'down') return automate('volume_down', { steps: n });
     return automate('volume_up', { steps: n });
   },

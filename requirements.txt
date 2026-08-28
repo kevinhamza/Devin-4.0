@@ -57,6 +57,9 @@ watchdog
 pynput
 selenium
 pyautogui
+mss
+pygetwindow; sys_platform != 'linux'
+pycaw; sys_platform == 'win32'
 paramiko
 boto3
 google-cloud-storage

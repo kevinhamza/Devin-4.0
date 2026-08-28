@@ -236,3 +236,23 @@ export function volumeDown(steps = 5): string {
 export function volumeMute(): string {
   return auto('volume_mute');
 }
+
+export function volumeSet(level: number): string {
+  return auto('volume_set', { level });
+}
+
+export function getSystemInfo(): string {
+  return auto('system_info', {}, 10000);
+}
+
+export function getRunningProcesses(topN = 20): string {
+  return auto('processes', { top: topN }, 10000);
+}
+
+export function screenshotAllMonitors(): string {
+  return auto('screenshot_all', {}, 30000);
+}
+
+export function typeUnicode(text: string): string {
+  return auto('type_unicode', { text });
+}

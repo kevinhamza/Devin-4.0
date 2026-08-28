@@ -618,14 +618,26 @@ export const CORE_TOOLS: ToolDefinition[] = [
   // ── Volume / Media ────────────────────────────────────────────────────────
   {
     name: 'volume_control',
-    description: 'Control system volume: up, down, or mute.',
+    description: 'Control system volume: up, down, mute, or set exact level. Works on Linux, macOS, and Windows.',
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', description: '"up", "down", or "mute"' },
-        steps: { type: 'number', description: 'How many steps (default 5)' },
+        action: { type: 'string', description: '"up", "down", "mute", or "set"' },
+        steps: { type: 'number', description: 'How many steps for up/down (default 5)' },
+        level: { type: 'number', description: 'Exact volume level 0-100 (for action="set")' },
       },
       required: ['action'],
+    },
+  },
+
+  // ── Screenshot all monitors ───────────────────────────────────────────────
+  {
+    name: 'screenshot_all_monitors',
+    description: 'Capture all connected monitors and return the file paths. Works on all platforms.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
     },
   },
 
