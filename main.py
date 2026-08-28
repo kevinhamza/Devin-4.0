@@ -77,22 +77,22 @@ except ImportError:
     console = None
     HAS_RICH = False
 
-# ── Gemini SDK ────────────────────────────────────────────────────────────────
-_gemini_client = None
+# ── Gemini REST API ───────────────────────────────────────────────────────────
+_GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _GEMINI_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash",
+    "gemini-3.6-flash",      # primary — confirmed working
+    "gemini-3.5-flash",      # fallback — confirmed working
+    "gemini-3.1-flash-lite", # lightweight fallback
+    "gemini-flash-latest",   # latest alias
+    "gemini-1.5-flash",      # legacy fallback
 ]
+HAS_GEMINI = bool(GEMINI_API_KEY)
 
 try:
-    from google import genai as _genai
-    _gemini_client = _genai.Client(api_key=GEMINI_API_KEY)
-    HAS_GEMINI = True
-except Exception:
-    _genai = None
+    import requests as _requests
+    _HAS_REQUESTS = True
+except ImportError:
+    _HAS_REQUESTS = False
     HAS_GEMINI = False
 
 # ── Anthropic (Claude fallback) ───────────────────────────────────────────────
@@ -196,7 +196,7 @@ def print_banner():
     if HAS_RICH and console:
         console.print(Rule(style="cyan"))
         console.print(f"[bold cyan]  Devin AGI[/] [dim]v4.0.0  ·  24 repos integrated  ·  {platform.system()}[/]")
-        model_s = "gemini-2.5-flash" if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else "no AI")
+        model_s = _ACTIVE_MODEL or (_GEMINI_MODELS[0] if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else "no AI"))
         console.print(f"[dim]  model: {model_s}  ·  tools: {len(TOOL_REGISTRY)}  ·  voice: {'on' if VOICE_MODE else 'off'}[/]")
         console.print(Rule(style="cyan"))
         console.print()
@@ -452,25 +452,94 @@ Repos integrated: AIA, self-operating-computer, Jarvis, JARVIS-microsoft, Devin-
 Personality: Direct, capable, no filler. Do the task immediately.
 """
 
-# ── Gemini agentic loop ───────────────────────────────────────────────────────
+# ── Gemini REST API helpers ───────────────────────────────────────────────────
 _ACTIVE_MODEL = None
 
-def _call_gemini(messages: List[Dict], tools: List[Dict]) -> Any:
-    """Call Gemini API with function calling. Returns response object."""
-    global _ACTIVE_MODEL, _gemini_client, _genai
-    if not HAS_GEMINI or not _gemini_client:
+def _build_tool_declarations() -> List[Dict]:
+    """Convert TOOL_SCHEMAS to Gemini REST functionDeclarations format."""
+    decls = []
+    TYPE_MAP = {"integer": "INTEGER", "string": "STRING", "boolean": "BOOLEAN",
+                "array": "ARRAY", "object": "OBJECT", "number": "NUMBER"}
+    for t in TOOL_SCHEMAS:
+        params = t.get("parameters", {})
+        props = {}
+        for k, v in params.get("properties", {}).items():
+            prop: Dict = {"type": TYPE_MAP.get(v.get("type", "string"), "STRING")}
+            if v.get("description"):
+                prop["description"] = v["description"]
+            if v.get("enum"):
+                prop["enum"] = v["enum"]
+            if v.get("items"):
+                prop["items"] = {"type": TYPE_MAP.get(v["items"].get("type", "string"), "STRING")}
+            props[k] = prop
+        decl: Dict = {"name": t["name"], "description": t["description"]}
+        if props:
+            decl["parameters"] = {
+                "type": "OBJECT",
+                "properties": props,
+                "required": params.get("required", []),
+            }
+        else:
+            decl["parameters"] = {"type": "OBJECT", "properties": {}}
+        decls.append(decl)
+    return decls
+
+def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
+    """Call Gemini REST API directly. Returns parsed JSON response or None.
+    Raises RuntimeError on rate limit so caller can show clear message."""
+    global _ACTIVE_MODEL
+    if not HAS_GEMINI or not _HAS_REQUESTS or not GEMINI_API_KEY:
         return None
 
-    # Convert messages to Gemini contents format
-    contents = []
-    for m in messages:
+    body: Dict = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": contents,
+        "tools": [{"functionDeclarations": _build_tool_declarations()}],
+        "generationConfig": {"maxOutputTokens": 8192, "temperature": 0.3},
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+        "x-goog-api-client": "google-genai-sdk/2.19.0 gl-python/3.13.12",
+    }
+    models = ([_ACTIVE_MODEL] + [m for m in _GEMINI_MODELS if m != _ACTIVE_MODEL]) if _ACTIVE_MODEL else _GEMINI_MODELS
+    last_err = ""
+    for model in models:
+        url = f"{_GEMINI_REST_BASE}/{model}:generateContent"
+        try:
+            r = _requests.post(url, headers=headers, json=body, timeout=60)
+        except Exception as e:
+            last_err = str(e)
+            continue
+        if r.status_code == 429:
+            last_err = f"429 rate limit on {model}"
+            _ACTIVE_MODEL = None  # reset so next call tries fresh
+            continue  # try next model — each model has its own free-tier quota
+        if r.status_code in (404, 400):
+            last_err = f"{r.status_code}: {r.text[:200]}"
+            continue  # model not available, try next
+        if r.status_code != 200:
+            last_err = f"{r.status_code}: {r.text[:200]}"
+            continue
+        _ACTIVE_MODEL = model
+        return r.json()
+    # All models exhausted
+    if "rate limit" in last_err or "429" in last_err:
+        raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s or get a paid API key.")
+    return None
+
+def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[str] = None) -> str:
+    """Run the Gemini agentic loop for one user turn. Returns final text response."""
+    # Build Gemini-format contents from prior history
+    contents: List[Dict] = []
+    for m in history:
         role = m.get("role", "user")
         content = m.get("content", "")
-        if role in ("user", "assistant", "model"):
-            gemini_role = "model" if role == "assistant" else role
-            # Handle image content
+        if role == "system":
+            continue
+        elif role in ("user",):
             if isinstance(content, list):
-                parts = []
+                parts: List[Dict] = []
                 for part in content:
                     if isinstance(part, dict):
                         if part.get("type") == "text":
@@ -478,125 +547,94 @@ def _call_gemini(messages: List[Dict], tools: List[Dict]) -> Any:
                         elif part.get("type") == "image":
                             b64 = part.get("source", {}).get("data", "")
                             if b64:
-                                parts.append({"inline_data": {"mime_type": "image/png", "data": b64}})
-                    else:
-                        parts.append({"text": str(part)})
-                contents.append({"role": gemini_role, "parts": parts})
+                                parts.append({"inlineData": {"mimeType": "image/png", "data": b64}})
+                contents.append({"role": "user", "parts": parts or [{"text": " "}]})
             else:
-                contents.append({"role": gemini_role, "parts": [{"text": str(content)}]})
+                contents.append({"role": "user", "parts": [{"text": str(content) or " "}]})
+        elif role in ("assistant", "model"):
+            if content:
+                contents.append({"role": "model", "parts": [{"text": str(content)}]})
         elif role == "tool":
-            # Tool results — add as user message
-            contents.append({"role": "user", "parts": [{"text": f"[Tool result]: {content}"}]})
+            tool_name = m.get("name", "tool_result")
+            contents.append({"role": "user", "parts": [{"functionResponse": {
+                "name": tool_name, "response": {"output": str(content)},
+            }}]})
 
-    # Build Gemini tools
-    gemini_tools = []
-    for t in tools:
-        gemini_tools.append({
-            "function_declarations": [{
-                "name": t["name"],
-                "description": t["description"],
-                "parameters": t.get("parameters", {"type": "object", "properties": {}}),
-            }]
-        })
+    # Fix alternation — Gemini requires strict user/model alternation
+    def _fix_alternation(raw: List[Dict]) -> List[Dict]:
+        fixed: List[Dict] = []
+        for msg in raw:
+            prev = fixed[-1] if fixed else None
+            if prev and prev["role"] == msg["role"]:
+                if msg["role"] == "user":
+                    fixed.append({"role": "model", "parts": [{"text": " "}]})
+                else:
+                    prev["parts"].extend(msg["parts"])
+                    continue
+            fixed.append(msg)
+        if fixed and fixed[0]["role"] == "model":
+            fixed.insert(0, {"role": "user", "parts": [{"text": " "}]})
+        return fixed
 
-    # Try each model
-    models_to_try = _GEMINI_MODELS if not _ACTIVE_MODEL else [_ACTIVE_MODEL] + _GEMINI_MODELS
-    seen = set()
-    for model in models_to_try:
-        if model in seen:
-            continue
-        seen.add(model)
-        try:
-            from google.genai import types as gtypes
-            resp = _gemini_client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=gtypes.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    tools=gemini_tools if gemini_tools else None,
-                    temperature=0.3,
-                    max_output_tokens=8192,
-                ),
-            )
-            _ACTIVE_MODEL = model
-            return resp
-        except Exception as e:
-            err = str(e).lower()
-            if "not found" in err or "404" in err or "not supported" in err:
-                continue
-            if "quota" in err or "rate" in err:
-                time.sleep(3)
-                continue
-            break
-    return None
+    contents = _fix_alternation(contents)
 
-def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[str] = None) -> str:
-    """Run the full agentic loop for one user turn. Returns final text response."""
-    # Build the user message
+    # Add current user message
     if image_b64:
-        user_content: Any = [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}},
-            {"type": "text", "text": user_input},
-        ]
+        contents.append({"role": "user", "parts": [
+            {"inlineData": {"mimeType": "image/png", "data": image_b64}},
+            {"text": user_input},
+        ]})
     else:
-        user_content = user_input
-
-    history = history + [{"role": "user", "content": user_content}]
+        contents.append({"role": "user", "parts": [{"text": user_input}]})
 
     final_text = ""
     max_rounds = 30
 
     for _round in range(max_rounds):
-        # Show thinking indicator
-        if HAS_RICH and console:
-            with Live(RichSpinner("dots", text="[cyan]Devin is thinking…[/]"), refresh_per_second=10, transient=True):
-                resp = _call_gemini(history, TOOL_SCHEMAS)
-        else:
-            spin = Spinner()
-            spin.start()
-            resp = _call_gemini(history, TOOL_SCHEMAS)
-            spin.stop()
+        # Show thinking spinner
+        try:
+            if HAS_RICH and console:
+                with Live(RichSpinner("dots", text="[cyan]Devin is thinking…[/]"), refresh_per_second=10, transient=True):
+                    data = _call_gemini_rest(contents)
+            else:
+                spin = Spinner()
+                spin.start()
+                data = _call_gemini_rest(contents)
+                spin.stop()
+        except RuntimeError as e:
+            # Rate limit — show clear message and stop
+            if HAS_RICH and console:
+                console.print(f"\n[bold red]✗ {e}[/]")
+            else:
+                print(f"\n✗ {e}")
+            break
 
-        if resp is None:
+        if data is None:
+            if not HAS_GEMINI:
+                return "[No AI available — set GEMINI_API_KEY in .env]"
             return "[No AI response — check API key and model availability]"
 
-        # Extract text and function calls
+        # Parse response parts
         text_parts: List[str] = []
-        tool_calls: List[Any] = []
+        tool_calls: List[Dict] = []
+        raw_model_parts: List[Dict] = []
 
-        try:
-            for candidate in resp.candidates:
-                for part in candidate.content.parts:
-                    if hasattr(part, "text") and part.text:
-                        text_parts.append(part.text)
-                    if hasattr(part, "function_call") and part.function_call:
-                        tool_calls.append(part.function_call)
-        except Exception:
-            # Fallback: resp.text
-            try:
-                t = resp.text
-                if t:
-                    text_parts.append(t)
-            except Exception:
-                pass
+        candidates = data.get("candidates", [])
+        candidate = candidates[0] if candidates else {}
+        parts_list = candidate.get("content", {}).get("parts", [])
+
+        for part in parts_list:
+            raw_model_parts.append(part)
+            if "text" in part and part["text"]:
+                text_parts.append(part["text"])
+            elif "functionCall" in part:
+                fc = part["functionCall"]
+                tool_calls.append({
+                    "name": fc.get("name", ""),
+                    "args": fc.get("args", {}) if isinstance(fc.get("args"), dict) else {},
+                })
 
         text = "\n".join(text_parts).strip()
-
-        # Check for text-encoded tool calls (recovery parser)
-        TEXT_TOOL_RE = re.compile(r'\[Tool:\s*(\w+)\s*\((\{[^}]*\}|)\)\]')
-        for m in TEXT_TOOL_RE.finditer(text):
-            try:
-                t_name = m.group(1)
-                t_args = json.loads(m.group(2) or "{}")
-                # Create a fake function_call object
-                class _FakeFnCall:
-                    name = t_name
-                    args = t_args
-                tool_calls.append(_FakeFnCall())
-            except Exception:
-                pass
-        # Clean text of [Tool: ...] markers
-        text = TEXT_TOOL_RE.sub("", text).strip()
 
         # Display text output
         if text:
@@ -609,58 +647,53 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             final_text = text
 
         if not tool_calls:
-            # No more tool calls — done
-            break
+            break  # no more tool calls — done
 
-        # Execute tool calls
-        tool_results = []
-        assistant_text = text or "(acting)"
-        history.append({"role": "assistant", "content": assistant_text})
+        # Append model turn (with function calls) to contents
+        contents.append({
+            "role": "model",
+            "parts": raw_model_parts if raw_model_parts else [{"text": text or " "}],
+        })
 
-        for fc in tool_calls:
-            t_name = fc.name if hasattr(fc, "name") else str(fc)
-            t_args  = {}
-            if hasattr(fc, "args"):
-                raw = fc.args
-                if isinstance(raw, dict):
-                    t_args = raw
-                else:
-                    try:
-                        t_args = dict(raw)
-                    except Exception:
-                        pass
+        # Execute each tool call and collect functionResponse parts
+        fn_response_parts: List[Dict] = []
 
+        for tc in tool_calls:
+            t_name = tc["name"]
+            t_args = tc["args"]
             _tool_start(t_name, t_args)
 
             if t_name == "task_complete":
                 reason = t_args.get("reason", "")
                 _tool_result(f"✓ {reason}", ok=True)
-                history.append({"role": "tool", "content": f"Task complete: {reason}"})
-                # Get final summary from model
-                final_text = final_text or reason
-                return final_text
+                fn_response_parts.append({"functionResponse": {
+                    "name": t_name, "response": {"output": f"Task complete: {reason}"},
+                }})
+                contents.append({"role": "user", "parts": fn_response_parts})
+                return final_text or reason
 
             result = dispatch_tool(t_name, t_args)
             _tool_result(result[:200])
 
-            # Embed screenshots as vision content
             if t_name == "take_screenshot" and os.path.exists(result):
                 try:
                     with open(result, "rb") as f:
-                        img_b64 = base64.b64encode(f.read()).decode()
-                    tool_results.append({
-                        "role": "tool",
-                        "content": [
-                            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}},
-                            {"type": "text", "text": f"Screenshot saved to: {result}"}
-                        ]
-                    })
+                        scr_b64 = base64.b64encode(f.read()).decode()
+                    fn_response_parts.append({"functionResponse": {
+                        "name": t_name, "response": {"output": f"Screenshot taken: {result}"},
+                    }})
+                    fn_response_parts.append({"inlineData": {"mimeType": "image/png", "data": scr_b64}})
                 except Exception:
-                    tool_results.append({"role": "tool", "content": f"Screenshot: {result}"})
+                    fn_response_parts.append({"functionResponse": {
+                        "name": t_name, "response": {"output": result},
+                    }})
             else:
-                tool_results.append({"role": "tool", "content": result})
+                fn_response_parts.append({"functionResponse": {
+                    "name": t_name, "response": {"output": result},
+                }})
 
-        history.extend(tool_results)
+        # All tool results as one user turn
+        contents.append({"role": "user", "parts": fn_response_parts})
 
     return final_text or "(No response)"
 
@@ -842,9 +875,10 @@ def main():
         # Main AI loop
         try:
             response = _run_agentic_loop(user_input, history)
-            # Add to history
+            # Track conversation for context in future turns
             history.append({"role": "user", "content": user_input})
-            history.append({"role": "assistant", "content": response})
+            if response and response not in ("(No response)", "(No response)"):
+                history.append({"role": "assistant", "content": response})
             # Compact history (keep last 40 turns)
             if len(history) > 80:
                 summary_turns = history[:40]
