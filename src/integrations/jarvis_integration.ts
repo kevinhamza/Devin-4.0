@@ -7,6 +7,16 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 const DEVIN_ROOT = path.join(__dirname, '../..');
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+const IS_LIN = process.platform === 'linux';
+const PY    = IS_WIN ? 'python' : 'python3';
+
+function _env(): NodeJS.ProcessEnv {
+  const e = { ...process.env };
+  if (IS_LIN && !e['DISPLAY']) e['DISPLAY'] = ':0';
+  return e;
+}
 
 // ── Wake-word detection (from Jarvis/jarvis.py) ───────────────────────────────
 
@@ -37,7 +47,7 @@ with m as source:
         print("TIMEOUT")
 `;
     let out = '';
-    const child = cp.spawn('python3', ['-c', code]);
+    const child = cp.spawn(PY, ['-c', code], { env: _env() });
     child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
     child.on('close', () => resolve(out.includes('DETECTED')));
     child.on('error', () => resolve(false));
@@ -58,8 +68,7 @@ engine.setProperty('volume', 1.0)
 engine.say("""${text.replace(/"""/g, "'''")}""")
 engine.runAndWait()
 `;
-    cp.exec(`python3 -c '${code}'`, { env: { ...process.env, DISPLAY: ':0' } },
-      () => resolve());
+    cp.exec(`${PY} -c '${code}'`, { env: _env() }, () => resolve());
   });
 }
 
@@ -132,25 +141,35 @@ export async function executeJarvisCommand(command: JarvisCommand): Promise<stri
     case 'tell_date':
       return `Today is: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
     case 'volume_up':
-      cp.exec('DISPLAY=:0 pactl set-sink-volume @DEFAULT_SINK@ +10%');
+      if (IS_WIN) cp.exec('nircmd.exe changesysvolume 6554');
+      else if (IS_MAC) cp.exec('osascript -e "set volume output volume ((output volume of (get volume settings)) + 10)"');
+      else cp.exec('pactl set-sink-volume @DEFAULT_SINK@ +10%', { env: _env() });
       return 'Volume up';
     case 'volume_down':
-      cp.exec('DISPLAY=:0 pactl set-sink-volume @DEFAULT_SINK@ -10%');
+      if (IS_WIN) cp.exec('nircmd.exe changesysvolume -6554');
+      else if (IS_MAC) cp.exec('osascript -e "set volume output volume ((output volume of (get volume settings)) - 10)"');
+      else cp.exec('pactl set-sink-volume @DEFAULT_SINK@ -10%', { env: _env() });
       return 'Volume down';
     case 'open_app':
-      cp.exec(`DISPLAY=:0 ${command.args[0]} &`);
+      if (IS_WIN) cp.exec(`start "" "${command.args[0]}"`, { env: _env() });
+      else if (IS_MAC) cp.exec(`open -a "${command.args[0]}" || open "${command.args[0]}"`, { env: _env() });
+      else cp.exec(`${command.args[0]} &`, { env: _env() });
       return `Opening ${command.args[0]}`;
     case 'spotify_play':
-      cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play');
+      if (IS_LIN) cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Play');
+      else if (IS_MAC) cp.exec('osascript -e \'tell application "Spotify" to play\'');
       return 'Playing music';
     case 'spotify_pause':
-      cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Pause');
+      if (IS_LIN) cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Pause');
+      else if (IS_MAC) cp.exec('osascript -e \'tell application "Spotify" to pause\'');
       return 'Music paused';
     case 'spotify_next':
-      cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next');
+      if (IS_LIN) cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Next');
+      else if (IS_MAC) cp.exec('osascript -e \'tell application "Spotify" to next track\'');
       return 'Skipped to next track';
     case 'spotify_prev':
-      cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous');
+      if (IS_LIN) cp.exec('dbus-send --print-reply --dest=org.mpris.MediaPlayer2.spotify /org/mpris/MediaPlayer2 org.mpris.MediaPlayer2.Player.Previous');
+      else if (IS_MAC) cp.exec('osascript -e \'tell application "Spotify" to previous track\'');
       return 'Went to previous track';
     default:
       return `Unknown command: ${command.raw}`;

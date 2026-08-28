@@ -5,6 +5,7 @@
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { httpFetch } from '../tools/web_tool.js';
 
 const DEVIN_ROOT = path.join(__dirname, '../..');
@@ -220,7 +221,7 @@ export function captureNetworkTraffic(
   filter?: string
 ): string {
   if (!authorized) throw new Error('Authorization required for network traffic capture.');
-  const outFile = `/tmp/devin_capture_${Date.now()}.pcap`;
+  const outFile = path.join(os.tmpdir(), `devin_capture_${Date.now()}.pcap`);
   try {
     const filterStr = filter ? `"${filter}"` : '';
     cp.execSync(

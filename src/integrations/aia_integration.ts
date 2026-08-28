@@ -5,6 +5,16 @@
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+
+const IS_WIN = process.platform === 'win32';
+const IS_MAC = process.platform === 'darwin';
+// Build env with DISPLAY only on Linux
+function _env(): NodeJS.ProcessEnv {
+  const e = { ...process.env };
+  if (process.platform === 'linux' && !e['DISPLAY']) e['DISPLAY'] = ':0';
+  return e;
+}
 
 const DEVIN_ROOT = path.join(__dirname, '../..');
 const AIA_DIR = path.join(DEVIN_ROOT, 'external/AIA');
@@ -75,9 +85,10 @@ export async function runActionSequence(
 
 function runPyAutogui(code: string): string {
   try {
+    const py = IS_WIN ? 'python' : 'python3';
     return cp.execSync(
-      `DISPLAY=:0 python3 -c "${code.replace(/"/g, '\\"')}"`,
-      { encoding: 'utf8', timeout: 10000 }
+      `${py} -c "${code.replace(/"/g, '\\"')}"`,
+      { encoding: 'utf8', timeout: 10000, env: _env() }
     ).trim();
   } catch (e: unknown) {
     return String((e as Error).message || e).slice(0, 200);
@@ -104,15 +115,16 @@ export function takeScreenshot(savePath: string): string {
 
 export function openApplicationAIA(appName: string): string {
   try {
-    cp.execSync(`DISPLAY=:0 ${appName} &`, { timeout: 3000 });
-    return `Opened: ${appName}`;
-  } catch {
-    try {
-      cp.execSync(`DISPLAY=:0 xdg-open "${appName}"`, { timeout: 5000 });
-      return `Opened via xdg-open: ${appName}`;
-    } catch (e) {
-      return `Error: ${String(e).slice(0, 100)}`;
+    if (IS_WIN) {
+      cp.execSync(`start "" "${appName}"`, { timeout: 5000, env: _env() });
+    } else if (IS_MAC) {
+      cp.execSync(`open -a "${appName}" || open "${appName}"`, { timeout: 5000, env: _env() });
+    } else {
+      cp.execSync(`${appName} &`, { timeout: 3000, env: _env() });
     }
+    return `Opened: ${appName}`;
+  } catch (e) {
+    return `Error: ${String(e).slice(0, 100)}`;
   }
 }
 
@@ -124,7 +136,11 @@ export function getScreenSize(): { width: number; height: number } {
 
 export function closeApplicationByName(appName: string): string {
   try {
-    cp.execSync(`pkill -f "${appName}"`, { timeout: 5000 });
+    if (IS_WIN) {
+      cp.execSync(`taskkill /F /IM "${appName}.exe" 2>nul || taskkill /F /IM "${appName}" 2>nul`, { timeout: 5000 });
+    } else {
+      cp.execSync(`pkill -f "${appName}"`, { timeout: 5000 });
+    }
     return `Closed: ${appName}`;
   } catch {
     return `Process not found or could not be killed: ${appName}`;
@@ -132,16 +148,24 @@ export function closeApplicationByName(appName: string): string {
 }
 
 export function shutdownSystem(): void {
-  cp.execSync('sudo shutdown now');
+  if (IS_WIN) cp.execSync('shutdown /s /t 0');
+  else cp.execSync('sudo shutdown now');
 }
 
 export function restartSystem(): void {
-  cp.execSync('sudo reboot');
+  if (IS_WIN) cp.execSync('shutdown /r /t 0');
+  else cp.execSync('sudo reboot');
 }
 
 export function lockScreen(): string {
   try {
-    cp.execSync('DISPLAY=:0 xdg-screensaver lock || DISPLAY=:0 gnome-screensaver-command -l || loginctl lock-session');
+    if (IS_WIN) {
+      cp.execSync('rundll32.exe user32.dll,LockWorkStation');
+    } else if (IS_MAC) {
+      cp.execSync('pmset displaysleepnow');
+    } else {
+      cp.execSync('loginctl lock-session 2>/dev/null || xdg-screensaver lock 2>/dev/null || gnome-screensaver-command -l 2>/dev/null', { env: _env() });
+    }
     return 'Screen locked';
   } catch (e) {
     return `Lock failed: ${String(e).slice(0, 100)}`;
@@ -151,6 +175,7 @@ export function lockScreen(): string {
 // ── Process management (from AIA device_control: psutil wrappers) ──────────────
 
 export function listProcesses(): string {
+  if (IS_WIN) return cp.execSync('tasklist /FO CSV | head -20', { encoding: 'utf8' });
   return cp.execSync('ps aux --sort=-%cpu | head -20', { encoding: 'utf8' });
 }
 
@@ -192,9 +217,8 @@ e.setProperty('volume', 0.9)
 e.say(sys.argv[1])
 e.runAndWait()
 `;
-    const child = cp.spawn('python3', ['-c', code, text], {
-      env: { ...process.env, DISPLAY: ':0' },
-    });
+    const py = IS_WIN ? 'python' : 'python3';
+    const child = cp.spawn(py, ['-c', code, text], { env: _env() });
     child.on('close', (code) => code === 0 ? resolve() : reject(new Error(`TTS exited ${code}`)));
     child.on('error', reject);
   });
@@ -211,10 +235,9 @@ with m as source:
     audio = r.listen(source, timeout=${timeoutSecs})
 print(r.recognize_google(audio))
 `;
+    const py = IS_WIN ? 'python' : 'python3';
     let out = '';
-    const child = cp.spawn('python3', ['-c', code], {
-      env: { ...process.env, DISPLAY: ':0' },
-    });
+    const child = cp.spawn(py, ['-c', code], { env: _env() });
     child.stdout.on('data', (d: Buffer) => { out += d.toString(); });
     child.on('close', () => resolve(out.trim()));
     child.on('error', reject);

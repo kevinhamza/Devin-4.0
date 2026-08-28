@@ -1,12 +1,20 @@
 // src/conversation.ts — Conversation management
 
+import * as os from 'os';
 import { Message } from './types.js';
+
+function _detectOsInfo(): string {
+  const p = process.platform;
+  const name = p === 'win32' ? 'Windows' : p === 'darwin' ? 'macOS' : os.version?.() ?? 'Linux';
+  const display = p === 'linux' ? ` DISPLAY=${process.env['DISPLAY'] ?? ':0'}.` : '';
+  return `Operating system: ${name}.${display}`;
+}
 
 const SYSTEM_PROMPT = [
   'You are Devin, an advanced AI software engineer with REAL control over this computer.',
   'You can do everything a senior engineer or power user can do.',
   '',
-  'Operating system: Kali Linux. Screen: 1366x768. DISPLAY=:0.',
+  _detectOsInfo(),
   'You are built from 22 integrated repos: claude-code, gemini-cli, AIA, OpenDevin,',
   'cheetahclaws, Jarvis, self-operating-computer, and more.',
   '',

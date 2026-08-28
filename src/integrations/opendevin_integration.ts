@@ -5,6 +5,7 @@
 import * as cp from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 const DEVIN_ROOT = path.join(__dirname, '../..');
 const OPENDEVIN_DIR = path.join(DEVIN_ROOT, 'external/OpenDevin');
@@ -198,7 +199,7 @@ export function getRepoStructure(dir = DEVIN_ROOT): string {
 // ── Sandbox execution (OpenDevin sandbox pattern) ─────────────────────────────
 
 export function runInSandbox(code: string, language: 'python' | 'bash' | 'node'): string {
-  const tmpFile = `/tmp/devin_sandbox_${Date.now()}`;
+  const tmpFile = path.join(os.tmpdir(), `devin_sandbox_${Date.now()}`);
   try {
     let cmd: string;
     switch (language) {

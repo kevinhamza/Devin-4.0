@@ -1,6 +1,6 @@
 """
 modules/os_automation.py — Real-user OS automation for Devin AGI
-Combines pyautogui + xdotool + Xlib + pynput for full OS control.
+Cross-platform: Linux (xdotool + XDG portal), macOS (screencapture + osascript), Windows (pyautogui + PIL).
 Runs as a subprocess server or called directly from tool executor.
 """
 
@@ -13,9 +13,14 @@ import threading
 import platform
 import tempfile
 import base64
+import webbrowser
 from pathlib import Path
 
-os.environ.setdefault('DISPLAY', ':0')
+PLATFORM = platform.system()  # 'Linux', 'Darwin', 'Windows'
+
+# Only set DISPLAY on Linux (needed for X11/XWayland apps)
+if PLATFORM == 'Linux':
+    os.environ.setdefault('DISPLAY', ':0')
 
 try:
     import pyautogui
@@ -57,6 +62,8 @@ except Exception:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _xdotool(*args, capture=True):
+    if PLATFORM != 'Linux':
+        return '', 1
     r = subprocess.run(['xdotool'] + list(args),
                        capture_output=capture, text=True)
     return r.stdout.strip(), r.returncode
@@ -71,9 +78,12 @@ def _screen_size():
     if HAS_PYAUTOGUI:
         s = pyautogui.size()
         return s.width, s.height
-    out, _ = _xdotool('getdisplaygeometry')
-    parts = out.split()
-    return int(parts[0]), int(parts[1])
+    if PLATFORM == 'Linux':
+        out, _ = _xdotool('getdisplaygeometry')
+        parts = out.split()
+        if len(parts) >= 2:
+            return int(parts[0]), int(parts[1])
+    return 1920, 1080  # safe fallback
 
 
 # ── Screenshot ───────────────────────────────────────────────────────────────
@@ -144,59 +154,111 @@ def _take_screenshot_portal(save_path):
 
 
 def take_screenshot(save_path=None, region=None, as_base64=False):
-    """Capture full screen or region. Returns path or base64.
-    Primary: XDG Screenshot portal via D-Bus (no dialog, no xdotool).
-    Fallback: mss, pyautogui, scrot.
-    """
-    import shutil as _shutil
-    import glob as _glob
+    """Capture full screen or region. Returns path or base64. Cross-platform."""
     if save_path is None:
-        save_path = tempfile.mktemp(suffix='.png', prefix='devin_shot_')
+        save_path = os.path.join(tempfile.gettempdir(), f'devin_shot_{int(time.time())}.png')
 
     def _file_ok(p):
         return p and os.path.exists(p) and os.path.getsize(p) > 10240
 
-    # Primary: XDG Screenshot portal — works on GNOME Wayland, no dialog
-    try:
-        if _take_screenshot_portal(save_path) and _file_ok(save_path):
-            pass  # success, fall through to return
-    except Exception:
-        pass
-
-    # Secondary: mss
-    if not _file_ok(save_path) and HAS_MSS:
+    if PLATFORM == 'Linux':
+        # Primary: XDG Screenshot portal — works on GNOME Wayland, no dialog
         try:
-            with mss.MSS() as sct:
-                mon = {'left': int(region[0]), 'top': int(region[1]),
-                       'width': int(region[2]), 'height': int(region[3])} if region else (
-                    sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
-                shot = sct.grab(mon)
-                mss.tools.to_png(shot.rgb, shot.size, output=save_path)
+            if _take_screenshot_portal(save_path) and _file_ok(save_path):
+                pass
         except Exception:
             pass
 
-    # Tertiary: pyautogui
-    if not _file_ok(save_path) and HAS_PYAUTOGUI:
-        try:
-            img = (pyautogui.screenshot(region=tuple(region)) if region else pyautogui.screenshot())
-            img.save(save_path)
-        except Exception:
-            pass
+        # Secondary: mss
+        if not _file_ok(save_path) and HAS_MSS:
+            try:
+                with mss.MSS() as sct:
+                    mon = {'left': int(region[0]), 'top': int(region[1]),
+                           'width': int(region[2]), 'height': int(region[3])} if region else (
+                        sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
+                    shot = sct.grab(mon)
+                    mss.tools.to_png(shot.rgb, shot.size, output=save_path)
+            except Exception:
+                pass
 
-    # Quaternary: scrot
+        # Tertiary: pyautogui
+        if not _file_ok(save_path) and HAS_PYAUTOGUI:
+            try:
+                img = (pyautogui.screenshot(region=tuple(region)) if region else pyautogui.screenshot())
+                img.save(save_path)
+            except Exception:
+                pass
+
+        # Quaternary: scrot
+        if not _file_ok(save_path):
+            try:
+                cmd = ['scrot', save_path]
+                if region:
+                    rx, ry, rw, rh = region
+                    cmd = ['scrot', '-a', f'{int(rx)},{int(ry)},{int(rw)},{int(rh)}', save_path]
+                subprocess.run(cmd, capture_output=True, env={**os.environ, 'DISPLAY': ':0'}, timeout=5)
+            except Exception:
+                pass
+
+    elif PLATFORM == 'Darwin':
+        # macOS: screencapture -x (silent, no shutter sound)
+        if not _file_ok(save_path):
+            try:
+                cmd = ['screencapture', '-x', save_path]
+                if region:
+                    rx, ry, rw, rh = [int(v) for v in region]
+                    cmd = ['screencapture', '-x', '-R', f'{rx},{ry},{rw},{rh}', save_path]
+                subprocess.run(cmd, capture_output=True, timeout=10)
+            except Exception:
+                pass
+
+        # Fallback: pyautogui / PIL
+        if not _file_ok(save_path) and HAS_PYAUTOGUI:
+            try:
+                img = (pyautogui.screenshot(region=tuple(region)) if region else pyautogui.screenshot())
+                img.save(save_path)
+            except Exception:
+                pass
+
+        if not _file_ok(save_path) and HAS_PIL:
+            try:
+                img = ImageGrab.grab(bbox=tuple(region) if region else None)
+                img.save(save_path)
+            except Exception:
+                pass
+
+    else:  # Windows
+        # PIL ImageGrab is the most reliable on Windows
+        if HAS_PIL:
+            try:
+                bbox = (int(region[0]), int(region[1]),
+                        int(region[0]) + int(region[2]),
+                        int(region[1]) + int(region[3])) if region else None
+                img = ImageGrab.grab(bbox=bbox)
+                img.save(save_path)
+            except Exception:
+                pass
+
+        if not _file_ok(save_path) and HAS_PYAUTOGUI:
+            try:
+                img = (pyautogui.screenshot(region=tuple(region)) if region else pyautogui.screenshot())
+                img.save(save_path)
+            except Exception:
+                pass
+
+        if not _file_ok(save_path) and HAS_MSS:
+            try:
+                with mss.MSS() as sct:
+                    mon = {'left': int(region[0]), 'top': int(region[1]),
+                           'width': int(region[2]), 'height': int(region[3])} if region else (
+                        sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
+                    shot = sct.grab(mon)
+                    mss.tools.to_png(shot.rgb, shot.size, output=save_path)
+            except Exception:
+                pass
+
     if not _file_ok(save_path):
-        try:
-            env = {**os.environ, 'DISPLAY': ':0'}
-            cmd = ['scrot', save_path]
-            if region:
-                rx, ry, rw, rh = region
-                cmd = ['scrot', '-a', f'{int(rx)},{int(ry)},{int(rw)},{int(rh)}', save_path]
-            subprocess.run(cmd, capture_output=True, env=env, timeout=5)
-        except Exception:
-            pass
-
-    if not _file_ok(save_path):
-        return f"Screenshot failed — tried GNOME PrintScreen, mss, pyautogui, scrot"
+        return f"Screenshot failed on {PLATFORM} — tried all available methods"
 
     size = os.path.getsize(save_path)
     if as_base64:
@@ -325,10 +387,13 @@ def type_in_terminal(text):
 # ── Applications ──────────────────────────────────────────────────────────────
 
 def open_application(app_name, args=None):
-    """Open an application by name."""
-    cmd = app_name
-    if args:
-        cmd = f"{app_name} {args}"
+    """Open an application by name. Cross-platform."""
+    if PLATFORM == 'Darwin':
+        cmd = f'open -a "{app_name}"' + (f' --args {args}' if args else '')
+    elif PLATFORM == 'Windows':
+        cmd = f'start "" "{app_name}"' + (f' {args}' if args else '')
+    else:
+        cmd = app_name + (f' {args}' if args else '')
     proc = subprocess.Popen(cmd, shell=True,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
@@ -337,71 +402,140 @@ def open_application(app_name, args=None):
     return f"Opened {app_name} (pid={proc.pid})"
 
 def open_url_in_browser(url):
-    """Open URL in default browser."""
-    r, _ = _run(f'xdg-open "{url}"')
+    """Open URL in default browser. Cross-platform."""
+    try:
+        webbrowser.open(url)
+        time.sleep(1)
+        return f"Opened {url} in browser"
+    except Exception:
+        pass
+    if PLATFORM == 'Linux':
+        _run(f'xdg-open "{url}"')
+    elif PLATFORM == 'Darwin':
+        _run(f'open "{url}"')
+    elif PLATFORM == 'Windows':
+        _run(f'start "" "{url}"')
     time.sleep(1)
     return f"Opened {url} in browser"
 
 def open_file(path):
-    """Open a file with its default application."""
-    r, _ = _run(f'xdg-open "{path}"')
+    """Open a file with its default application. Cross-platform."""
+    if PLATFORM == 'Windows':
+        try:
+            os.startfile(path)
+            return f"Opened file: {path}"
+        except Exception:
+            pass
+        _run(f'start "" "{path}"')
+    elif PLATFORM == 'Darwin':
+        _run(f'open "{path}"')
+    else:
+        _run(f'xdg-open "{path}"')
     time.sleep(1)
     return f"Opened file: {path}"
 
 def open_terminal():
-    """Open a terminal emulator."""
-    for term in ['gnome-terminal', 'xterm', 'konsole', 'xfce4-terminal', 'lxterminal']:
+    """Open a terminal emulator. Cross-platform."""
+    if PLATFORM == 'Darwin':
         try:
-            subprocess.Popen([term], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(['open', '-a', 'Terminal'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             time.sleep(1)
-            return f"Opened {term}"
-        except FileNotFoundError:
-            continue
-    return "No terminal emulator found"
+            return "Opened Terminal (macOS)"
+        except Exception:
+            pass
+        try:
+            subprocess.Popen(['open', '-a', 'iTerm'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1)
+            return "Opened iTerm"
+        except Exception:
+            return "No terminal found on macOS"
+    elif PLATFORM == 'Windows':
+        for term in ['wt.exe', 'cmd.exe']:
+            try:
+                subprocess.Popen([term], creationflags=subprocess.CREATE_NEW_CONSOLE)
+                time.sleep(1)
+                return f"Opened {term}"
+            except Exception:
+                continue
+        return "No terminal found on Windows"
+    else:
+        for term in ['gnome-terminal', 'xterm', 'konsole', 'xfce4-terminal', 'lxterminal', 'alacritty', 'kitty']:
+            try:
+                subprocess.Popen([term], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(1)
+                return f"Opened {term}"
+            except FileNotFoundError:
+                continue
+        return "No terminal emulator found"
 
 def close_application(app_name):
-    """Close application by name."""
-    out, _ = _run(f'pkill -f "{app_name}"')
+    """Close application by name. Cross-platform."""
+    if PLATFORM == 'Windows':
+        _run(f'taskkill /F /IM "{app_name}.exe" 2>nul || taskkill /F /IM "{app_name}" 2>nul')
+    elif PLATFORM == 'Darwin':
+        _run(f'pkill -f "{app_name}" 2>/dev/null || osascript -e \'quit app "{app_name}"\'')
+    else:
+        _run(f'pkill -f "{app_name}"')
     return f"Closed {app_name}"
 
 
 # ── Window Management ─────────────────────────────────────────────────────────
 
 def list_windows():
-    """List all open windows."""
-    out, _ = _xdotool('search', '--onlyvisible', '--name', '.')
-    if not out:
-        # Alternative: wmctrl
-        out2, _ = _run('wmctrl -l 2>/dev/null || xdotool search --onlyvisible --name "" 2>/dev/null')
-        return out2
-    # Get titles for each window id
-    lines = []
-    for wid in out.strip().split('\n')[:20]:
-        name, _ = _xdotool('getwindowname', wid)
-        if name:
-            lines.append(f"{wid}: {name}")
-    return '\n'.join(lines) if lines else out
+    """List all open windows. Cross-platform."""
+    if PLATFORM == 'Linux':
+        out, _ = _xdotool('search', '--onlyvisible', '--name', '.')
+        if not out:
+            out2, _ = _run('wmctrl -l 2>/dev/null')
+            return out2 or "No windows found"
+        lines = []
+        for wid in out.strip().split('\n')[:20]:
+            name, _ = _xdotool('getwindowname', wid)
+            if name:
+                lines.append(f"{wid}: {name}")
+        return '\n'.join(lines) if lines else out
+    elif PLATFORM == 'Darwin':
+        out, _ = _run("osascript -e 'tell application \"System Events\" to get name of every process whose visible is true'")
+        return out or "No windows found"
+    elif PLATFORM == 'Windows':
+        out, _ = _run('powershell -command "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object MainWindowTitle | ForEach-Object { $_.MainWindowTitle }"')
+        return out or "No windows found"
+    return "Window listing not supported on this platform"
 
 def focus_window(window_name):
-    """Focus window by name."""
-    out, code = _xdotool('search', '--onlyvisible', '--name', window_name)
-    if code == 0 and out:
-        wid = out.strip().split('\n')[0]
-        _xdotool('windowfocus', '--sync', wid)
-        _xdotool('windowactivate', '--sync', wid)
-        return f"Focused window: {window_name} (id={wid})"
-    return f"Window not found: {window_name}"
+    """Focus window by name. Cross-platform."""
+    if PLATFORM == 'Linux':
+        out, code = _xdotool('search', '--onlyvisible', '--name', window_name)
+        if code == 0 and out:
+            wid = out.strip().split('\n')[0]
+            _xdotool('windowfocus', '--sync', wid)
+            _xdotool('windowactivate', '--sync', wid)
+            return f"Focused window: {window_name} (id={wid})"
+        return f"Window not found: {window_name}"
+    elif PLATFORM == 'Darwin':
+        _run(f"osascript -e 'tell application \"{window_name}\" to activate'")
+        return f"Focused: {window_name}"
+    elif PLATFORM == 'Windows':
+        _run(f'powershell -command "(New-Object -ComObject Shell.Application).Windows() | Where-Object {{$_.LocationName -like \'*{window_name}*\'}} | ForEach-Object {{ $_.Visible = $true }}"')
+        return f"Focused: {window_name}"
+    return f"Focus not supported on this platform"
 
 def maximize_window(window_name=None):
     """Maximize current or named window."""
     if window_name:
         focus_window(window_name)
-    keyboard_hotkey('super', 'Up')
+    if PLATFORM == 'Windows':
+        keyboard_hotkey('win', 'Up')
+    else:
+        keyboard_hotkey('super', 'Up')
     return "Window maximized"
 
 def minimize_window():
     """Minimize active window."""
-    keyboard_hotkey('super', 'Down')
+    if PLATFORM == 'Windows':
+        keyboard_hotkey('win', 'Down')
+    else:
+        keyboard_hotkey('super', 'Down')
     return "Window minimized"
 
 def switch_to_window(window_name):
@@ -409,12 +543,20 @@ def switch_to_window(window_name):
     return focus_window(window_name)
 
 def get_active_window():
-    """Get currently active window title."""
-    out, _ = _xdotool('getactivewindow')
-    if out:
-        name, _ = _xdotool('getwindowname', out.strip())
-        return f"Active: {name} (id={out.strip()})"
-    return "No active window"
+    """Get currently active window title. Cross-platform."""
+    if PLATFORM == 'Linux':
+        out, _ = _xdotool('getactivewindow')
+        if out:
+            name, _ = _xdotool('getwindowname', out.strip())
+            return f"Active: {name} (id={out.strip()})"
+        return "No active window"
+    elif PLATFORM == 'Darwin':
+        out, _ = _run("osascript -e 'tell application \"System Events\" to get name of first process whose frontmost is true'")
+        return f"Active: {out}"
+    elif PLATFORM == 'Windows':
+        out, _ = _run('powershell -command "(Get-Process | Where-Object {$_.MainWindowTitle} | Sort-Object StartTime -Descending | Select-Object -First 1).MainWindowTitle"')
+        return f"Active: {out}"
+    return "Unknown active window"
 
 def get_screen_size():
     w, h = _screen_size()
@@ -470,13 +612,46 @@ def wait_for_image(image_path, timeout=10, confidence=0.8):
 # ── Clipboard ─────────────────────────────────────────────────────────────────
 
 def clipboard_get():
-    out, _ = _run('xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null')
-    return out
+    """Get clipboard contents. Cross-platform."""
+    if PLATFORM == 'Darwin':
+        out, _ = _run('pbpaste')
+        return out
+    elif PLATFORM == 'Windows':
+        try:
+            import tkinter as _tk
+            root = _tk.Tk()
+            root.withdraw()
+            data = root.clipboard_get()
+            root.destroy()
+            return data
+        except Exception:
+            pass
+        out, _ = _run('powershell -command "Get-Clipboard"')
+        return out
+    else:
+        out, _ = _run('xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null')
+        return out
 
 def clipboard_set(text):
-    p = subprocess.Popen('xclip -selection clipboard', shell=True,
-                         stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    p.communicate(text.encode())
+    """Set clipboard contents. Cross-platform."""
+    if PLATFORM == 'Darwin':
+        p = subprocess.Popen('pbcopy', stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        p.communicate(text.encode())
+    elif PLATFORM == 'Windows':
+        try:
+            import tkinter as _tk
+            root = _tk.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            root.update()
+            root.destroy()
+        except Exception:
+            _run(f'powershell -command "Set-Clipboard -Value \'{text}\'"')
+    else:
+        p = subprocess.Popen('xclip -selection clipboard', shell=True,
+                             stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        p.communicate(text.encode())
     return f"Clipboard set: {text[:50]}"
 
 def copy_selected():
@@ -496,7 +671,13 @@ def show_desktop():
     return "Desktop shown"
 
 def lock_screen():
-    _run('xdg-screensaver lock 2>/dev/null || loginctl lock-session 2>/dev/null || gnome-screensaver-command -l 2>/dev/null')
+    """Lock the screen. Cross-platform."""
+    if PLATFORM == 'Darwin':
+        _run('pmset displaysleepnow 2>/dev/null || osascript -e \'tell application "System Events" to keystroke "q" using {command down, control down}\'')
+    elif PLATFORM == 'Windows':
+        _run('rundll32.exe user32.dll,LockWorkStation')
+    else:
+        _run('loginctl lock-session 2>/dev/null || xdg-screensaver lock 2>/dev/null || gnome-screensaver-command -l 2>/dev/null')
     return "Screen locked"
 
 def volume_up(steps=5):
@@ -528,12 +709,13 @@ def human_click_and_type(x, y, text, clear_first=True):
 
 def run_shell_in_terminal(command):
     """Execute command (capturing output) AND show it visually in a terminal."""
-    # Always capture actual output so Devin gets results back
+    shell = 'cmd' if PLATFORM == 'Windows' else 'bash'
+    shell_flag = '/c' if PLATFORM == 'Windows' else '-c'
     try:
         proc = subprocess.run(
-            ['bash', '-c', command],
+            [shell, shell_flag, command],
             capture_output=True, text=True, timeout=30,
-            env={**os.environ, 'DISPLAY': ':0'}
+            env=os.environ.copy()
         )
         output = (proc.stdout + proc.stderr).strip()
         if not output:
@@ -583,17 +765,27 @@ def close_current_window():
 # ── Composite Real-User Actions ───────────────────────────────────────────────
 
 def open_file_manager(path=None):
-    cmd = f'nautilus "{path}"' if path else 'nautilus'
-    for fm in ['nautilus', 'thunar', 'nemo', 'dolphin', 'pcmanfm']:
-        arg = f'"{path}"' if path else ''
-        try:
-            subprocess.Popen(f'{fm} {arg}', shell=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(1)
-            return f"Opened file manager: {fm} {arg}"
-        except Exception:
-            continue
-    return "No file manager found"
+    """Open file manager at path. Cross-platform."""
+    if PLATFORM == 'Darwin':
+        cmd = f'open "{path}"' if path else 'open ~'
+        _run(cmd)
+        return f"Opened Finder: {path or '~'}"
+    elif PLATFORM == 'Windows':
+        target = f'"{path}"' if path else ''
+        subprocess.Popen(f'explorer {target}', shell=True)
+        time.sleep(1)
+        return f"Opened Explorer: {path or 'Home'}"
+    else:
+        for fm in ['nautilus', 'thunar', 'nemo', 'dolphin', 'pcmanfm']:
+            arg = f'"{path}"' if path else ''
+            try:
+                subprocess.Popen(f'{fm} {arg}', shell=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                time.sleep(1)
+                return f"Opened file manager: {fm} {arg}"
+            except Exception:
+                continue
+        return "No file manager found"
 
 def take_annotated_screenshot(annotation=None):
     """Take screenshot, optionally save with label."""

@@ -9,7 +9,10 @@ import * as fs from 'fs';
 
 const DEVIN_ROOT = path.join(__dirname, '../..');
 const AUTOMATION_SCRIPT = path.join(DEVIN_ROOT, 'modules/os_automation.py');
-const VENV_PY = path.join(DEVIN_ROOT, 'venv/bin/python3');
+// Use venv Python if available, otherwise system Python
+const VENV_PY_UNIX = path.join(DEVIN_ROOT, 'venv/bin/python3');
+const VENV_PY_WIN  = path.join(DEVIN_ROOT, 'venv/Scripts/python.exe');
+const IS_WINDOWS   = process.platform === 'win32';
 
 export type AutomationResult = { ok: boolean; result?: unknown; error?: string };
 
@@ -17,13 +20,28 @@ export type AutomationResult = { ok: boolean; result?: unknown; error?: string }
 
 export function runAutomation(action: string, args: Record<string, unknown> = {}, timeout = 15000): AutomationResult {
   const payload = JSON.stringify({ action, args });
-  const python = fs.existsSync(VENV_PY) ? VENV_PY : 'python3';
+
+  // Resolve Python interpreter: prefer venv, fall back to system Python
+  let python: string;
+  if (IS_WINDOWS) {
+    python = fs.existsSync(VENV_PY_WIN) ? VENV_PY_WIN : 'python';
+  } else {
+    python = fs.existsSync(VENV_PY_UNIX) ? VENV_PY_UNIX : 'python3';
+  }
+
+  // Build command — on Linux ensure DISPLAY is set for any X11 sub-tools
+  const escapedPayload = payload.replace(/'/g, "'\\''");
+  const cmd = IS_WINDOWS
+    ? `"${python}" "${AUTOMATION_SCRIPT}" "${payload.replace(/"/g, '\\"')}"`
+    : `"${python}" "${AUTOMATION_SCRIPT}" '${escapedPayload}'`;
+
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (process.platform === 'linux' && !env['DISPLAY']) {
+    env['DISPLAY'] = ':0';
+  }
 
   try {
-    const out = cp.execSync(
-      `DISPLAY=:0 "${python}" "${AUTOMATION_SCRIPT}" '${payload.replace(/'/g, "'\\''")}'`,
-      { timeout, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    const out = cp.execSync(cmd, { timeout, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], env });
     return JSON.parse(out.trim()) as AutomationResult;
   } catch (e: unknown) {
     const err = e as { stdout?: string; stderr?: string; message?: string };
