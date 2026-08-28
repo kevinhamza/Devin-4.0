@@ -575,10 +575,17 @@ def focus_window(window_name):
         _run(f"osascript -e 'tell application \"{window_name}\" to activate' 2>/dev/null || true")
         return f"Focused: {window_name}"
     elif PLATFORM == 'Windows':
-        script = f'$p=(Get-Process|Where-Object{{$_.MainWindowTitle-like\'*{window_name}*\'}}|Select-Object -First 1);if($p){{$p.MainWindowHandle|ForEach-Object{{[void][System.Runtime.InteropServices.Marshal]::GetFunctionPointerForDelegate((New-Object System.Delegate))}}};Add-Type -Name W -Member \'[DllImport("user32.dll")]public static extern bool SetForegroundWindow(IntPtr h);\' -Namespace A;[A.W]::SetForegroundWindow($p.MainWindowHandle)}}'
-        _run(f'powershell -NoProfile -command "{script}"')
+        # Use taskmgr-style focus: find process by window title and bring to front
+        ps_cmd = (
+            "Add-Type -Name W -Namespace A -Member "
+            "'[DllImport(\"user32.dll\")]public static extern bool SetForegroundWindow(IntPtr h);';"
+            "$p=Get-Process|Where-Object{$_.MainWindowTitle -like '*" + window_name + "*'}|"
+            "Select-Object -First 1;"
+            "if($p){[A.W]::SetForegroundWindow($p.MainWindowHandle)}"
+        )
+        _run('powershell -NoProfile -command "' + ps_cmd + '"')
         return f"Focused: {window_name}"
-    return f"Focus not supported on this platform"
+    return "Focus not supported on this platform"
 
 def maximize_window(window_name=None):
     """Maximize window. Cross-platform."""
