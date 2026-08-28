@@ -160,13 +160,35 @@ async function runConversation(
       process.stdout.write('\n');
     }
 
-    // Build assistant history entry
-    const assistantContent = [
-      ...(textContent ? [textContent] : []),
-      ...toolUses.map(tu => `[Tool: ${tu.name}(${JSON.stringify(tu.input).slice(0, 120)})]`),
-    ].join('\n');
+    // Build assistant history entry — do NOT include [Tool: ...] text, it confuses Gemini
+    // into mimicking that format as plain text instead of using real function calls.
+    const assistantContent = textContent || (toolUses.length > 0 ? '(acting)' : '');
     if (assistantContent) {
       history.push({ role: 'assistant', content: assistantContent });
+    }
+
+    // Detect when Gemini outputs "[Tool: name({args})]" as plain text instead of a real call.
+    // Parse and re-execute those as actual tool uses so the task continues.
+    if (toolUses.length === 0 && textContent) {
+      const TEXT_TOOL_RE = /\[Tool:\s*(\w+)\s*\((\{.*?\}|)\)\]/g;
+      let m: RegExpExecArray | null;
+      const recovered: ToolUseBlock[] = [];
+      while ((m = TEXT_TOOL_RE.exec(textContent)) !== null) {
+        const tName = m[1];
+        let tInput: Record<string, unknown> = {};
+        try { tInput = JSON.parse(m[2] || '{}'); } catch { /* empty args */ }
+        recovered.push({ type: 'tool_use', id: `rec_${Date.now()}`, name: tName, input: tInput });
+      }
+      if (recovered.length > 0) {
+        // Execute recovered tool calls and continue the loop
+        for (const tu of recovered) {
+          printToolCall(tu.name, tu.input as Record<string, unknown>);
+          const result = await executeTool(tu.name, tu.input as Record<string, unknown>, config);
+          printToolResult(result.content, result.isError);
+          history.push({ role: 'tool', content: result.content, name: tu.id });
+        }
+        continue; // Re-enter loop so model can act on results
+      }
     }
 
     // task_complete → done
