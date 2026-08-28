@@ -1,4 +1,4 @@
-# Devin AGI 4.0
+THIS HAS MANY BUGS RIGHT NOW AND I AM LOOKING FOR CONTRIBUTORS # Devin AGI 4.0
 
 An advanced AI assistant with **real OS control** — it moves the mouse, types, takes screenshots, runs commands, and operates software exactly like a human user. Powered by Gemini with a Claude Code-style terminal interface.
 
