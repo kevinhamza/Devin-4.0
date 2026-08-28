@@ -121,17 +121,25 @@ async function runConversation(
         } catch (e2: unknown) {
           lastCallError = e2;
           const msg = String(e2).toLowerCase();
+          // Rate limit thrown by provider = fail immediately, don't retry loop
+          const isRateLimitThrow = msg.includes('rate limit') || msg.includes('free tier quota');
+          if (isRateLimitThrow) break;
           const isTransient = msg.includes('fetch failed') || msg.includes('econnreset') ||
             msg.includes('socket') || msg.includes('network') || msg.includes('etimedout') ||
-            msg.includes('503') || msg.includes('429') || msg.includes('rate') ||
-            msg.includes('quota') || msg.includes('unavailable');
+            msg.includes('503') || msg.includes('unavailable');
           if (!isTransient) break; // non-retriable — give up immediately
         }
       }
     }
     if (!gotResponse || !response) {
       spinner.stop();
-      printError(`Provider error: ${lastCallError}`);
+      const errMsg = String(lastCallError);
+      if (errMsg.includes('429') || errMsg.toLowerCase().includes('quota') || errMsg.toLowerCase().includes('rate')) {
+        printError('Rate limit hit (free tier: 20 req/min). Wait ~60s and try again.');
+        printError('Get a higher-quota key at: https://aistudio.google.com/app/apikey');
+      } else {
+        printError(`Provider error: ${errMsg.slice(0, 200)}`);
+      }
       return;
     }
 

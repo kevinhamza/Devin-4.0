@@ -51,7 +51,7 @@ function pickProvider(): Config['provider'] {
 function pickModel(provider: Config['provider']): string {
   switch (provider) {
     case 'anthropic': return process.env.DEVIN_MODEL || 'claude-sonnet-4-6';
-    case 'gemini':    return process.env.DEVIN_MODEL || 'gemini-2.5-flash';
+    case 'gemini':    return process.env.DEVIN_MODEL || 'gemini-3.6-flash';
     case 'openai':    return process.env.DEVIN_MODEL || 'gpt-4o';
     default:          return process.env.DEVIN_MODEL || 'llama3.1';
   }
