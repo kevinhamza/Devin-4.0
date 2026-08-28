@@ -1,6 +1,6 @@
 # Devin AGI v4.0.0
 
-Advanced AI assistant with a Claude Code-style interface, full OS control, and 24 integrated external repos. Runs autonomously — no confirmation dialogs.
+Advanced AI software engineer with a **Claude Code-style interface**, full OS control (mouse, keyboard, screenshots, windows), voice I/O, and **24+ integrated external repos** — all powered by Gemini. Runs autonomously on Linux, macOS, and Windows.
 
 ```
 ╭──────────────────────────────────────────────────────────────────╮
@@ -50,50 +50,53 @@ Searched for "python tutorials" in Firefox.
 ## Quick Start
 
 ```bash
-cd /home/kevin/DEVIN2/Devin-4.0
+git clone https://github.com/kevinhamza/Devin-4.0 && cd Devin-4.0
 
-# Activate venv (dependencies already installed)
-source venv/bin/activate
+# Python environment
+python3 -m venv venv && source venv/bin/activate   # Linux/macOS
+# or: python -m venv venv && venv\Scripts\activate  # Windows
+pip install -r requirements.txt
 
-# Launch (interactive REPL)
-./devin
-# or
-node dist/cli.js
+# Set your Gemini API key (free at aistudio.google.com)
+echo 'GEMINI_API_KEY="your-key-here"' > .env
+
+# Launch (choose one)
+python main.py              # Python TUI (recommended — full OS control)
+./devin                     # Bash wrapper (Linux/macOS)
+node dist/cli.js            # TypeScript CLI
 ```
 
 ## Usage
 
 ```
-node dist/cli.js [options] 
+python main.py [options]
 
 Options:
-  --print "<text>"    One-shot mode (run task and exit)
-  --provider <p>      gemini | anthropic | openai | ollama | groq | deepseek
-  --model <name>      Model name override
-  --plan              Plan mode (describe without executing)
-  --voice             Enable voice input/output
-  --web [--port N]    Web UI (default port 3000)
-  -v, --verbose       Show raw API responses
+  --voice             Enable voice mode (wake word "devin")
+  --auto              Auto-approve all actions
+  --model MODEL       Gemini model name override
+  --verbose           Show debug output
+  prompt              One-shot mode: python main.py "do something"
 ```
 
 ### Examples
 
 ```bash
-# Interactive REPL (default)
-./devin
+# Interactive REPL
+python main.py
 
 # One-shot tasks
-node dist/cli.js --print "take a screenshot and describe what's on screen"
-node dist/cli.js --print "open firefox and go to github.com"
-node dist/cli.js --print "list all python files here and count lines"
-node dist/cli.js --print "what's my CPU and RAM usage?"
+python main.py "take a screenshot and describe the screen"
+python main.py "open firefox and search for python tutorials"
+python main.py "list all python files here and count lines"
+python main.py "what's my CPU and RAM usage?"
 
-# Other providers
+# Voice mode
+python main.py --voice
+
+# TypeScript CLI (alternative)
+node dist/cli.js --print "run nmap on 192.168.1.1"
 node dist/cli.js --provider anthropic --model claude-sonnet-4-6
-node dist/cli.js --provider groq --model llama-3.1-70b
-
-# Plan before executing
-node dist/cli.js --plan "install and configure nginx"
 ```
 
 ### Slash commands
@@ -253,24 +256,29 @@ node dist/cli.js --print "hub_status"
 
 ```
 Devin-4.0/
-├── src/                      TypeScript CLI
+├── main.py                   Python TUI entry point (Claude Code-style)
+├── modules/
+│   ├── os_automation.py      Cross-platform OS control (xdotool/pyautogui/mss)
+│   ├── engine.py             DevinEngine — Gemini API + tool dispatch + memory
+│   ├── browser.py            Selenium → Playwright → webbrowser fallback chain
+│   ├── voice.py              pyttsx3 TTS + SpeechRecognition STT + Whisper fallback
+│   ├── repo_tools.py         Direct wrappers for all external repo classes
+│   └── integration_hub.py    24-repo live integration hub
+├── src/                      TypeScript CLI (alternative)
 │   ├── cli.ts                REPL with streaming + retry logic
 │   ├── conversation.ts       System prompt + tool rules
 │   ├── providers/
-│   │   ├── gemini.ts         Gemini provider (stop_reason fix)
+│   │   ├── gemini.ts         Gemini provider
 │   │   ├── anthropic.ts      Claude provider
 │   │   └── multi.ts          11-provider router
-│   ├── tools/
-│   │   ├── executor.ts       90+ tool implementations
-│   │   └── definitions.ts    JSON Schema specs
-│   └── config.ts             Default: auto_approve mode
-├── modules/
-│   ├── os_automation.py      OS control (xdotool + pyautogui)
-│   └── integration_hub.py    24-repo live integration hub
-├── external/                 24 cloned repos (loaded via sys.path)
-├── main.py                   Python orchestration
-├── dist/                     Compiled JS (npm run build)
-└── .env                      API keys
+│   └── tools/
+│       ├── executor.ts       90+ tool implementations
+│       └── definitions.ts    JSON Schema specs
+├── external/                 24 cloned repos (loaded via sys.path injection)
+├── dist/                     Compiled TypeScript (npm run build)
+├── devin                     Bash launcher (Linux/macOS)
+├── devin.bat                 Windows launcher
+└── .env                      API keys (never committed)
 ```
 
 ## Configuration
@@ -298,18 +306,38 @@ VIRUSTOTAL_API_KEY="..."        # Optional
 ## Requirements
 
 ```bash
-# Python (use venv — already set up)
+# Python 3.10+ (use venv)
 source venv/bin/activate
+pip install -r requirements.txt
 
-# System tools (Kali/Debian)
-sudo apt install xdotool
+# System tools — Linux (Debian/Kali)
+sudo apt install xdotool scrot xclip
 
-# Node.js 18+
+# System tools — macOS (Homebrew)
+brew install python-tk
+
+# System tools — Windows
+# Install Python from python.org — all deps in requirements.txt
+
+# Node.js 18+ (optional — for TypeScript CLI)
 npm install && npm run build
-
-# DISPLAY must be set
-export DISPLAY=:0
 ```
+
+### Key Python dependencies
+
+| Package | Purpose |
+|---------|---------|
+| `google-genai` | Gemini API (primary LLM) |
+| `pyautogui` | Mouse & keyboard automation |
+| `mss` | Fast cross-platform screenshots |
+| `pygetwindow` | Window management (non-Linux) |
+| `pyttsx3` | Text-to-speech |
+| `SpeechRecognition` | Speech-to-text |
+| `selenium` | Browser automation |
+| `playwright` | Browser automation fallback |
+| `psutil` | System info & process list |
+| `python-dotenv` | `.env` loading |
+| `pycaw` | Windows volume control |
 
 ## Troubleshooting
 
