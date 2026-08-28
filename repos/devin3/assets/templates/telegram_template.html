@@ -1,0 +1,22 @@
+<b>{{ title | default("Devin AI Notification") }}</b> {{ message_body | default("No specific message content.") }} {% if details and details|length > 0 %}
+<u>Details:</u> {% for key, value in details.items() %}
+- <b>{{ key | replace('_', ' ') | capitalize }}:</b> <code>{{ value }}</code> {% endfor %}
+{% endif %}
+
+{% if code_snippet %}
+<u>Code Snippet:</u>
+<pre><code class="language-{{ code_language | default('text') }}">{{ code_snippet }}</code></pre> {% endif %}
+
+{% if status_update %}
+<i>Status: {{ status_update }}</i> {% endif %}
+
+{% if warning_message %}
+<s>Warning:</s> <tg-spoiler>{{ warning_message }}</tg-spoiler> {% endif %}
+
+{% if action_url and action_text %}
+For more details, visit: <a href="{{ action_url }}">{{ action_text | default("Click Here") }}</a> {% endif %}
+
+{% if user_mention_id and user_mention_name %}
+Mentioning user: <a href="tg://user?id={{ user_mention_id }}">{{ user_mention_name }}</a> {% endif %}
+
+<i>Timestamp: {{ timestamp | default("Not specified") }}</i>

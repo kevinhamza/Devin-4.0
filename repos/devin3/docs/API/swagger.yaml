@@ -1,0 +1,129 @@
+openapi: 3.0.0
+info:
+  title: Devin AGI Backend Services API
+  description: API for controlling Devin's backend modules like cloud, analytics, and mobile integration.
+  version: "1.0.0"
+
+servers:
+  - url: http://localhost:5002
+    description: Cloud Integration Server
+  - url: http://localhost:5004
+    description: Analytics Server
+  - url: http://localhost:5006
+    description: Mobile Integration Server
+
+paths:
+  /aws/vms:
+    get:
+      summary: List AWS EC2 Instances
+      description: Retrieves a list of all EC2 instances in a normalized format.
+      tags:
+        - CloudIntegration
+      responses:
+        '200':
+          description: A list of normalized VM resources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizedCloudResource'
+        '500':
+          description: Internal Server Error
+  
+  /gcp/vms:
+    get:
+      summary: List GCP Compute Engine Instances
+      description: Retrieves a list of all GCE instances in a normalized format.
+      tags:
+        - CloudIntegration
+      responses:
+        '200':
+          description: A list of normalized VM resources.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NormalizedCloudResource'
+  
+  /log:
+    post:
+      summary: Log a new event
+      description: Logs a single key-value event to the analytics engine.
+      tags:
+        - Analytics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogEvent'
+      responses:
+        '200':
+          description: Event logged successfully.
+        '400':
+          description: Invalid request body.
+
+  /devices:
+    get:
+      summary: List Connected Mobile Devices
+      description: Returns a list of all devices connected via ADB.
+      tags:
+        - MobileIntegration
+      responses:
+        '200':
+          description: A list of connected devices.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MobileDevice'
+
+components:
+  schemas:
+    NormalizedCloudResource:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "WebServer-Prod"
+        provider:
+          type: string
+          example: "AWS"
+        provider_id:
+          type: string
+          example: "i-01a2b3c4d5e6f7g8h"
+        status:
+          type: string
+          example: "running"
+        public_ip:
+          type: string
+          example: "54.123.45.67"
+        resource_type:
+          type: string
+          example: "VIRTUAL_MACHINE"
+
+    LogEvent:
+      type: object
+      required:
+        - event_type
+        - value
+      properties:
+        event_type:
+          type: string
+          example: "cpu_usage"
+        value:
+          type: number
+          example: 88.2
+
+    MobileDevice:
+      type: object
+      properties:
+        serial:
+          type: string
+          example: "emulator-5554"
+        status:
+          type: string
+          example: "device"

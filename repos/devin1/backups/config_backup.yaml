@@ -1,0 +1,76 @@
+# Configuration Backup for Devin AI
+# This YAML file contains default configuration settings, user preferences,
+# and system properties essential for system restoration and maintenance.
+
+version: 1.0
+backup_date: "{{current_date}}"  # Automatically generated backup date
+system_info:
+  os: "{{detected_os}}"
+  architecture: "{{system_architecture}}"
+  processor: "{{processor_info}}"
+
+default_settings:
+  language: "en-US"
+  theme: "dark"
+  auto_updates: true
+  backup_frequency: "weekly"
+  error_logging: true
+
+user_preferences:
+  notifications:
+    enable: true
+    email_alerts: true
+    push_alerts: false
+  privacy:
+    data_collection: false
+    ad_personalization: false
+  interface:
+    font_size: "medium"
+    shortcut_keys:
+      enable: true
+      custom_keys:
+        open_dashboard: "Ctrl+D"
+        close_app: "Ctrl+Q"
+
+api_keys:
+  google_api: "{{encrypted_google_key}}"
+  aws_access: "{{encrypted_aws_key}}"
+  azure_api: "{{encrypted_azure_key}}"
+  openai_api: "{{encrypted_openai_key}}"
+
+integrations:
+  social_media:
+    twitter:
+      enabled: true
+      credentials:
+        username: "{{twitter_username}}"
+        api_key: "{{encrypted_twitter_key}}"
+    facebook:
+      enabled: true
+      credentials:
+        username: "{{facebook_username}}"
+        app_secret: "{{encrypted_facebook_key}}"
+
+security:
+  encryption:
+    method: "AES-256"
+    key_rotation_interval: "90 days"
+  two_factor_auth:
+    enabled: true
+    methods:
+      - "SMS"
+      - "Email"
+
+database_settings:
+  type: "SQLite"
+  path: "/path/to/user_profiles_backup.db"
+  backup_retention: "6 months"
+
+scripts:
+  pre_backup: "/path/to/pre_backup_script.sh"
+  post_backup: "/path/to/post_backup_script.sh"
+
+notes:
+  - "Do not modify this file manually unless necessary."
+  - "Use the config manager tool for changes."
+

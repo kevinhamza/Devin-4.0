@@ -1,0 +1,57 @@
+# Linux-Specific Configurations for Devin Project
+
+# Operating System Specific Configurations
+linux:
+  package_manager: "apt-get" # Default package manager for Ubuntu and Debian-based systems
+  preferred_shell: "/bin/bash" # Preferred shell for development and execution
+  firewall:
+    enabled: true # Enable the Linux firewall
+    rules:
+      - "INPUT ACCEPT" # Default rule for incoming connections
+      - "OUTPUT ACCEPT" # Default rule for outgoing connections
+      - "ALLOW all from 127.0.0.1" # Allow local loopback
+      - "DENY all from 0.0.0.0/0" # Deny all external connections by default
+  service_management:
+    systemctl:
+      enabled: true # Use systemd for service management
+      default_runlevel: "multi-user.target" # Default runlevel for server configurations
+    chkconfig:
+      enabled: false # Disable traditional init.d service management
+  network:
+    settings:
+      hostname: "devin-linux" # Default hostname for the system
+      static_ip:
+        enabled: true # Enable static IP configuration
+        address: "192.168.1.100" # Static IP address
+        netmask: "255.255.255.0" # Subnet mask
+        gateway: "192.168.1.1" # Default gateway
+      dns_servers:
+        - "8.8.8.8" # Google DNS
+        - "8.8.4.4" # Alternative Google DNS
+  directory_structure:
+    home_dir: "/home/devin" # Home directory for the Devin project
+    data_storage: "/var/lib/devin/data" # Directory for storing data
+    log_dir: "/var/log/devin" # Directory for log files
+    config_dir: "/etc/devin" # Directory for configuration files
+  cron_jobs:
+    enabled: true # Enable cron jobs for regular tasks
+    jobs:
+      - name: "Backup Script"
+        schedule: "0 2 * * 7" # Weekly backup every Sunday at 2 AM
+        command: "/usr/local/bin/backup.sh"
+      - name: "Clean Temporary Files"
+        schedule: "0 3 * * 1-5" # Daily cleanup at 3 AM
+        command: "/usr/local/bin/cleanup.sh"
+  system_updates:
+    enabled: true # Enable automatic system updates
+    update_frequency: "daily" # Frequency of updates (hourly, daily, weekly)
+  file_permissions:
+    user: "devin" # User for Devin application
+    group: "devin" # Group for Devin application
+    permissions: "755" # Default directory permissions
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last Linux-specific configuration update
+
+# Note:
+# - Make sure to configure the firewall and network settings according to the specific environment.
+# - Use the package manager and system settings appropriate for the Linux distribution.
+# - Adjust directories and paths according to your project’s directory structure.

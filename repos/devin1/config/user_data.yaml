@@ -1,0 +1,67 @@
+# User-Specific Data Storage Configuration for Devin Project
+
+# User Data Configuration
+user_data:
+  personal_info:
+    name: "John Doe" # User's full name
+    email: "user@example.com" # User's email address
+    phone: "+1234567890" # User's phone number
+    address: # User's physical address
+      street: "123 Main St"
+      city: "Metropolis"
+      state: "XY"
+      postal_code: "12345"
+      country: "CountryName"
+  preferences:
+    language: "en" # Preferred language for user interface
+    timezone: "UTC" # User's preferred timezone
+    date_format: "YYYY-MM-DD" # Preferred date format
+    time_format: "24-hour" # Preferred time format (24-hour, 12-hour)
+  activity_log:
+    enabled: true # Enable activity log for the user
+    logs: [] # List of user activity logs, initially empty
+  payment_methods:
+    credit_cards: # User's credit card information (encrypted)
+      - card_number: "encrypted_card_number_1"
+        expiry_date: "MM/YY"
+        cardholder_name: "Encrypted Name"
+        security_code: "encrypted_security_code_1"
+      - card_number: "encrypted_card_number_2"
+        expiry_date: "MM/YY"
+        cardholder_name: "Encrypted Name"
+        security_code: "encrypted_security_code_2"
+  preferences:
+    notifications:
+      email: true # User prefers email notifications
+      sms: false # User does not prefer SMS notifications
+      push: true # User prefers push notifications
+    privacy:
+      profile_visibility: "friends_only" # Profile visibility to friends only
+      ad_preferences:
+        personalized_ads: false # User does not want personalized ads
+        show_ads_from: "selected_brands" # Show ads from selected brands
+    social_media:
+      facebook: "user_facebook_id" # User's Facebook profile ID
+      twitter: "user_twitter_handle" # User's Twitter handle
+  security:
+    password: # User's hashed password (placeholder, replace with actual hashed password)
+      hashed: "hashed_password_here"
+    two_factor_authentication: true # Enable two-factor authentication for added security
+  preferences:
+    default_language: "en" # Default language for the user interface
+    theme: "dark" # Preferred theme for the user interface (light, dark, custom)
+    notification_frequency: "immediate" # Frequency of email notifications (immediate, daily, weekly)
+  analytics:
+    enabled: true # Enable analytics tracking for user data
+    data:
+      - last_login: "2024-12-20T12:00:00Z" # Last login timestamp
+      - total_logins: 150 # Total number of logins
+      - preferred_features:
+        - "feature_1"
+        - "feature_2"
+        - "feature_3" # List of user's preferred features
+
+# Note:
+# - Sensitive user information should be handled securely.
+# - Data should be encrypted and access controlled.
+# - Consult with a professional for detailed implementation.

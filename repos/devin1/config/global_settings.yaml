@@ -1,0 +1,145 @@
+# Global Settings Configuration
+
+# General System Settings
+system_name: "Devin AI Project"
+description: "A comprehensive AI system for various tasks including penetration testing, bug hunting, and automation."
+
+# Directories
+project_root: "/path/to/devin/project"
+log_directory: "/path/to/logs"
+temp_directory: "/path/to/temp"
+
+# API Keys
+api_keys:
+  google: "YOUR_GOOGLE_API_KEY"
+  aws: "YOUR_AWS_ACCESS_KEY_ID"
+  aws_secret: "YOUR_AWS_SECRET_ACCESS_KEY"
+  chatgpt: "YOUR_CHATGPT_API_KEY"
+  copilot: "YOUR_COPILOT_API_KEY"
+  gemini: "YOUR_GEMINI_API_KEY"
+
+# Modules
+enabled_modules:
+  - "face_recognition"
+  - "voice_recognition"
+  - "social_media_management"
+  - "internet_task_automation"
+  - "device_control"
+  - "machine_learning"
+  - "pen_testing"
+
+# Security Settings
+encryption_key: "YOUR_ENCRYPTION_KEY"
+firewall_enabled: true
+anti_malware_scan: true
+monitoring_service: "DevinMonitoringService"
+
+# Development Settings
+dev_mode: true
+debugging_tools: 
+  - "PyCharm"
+  - "VS Code"
+  - "GDB"
+logging_level: "DEBUG"
+
+# Production Settings
+production_mode: false
+logging_level_prod: "INFO"
+performance_optimizations:
+  - "Code compilation"
+  - "Memory management"
+  - "Optimized server configurations"
+
+# Test Settings
+test_mode: false
+logging_level_test: "DEBUG"
+automated_tests: 
+  - "unit_tests"
+  - "integration_tests"
+  - "regression_tests"
+test_environment_variables:
+  - "TEST_DB_URL"
+  - "TEST_API_ENDPOINT"
+
+# Deployment Settings
+deploy_script: "deploy.sh"
+update_script: "update.sh"
+
+# Docker Configuration
+docker_network: "devin_network"
+docker_compose_file: "docker-compose.yaml"
+
+# Multi-environment Settings
+multi_env:
+  development: true
+  production: false
+  testing: false
+
+# User Roles
+user_roles:
+  admin:
+    - "read"
+    - "write"
+    - "execute"
+  user:
+    - "read"
+    - "write"
+  guest:
+    - "read"
+
+# Notifications
+email_notifications_enabled: true
+slack_notifications_enabled: false
+
+# Endpoints
+endpoints:
+  api_base_url: "https://api.devin.ai"
+  status_page_url: "https://devinstatus.page"
+
+# External Services
+external_services:
+  pim_eye: "https://api.pim.eye"
+  cloud_storage_provider: "https://cloud.provider/api"
+  monitoring_service: "https://monitoring.service/api"
+
+# Backup Settings
+backup_schedule: "daily"
+backup_retention: 7 # Days
+
+# Custom Commands
+custom_commands:
+  - "reboot"
+  - "shutdown"
+  - "update_all"
+
+# Development Environment Variables
+dev_env_vars:
+  - "DEV_API_ENDPOINT=https://dev.api.endpoint"
+  - "DEV_DB_URL=mysql://dev:password@localhost/devdb"
+
+# Production Environment Variables
+prod_env_vars:
+  - "PROD_API_ENDPOINT=https://prod.api.endpoint"
+  - "PROD_DB_URL=mysql://prod:password@localhost/proddb"
+
+# Test Environment Variables
+test_env_vars:
+  - "TEST_API_ENDPOINT=https://test.api.endpoint"
+  - "TEST_DB_URL=mysql://test:password@localhost/testdb"
+
+# Multi-environment Variables
+multi_env_vars:
+  - "DEV_API_ENDPOINT=https://dev.api.endpoint"
+  - "PROD_API_ENDPOINT=https://prod.api.endpoint"
+  - "TEST_API_ENDPOINT=https://test.api.endpoint"
+
+# AI APIs
+ai_apis:
+  - "ChatGPT"
+  - "Copilot"
+  - "Gemini"
+
+# Additional Configuration
+additional_config:
+  - "EnableFeatureX: true"
+  - "DisableFeatureY: false"

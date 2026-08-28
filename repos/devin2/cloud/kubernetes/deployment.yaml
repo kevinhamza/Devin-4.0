@@ -1,0 +1,150 @@
+# Devin/cloud/kubernetes/deployment.yaml
+# Purpose: Kubernetes Deployment manifest for running a Devin component (e.g., API Gateway).
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Name of the Deployment object
+  name: devin-api-gateway-deployment
+  # Namespace where this deployment should reside (optional, but recommended)
+  namespace: devin-prod # Example: 'devin-dev', 'devin-prod'
+  labels:
+    # Labels to apply to the Deployment itself
+    app.kubernetes.io/name: devin
+    app.kubernetes.io/component: api-gateway
+    app.kubernetes.io/instance: devin-gateway-main
+metadata: # Metadata ends here
+
+spec:
+  # Number of desired Pod replicas
+  replicas: 2 # Example: Run 2 instances for basic availability
+
+  # Strategy for updating Pods (optional, RollingUpdate is default)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1 # Allow one Pod to be unavailable during update
+      maxSurge: 1 # Allow one extra Pod above replicas during update
+
+  # Selector to identify the Pods managed by this Deployment
+  selector:
+    matchLabels:
+      # These labels MUST match the labels in spec.template.metadata.labels
+      app.kubernetes.io/name: devin
+      app.kubernetes.io/component: api-gateway
+
+  # Template describing the Pods to be created
+  template:
+    metadata:
+      # Labels applied to each Pod created by this Deployment
+      labels:
+        app.kubernetes.io/name: devin
+        app.kubernetes.io/component: api-gateway
+        # Add any other relevant pod labels (e.g., version)
+        # version: {{ image_tag | default('latest') }}
+    spec:
+      # Optional: Specify service account if needed for K8s API access or cloud permissions
+      # serviceAccountName: devin-service-account
+
+      # List of containers running in the Pod (often just one)
+      containers:
+      - name: api-gateway-container # Name of the container within the Pod
+        # *** REPLACE with your actual container image ***
+        image: your-docker-registry/devin-api-gateway:{{ image_tag | default('latest') }}
+        imagePullPolicy: IfNotPresent # Or Always, Never
+
+        # Ports exposed by the container
+        ports:
+        - name: http # Name for the port
+          containerPort: 8000 # Port the application listens on inside the container (e.g., Uvicorn default)
+          protocol: TCP
+
+        # --- Environment Variables ---
+        # Load configuration and secrets securely using ConfigMaps and Secrets
+        env:
+          - name: PYTHONUNBUFFERED # Recommended for Python logging in containers
+            value: "1"
+          - name: LOG_LEVEL
+            valueFrom:
+              configMapKeyRef:
+                name: devin-global-config # Assumes a ConfigMap named 'devin-global-config' exists
+                key: LOG_LEVEL # Key within the ConfigMap
+                optional: true # Make it optional, default might be handled in code
+          - name: API_GATEWAY_PORT
+            value: "8000"
+          # Example: Load database URL from a Secret
+          - name: DATABASE_URL
+            valueFrom:
+              secretKeyRef:
+                name: devin-secrets # Assumes a Secret named 'devin-secrets' exists
+                key: DATABASE_URL # Key within the Secret
+          # Example: Load JWT Secret Key from a Secret
+          - name: API_JWT_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: devin-secrets
+                key: API_JWT_SECRET_KEY
+          # Add other necessary env vars (API keys for integrations, etc.) loaded from Secrets/ConfigMaps
+          # - name: OPENAI_API_KEY
+          #   valueFrom:
+          #     secretKeyRef:
+          #       name: devin-api-keys
+          #       key: OPENAI_API_KEY
+
+        # --- Resource Requests and Limits ---
+        # Define resource needs for scheduling and preventing resource starvation/overuse.
+        # Adjust these values based on actual application performance monitoring.
+        resources:
+          requests: # Minimum resources requested
+            memory: "512Mi" # Example: 512 Mebibytes of RAM
+            cpu: "250m" # Example: 0.25 CPU cores (millicores)
+          limits: # Maximum resources allowed
+            memory: "1Gi" # Example: 1 Gibibyte of RAM
+            cpu: "1000m" # Example: 1 CPU core
+
+        # --- Health Checks ---
+        # Readiness probe: Determines if the Pod is ready to receive traffic
+        readinessProbe:
+          httpGet:
+            path: /health # Assumes a /health endpoint exists in your API
+            port: http # Use the port name defined above (or number 8000)
+          initialDelaySeconds: 15 # Wait before first probe
+          periodSeconds: 10 # How often to probe
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+
+        # Liveness probe: Determines if the Pod is still running correctly; restarts if fails
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30 # Wait longer before first liveness probe
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+
+        # Optional: Volume Mounts (e.g., for ConfigMaps as files, persistent storage)
+        # volumeMounts:
+        #   - name: config-volume
+        #     mountPath: /etc/devin/config
+        #   - name: data-volume
+        #     mountPath: /data
+
+      # Optional: Define Volumes used by volumeMounts
+      # volumes:
+      #   - name: config-volume
+      #     configMap:
+      #       name: devin-component-config # Assumes a ConfigMap exists
+      #   - name: data-volume
+      #     persistentVolumeClaim:
+      #       claimName: devin-api-gateway-pvc # Assumes a PVC exists
+
+      # Optional: Define image pull secrets if using a private registry
+      # imagePullSecrets:
+      # - name: my-registry-key
+
+      # Optional: Define node selectors, affinities, tolerations for advanced scheduling
+      # nodeSelector:
+      #   disktype: ssd

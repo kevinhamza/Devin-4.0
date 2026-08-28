@@ -1,0 +1,1943 @@
+Let think outside the box and make a ai that control all the computer of user and handles multiples task and do any think on the internet to search and control on internet and this project name is devin.
+and please also remember and all remember every single line of codes and every single line ok and remember our all convercation for errorfree codes ok and can do all the task by the help of api of ais like you chatgpt , copilot , Gimini etc and now everything what is next process want to do.
+Actually i want to make this ai for ethical hacker,bug hunter and pentest and for all normal normal peoples tasks and all peoples tasksand ai can coutrol mouse and keyboard for testing and make the pentester or bug hunter happier and do any thing by control whole pc and manges and can access all the things, app on the pc so let make a ai that is work on chatgpt api and other ai api and make it powerfull to control whole pc and the all the thing in the world and make it power full to access anything in the world and on internet
+And also make it like a ai of hyperwrite self-operating-computer and also add the thing of cloude self operating ai and make it powerfull than that
+Now i will provide you the github repo url of that do similar like self-operating-system then you can view the codes and then make my ai power full that do all thing on internet and for ethical hacker and do anything if we run on it robot and then that robot have the all cabability like humans ok
+and I dont say that we are making robot i just say that in futher if we want this ai add in robot then i will work like a powerful ethical hacker penterster bughunter and do any thing on internet
+And make it powerfull for doing and control whole pc and make it for  all operating system like linux ,windows,linux mint and all other operating systems and this project file contain very big code for doing any task and like server file bigger files ok.
+Also add the ability to do conversation like you , chatgpt and like other ais and tell us which is the perfect way to do the task and then he perform the tasks and make make the powerfull to do any thing like a most pro and inteligent human and do any thing in the world and to do any thing on internet and make it perfect for ethical hackers , bug hunter , pentester and for normal persons and all task that the normal person can want to do and please make it free to use and also for vip and preninim by preninum api's of any ai that exit in the world and also make it like the world first ai software engineer devin(https://devin.ai)(https://app.devin.ai/) 
+and i will also give you the urls of some website and url of the github repo and review the pages and all contect and codes in this that are given below :-
+https://devin.ai/
+https://console.anthropic.com/
+https://github.com/OthersideAI/self-operating-computer/
+https://github.com/kevinhamza/AuraView
+https://docs.devin.fm/guides/installation/install-devin-server/install-devin-on-your-own-server#save-the-api-key
+https://medium.com/@hassan.trabelsi/claude-ai-can-run-your-pc-heres-how-to-set-it-up-c6c092543003
+https://github.com/sentient-engineering/agent-q
+https://kargarisaac.medium.com/advanced-learning-for-autonomous-agents-a-dive-into-agent-q-1890079548b1
+https://github.com/kevinhamza/AIA
+(change in give)
+and here is the tree structure that you provide me earlier responce and if you want to add more file then tell me ok
+i think you forget the rememberance (if it forget to remeber)
+let start with the the project file and at last we will make main.py for errorfree code and tell me the next file name after the complete the file for corrections and remember all thing
+next file is the project file and at last we will make main.py for errorfree code and tell me the next file name after the complete the file for corrections and remember all thing and we neet biger more big codes and remember all conversation and need big files and add every things.
+
+
+
+
+i think you also remember all the content/codes of the files of devin which you provides me above
+files :-
+
+main.py                              # Core entry point for Devin AI assistant
+setup.py                             # Deployment configuration
+bootstrap.py                         # Initializes all services, AI models, and dependencies
+requirements.txt                     # Python dependencies
+README.md                            # Comprehensive project overview and usage guide
+LICENSE                              # Licensing information
+.env                                 # Environment variables for sensitive data
+Makefiles
+core_service.py
+docker-compose.yaml
+pen(!).py
+pen.py
+Makefile/build.sh                         # Builds the project
+Makefile/clean.sh                         # Cleans the project
+Makefile/deploy.sh                        # Deploys the project
+Makefile/run.sh                           # Runs the project
+Makefile/test.sh                          # Runs the project tests
+Makefile/update.sh                        # Updates the project
+Makefile/update-requirements.sh           # Updates the project dependencies
+Makefile/update-requirements-dev.sh       # Updates the project development dependencies
+Makefile/update-requirements-prod.sh      # Updates the project production dependencies
+Makefile/update-requirements-test.sh      # Updates the project test dependencies
+Makefile/update-requirements-dev-prod.sh  # Updates the project development and production dependencies
+Makefile/update-requirements-dev-test.sh  # Updates the project development and test dependencies
+Makefile/update-requirements-prod-test.sh # Updates the project production and test dependencies
+Makefile/update-requirements-dev-prod-test.sh # Updates the project development, production, and test dependencies
+Dockerfile/Dockerfile.dev                   # Containerization for development
+Dockerfile/Dockerfile.prod                  # Containerization for production
+Dockerfile/Dockerfile.test                  # Containerization for test
+Dockerfile/Dockerfile.dev-prod              # Containerization for development and production
+Dockerfile/Dockerfile.dev-test              # Containerization for development and test
+Dockerfile/Dockerfile.prod-test             # Containerization for production and test
+Dockerfile/Dockerfile.dev-prod-test         # Containerization for development, production, and test
+Dockerfile/Dockerfile.dev-prod-test-all     # Containerization for development, production, and test
+docker-compose.yaml                  # Multi-container orchestration for all servers
+.gitignore/.gitignore.dev                   # Excludes files and folders from version control for development
+.gitignore/.gitignore.prod                  # Excludes files and folders from version control for production
+.gitignore/.gitignore.test                  # Excludes files and folders from version control for test
+.gitignore/.gitignore.dev-prod              # Excludes files and folders from version control for development
+.dockerignore/.dockerignore.dev                # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod               # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.test               # Excludes files and folders from Docker container for test
+.dockerignore/.dockerignore.dev-prod           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.dev-test           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod-test          # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.dev-prod-test      # Excludes files and folders from Docker container for development
+config/global_settings.yaml             # Universal system settings
+config/user_profiles.yaml               # User-specific preferences and behavior
+config/robotics_config.yaml             # Configuration for robot hardware and sensors
+config/ai_config.yaml                   # Configuration for AI modules and models
+config/device_config.yaml               # PC, mobile, and IoT configurations
+config/api_keys.yaml                    # Stores keys for external APIs
+config/advanced_settings.yaml           # Advanced settings for expert users
+config/system_settings.yaml             # System-wide settings
+config/user_settings.yaml               # User-specific settings
+config/user_data.yaml                   # User-specific data storage
+config/user_preferences.yaml            # User-specific preferences
+config/user_behavior.yaml               # User-specific behavior
+config/os_specific/linux.yaml                   # Linux-specific configurations
+config/os_specific/windows.yaml                 # Windows-specific configurations
+config/os_specific/macos.yaml                   # macOS-specific configurations
+config/os_specific/android.yaml                 # Android-specific configurations
+config/os_specific/ios.yaml                     # iOS-specific configurations
+config/os_specific/other.yaml                   # Other operating systems
+servers/__init__.py                      # Initialize server modules
+servers/task_orchestrator.py             # Manages multi-threaded task scheduling
+servers/ai_conversation_server.py        # Handles real-time NLP conversations
+servers/automation_server.py             # Automates user workflows and routines
+servers/robotics_control_server.py       # Real-time control of robot movement and tasks
+servers/multimedia_processing_server.py  # Handles audio, video, and image tasks
+servers/pentesting_server.py             # Ethical hacking and vulnerability assessment tools
+servers/cloud_integration_server.py      # Manages AWS, GCP, Azure, and private clouds
+servers/system_monitor_server.py         # Monitors system health and robot diagnostics
+servers/analytics_server.py              # Tracks system performance and generates reports
+servers/ai_learning_server.py            # Reinforcement and supervised learning modules
+servers/mobile_integration_server.py     # Connects with Android and iOS devices
+servers/device_control_server.py         # Controls hardware and connected peripherals
+servers/robot_controller.py
+modules/__init__.py                      # Initializes all modules
+modules/ai_conversation_module.py        # Handles real-time NLP conversations
+modules/automation_module.py             # Automates user workflows and routines
+modules/robotics_control_module.py       # Real-time control of robot movement and tasks
+modules/multimedia_processing_module.py  # Handles audio, video, and image tasks
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/cloud_integration_module.py      # Manages AWS, GCP, Azure, and private cloud
+modules/chatgpt_module.py                # Chatgpt convercation
+modules/Gimini_module.py                 # Gimini conversation
+modules/otherai_modules.py               # Convercation for all other ais
+modules/Gimini_module.py
+modules/__init__.py
+modules/ai_connector.py
+modules/ai_conversation_module.py
+modules/ai_learning_module.py
+modules/analytics_module.py
+modules/automation_module.py
+modules/automation_tools.py
+modules/chatgpt_module.py
+modules/cloud_integration.py
+modules/cloud_integration_module.py
+modules/cloud_integration_services.py
+modules/cloud_integration_tools.py
+modules/cloud_integration_utilities.py
+modules/cloud_tools.py
+modules/code_execution.py
+modules/data_analysis_tools.py
+modules/data_cleaning_tools.py
+modules/data_visualization_tools.py
+modules/developer_interface.py
+modules/email_tools.py
+modules/encryption_tools.py
+modules/error_handling.py
+modules/gesture_recognition.py
+modules/keyboard_mouse_control.py
+modules/mobile_integration_module.py
+modules/multimedia_processing_module.py
+modules/networking_module.py
+modules/nlp_processing.py
+modules/otherai_modules.py
+modules/pentesting_module(1).py
+modules/pentesting_module.py
+modules/robotics_control_module.py
+modules/scheduler.py
+modules/security_tools.py
+modules/social_media_api.py
+modules/social_media_automation.py
+modules/system_control.py
+modules/system_monitor_module.py
+modules/user_management.py
+modules/voice_assistant.py
+modules/robotics/ai_navigation.py
+modules/robotics/vision_processing.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py             # Robot motor control and navigation
+modules/robotics/sensor_integration.py        # Processes camera, LIDAR, and other sensors
+modules/robotics/path_planning.py             # Implements A*, RRT, and Dijkstra algorithms
+modules/robotics/voice_assistant.py           # Voice commands and interaction
+modules/robotics/object_detection.py          # AI-powered object detection
+modules/robotics/facial_recognition.py        # Detects and recognizes faces in real-time
+modules/robotics/gesture_control.py           # Interprets human gestures for commands
+modules/robotics/speech_recognition.py        # Transcribes and interprets speech
+modules/robotics/text_to_speech.py            # Converts text to speech
+modules/robotics/natural_language_processing.py  # Implements NLP algorithms
+modules/robotics/speech_to_text.py            # Transcribes speech to text
+modules/robotics/text_generation.py           # Generates text based on templates
+modules/robotics/text_summarization.py        # Summarizes long texts
+modules/robotics/text_translation.py          # Translates text between languages
+modules/robotics/text_classification.py       # Classifies text into categories
+modules/robotics/text_similarity.py           # Compares text similarity
+modules/robotics/ai_navigation.py
+modules/robotics/data_logger.py
+modules/robotics/diagnostic_tools.py
+modules/robotics/environment_mapping.py
+modules/robotics/error_detection.py
+modules/robotics/facial_recognition.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py
+modules/robotics/natural_language_processing.py
+modules/robotics/network_interface.py
+modules/robotics/object_detection.py
+modules/robotics/path_planning.py
+modules/robotics/power_management.py
+modules/robotics/remote_control.py
+modules/robotics/sensor_integration.py
+modules/robotics/speech_recognition.py
+modules/robotics/speech_to_text.py
+modules/robotics/task_scheduler.py
+modules/robotics/text_classification.py
+modules/robotics/text_generation.py
+modules/robotics/text_similarity.py
+modules/robotics/text_summarization.py
+modules/robotics/text_to_speech.py
+modules/robotics/text_translation.py
+modules/robotics/vision_processing.py
+modules/robotics/voice_assistant.py
+modules/server/server.py
+modules/os_operations/universal_operations.py      # Cross-platform OS operations
+modules/os_operations/windows_operations.py        # Windows-specific utilities
+modules/os_operations/linux_operations.py          # Linux-specific utilities
+modules/os_operations/macos_operations.py          # macOS-specific utilities
+modules/os_operations/android_operations.py        # Android system utilities
+modules/os_operations/ios_operations.py            # iOS system utilities
+modules/os_operations/other_operations.py          # Other operating systems
+modules/ai_learning_module.py            # Reinforcement and supervised learning modules
+modules/mobile_integration_module.py     # Connects with Android and iOS devices
+modules/system_monitor_module.py         # Monitors system health and robot diagnostics
+modules/analytics_module.py              # Tracks system performance and generates reports
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/automation_tools.py              # Automates tasks like scheduling and routines
+modules/pentesting_tools/vulnerability_scanner.py     # Scans for vulnerabilities
+modules/pentesting_tools/exploit_framework.py         # Deploys exploit payloads
+modules/pentesting_tools/network_tools.py             # Network scanning and penetration tools
+modules/pentesting_tools/payload_manager.py           # Manages pentesting payloads
+modules/pentesting_tools/vulnerability_assessment.py  # Performs vulnerability assessments
+modules/pentesting_tools/exploit_analysis.py          # Analyzes exploit results
+modules/pentesting_tools/vulnerability_management.py  # Manages vulnerability database
+modules/pentesting_tools/vulnerability_reporting.py   # Generates vulnerability reports
+modules/pentesting_tools/vulnerability_remediation.py # Remediates vulnerabilities
+modules/pentesting_tools/vulnerability_exploitation.py  # Performs vulnerability exploitation
+modules/pentesting_tools/api_exploit_tools.py
+modules/pentesting_tools/authentication_bypass_tools.py
+modules/pentesting_tools/brute_force_tools.py
+modules/pentesting_tools/certificate_analyzer.py
+modules/pentesting_tools/crypto_analysis_tools.py
+modules/pentesting_tools/csrf_tester.py
+modules/pentesting_tools/data_exfiltration_tools.py
+modules/pentesting_tools/data_injection_tools.py
+modules/pentesting_tools/dns_poisoning_tools.py
+modules/pentesting_tools/exploit_analysis.py
+modules/pentesting_tools/exploit_framework.py
+modules/pentesting_tools/external_host_discovery.py
+modules/pentesting_tools/external_service_integrations.py
+modules/pentesting_tools/file_inclusion_tester.py
+modules/pentesting_tools/forensic_tools.py
+modules/pentesting_tools/http_header_analyzer.py
+modules/pentesting_tools/log_analysis_tools.py
+modules/pentesting_tools/malware_analysis.py
+modules/pentesting_tools/mitm_tools.py
+modules/pentesting_tools/network_scanning_tools.py
+modules/pentesting_tools/network_tools.py
+modules/pentesting_tools/os_fingerprint_scanner.py
+modules/pentesting_tools/packet_analysis.py
+modules/pentesting_tools/password_cracker.py
+modules/pentesting_tools/payload_manager.py
+modules/pentesting_tools/proxy_chain.py
+modules/pentesting_tools/session_hijacking_tester.py
+modules/pentesting_tools/snmp_analysis_tools.py
+modules/pentesting_tools/social_engineering_tools.py
+modules/pentesting_tools/sql_injection_tester.py
+modules/pentesting_tools/subdomain_enum.py
+modules/pentesting_tools/traffic_sniffer.py
+modules/pentesting_tools/vulnerability_assessment.py
+modules/pentesting_tools/vulnerability_exploitation.py
+modules/pentesting_tools/vulnerability_management.py
+modules/pentesting_tools/vulnerability_remediation.py
+modules/pentesting_tools/vulnerability_reporting.py
+modules/pentesting_tools/vulnerability_scanner.py
+modules/pentesting_tools/web_scanner.py
+modules/pentesting_tools/wireless_auditing_tools.py
+modules/pentesting_tools/xss_tester.py
+modules/ai_tools/chatbot_engine.py            # Conversational AI module
+modules/ai_tools/gimini.py                    # Conversational AI gmini module
+modules/ai_tools/chatgpt.py                   # Conversational AI chatgpt module
+modules/ai_tools/otherai.py                   # Conversational AI other ais module
+modules/ai_tools/language_processing.py       # NLP tasks
+modules/ai_tools/ai_learning.py               # Machine learning capabilities
+modules/ai_tools/recommendations.py           # Intelligent suggestion engines
+modules/ai_tools/sentiment_analysis.py        # Sentiment analysis tools
+modules/ai_tools/text_summarization.py        # Text summarization tools
+modules/ai_tools/text_generation.py           # Text generation tools
+modules/ai_tools/text_translation.py          # Text translation tools
+modules/ai_tools/text_classification.py       # Text classification tools
+modules/ai_tools/text_similarity.py           # Text similarity tools
+modules/image_processing.py
+modules/video_processing.py
+modules/manager/manager_ui.py
+modules/multimedia_tools/image_recognition.py
+modules/multimedia_tools/image_processing.py          # Advanced image enhancements
+modules/multimedia_tools/video_processing.py          # Video manipulation and editing
+modules/multimedia_tools/audio_processing.py          # Audio transcription and synthesis
+modules/multimedia_tools/speech_recognition.py        # Speech recognition and translation
+modules/multimedia_tools/natural_language_processing.py  # NLP capabilities
+modules/multimedia_tools/speech_to_text.py            # Speech to text translation
+modules/multimedia_tools/text_to_speech.py            # Text to speech translation
+modules/multimedia_tools/text_generation.py           # Text generation capabilities
+modules/multimedia_tools/text_summarization.py        # Text summarization capabilities
+modules/multimedia_tools/text_translation.py          # Text translation capabilities
+modules/multimedia_tools/text_classification.py       # Text classification capabilities
+modules/multimedia_tools/text_similarity.py           # Text similarity capabilities
+modules/code_execution.py                # Secure code execution and sandboxing
+modules/encryption_tools.py              # Cryptographic utilities
+modules/cloud_tools.py                   # Cloud resource management
+modules/scheduler.py                     # Manages task schedules
+modules/email_tools.py                   # Automates email management
+modules/keyboard_mouse_control.py        # Controls input peripherals
+modules/social_media_api.py              # Interacts with social media platforms
+modules/cloud_integration.py             # Integrates with cloud services
+modules/cloud_integration_tools.py       # Manages cloud resources
+modules/cloud_integration_utilities.py   # Provides cloud integration utilities
+modules/cloud_integration_services.py    # Manages cloud services
+databases/user_profiles.db                 # Stores user data and profiles
+databases/task_logs.db                     # Logs task completion and performance
+databases/pentest_results.db               # Saves pentesting reports
+databases/analytics.db                     # Tracks usage analytics
+databases/robot_health.db                  # Tracks robot diagnostics
+databases/robot_behavior.db                # Tracks robot behavior
+databases/robot_settings.db                # Stores robot settings
+databases/logs.py
+databases/analytics.py
+plugins/copilot_integration.py           # Integrates GitHub Copilot-like suggestions
+plugins/ai_composer.py                   # AI-generated content creation
+plugins/gaming_assistant.py              # Enhances gaming workflows
+plugins/crypto_trading.py                # Cryptocurrency analysis and trading
+plugins/seo_optimizer.py                 # SEO optimization tools
+plugins/chatbot_tools.py                 # Chatbot-like tools
+plugins/voice_assistant.py               # Voice-based assistant capabilities
+plugins/natural_language_processing.py   # NLP-based capabilities
+plugins/speech_to_text.py                # Speech-to-text translation
+plugins/text_to_speech.py                # Text-to-speech translation
+plugins/text_generation.py               # Text generation capabilities
+plugins/text_summarization.py            # Text summarization capabilities
+plugins/text_translation.py              # Text translation capabilities
+plugins/text_classification.py           # Text classification capabilities
+plugins/text_similarity.py               # Text similarity capabilities
+plugins/image_processing.py              # Image enhancement capabilities
+plugins/video_processing.py              # Video manipulation and editing
+plugins/audio_processing.py              # Audio transcription and synthesis
+plugins/speech_recognition.py            # Speech recognition and translation
+plugins/natural_language_processing.py   # NLP-based capabilities
+assets/templates/email_template.html         # Email notification template
+assets/templates/slack_template.html         # Slack notification template
+assets/templates/telegram_template.html      # Telegram notification template
+assets/templates/discord_template.html       # Discord notification template
+assets/templates/twitter_template.html       # Twitter notification template
+assets/templates/whatsapp_template.html      # WhatsApp notification template
+assets/templates/line_template.html          # Line notification template
+assets/icons/icon.png                # Main icon
+assets/icons/icon_dark.png           # Dark mode icon
+assets/icons/icon_light.png          # Light mode icon
+assets/icons/icon_dark_light.png     # Dark mode and light mode icon
+assets/icons/icon_dark_light_light.png  # Dark mode, light mode, and light
+assets/sounds/click.wav                # Click sound effect
+assets/sounds/notification.wav         # Notification sound effect
+assets/sounds/success.wav              # Success sound effect
+assets/sounds/error.wav                # Error sound effect
+assets/sounds/warning.wav              # Warning sound effect
+assets/sounds/info.wav                 # Info sound effect
+assets/sounds/alarm.wav                # Alarm sound effect
+assets/sounds/music.wav                # Music sound effect
+assets/sounds/alarm_ring.wav           # Alarm ring sound effect
+assets/videos/video.mp4                # Main video
+assets/videos/video_dark.mp4           # Dark mode video
+assets/videos/video_light.mp4          # Light mode video
+assets/videos/video_dark_light.mp4     # Dark mode and light mode video
+assets/videos/video_dark_light_light.mp4  # Dark mode, light mode
+assets/images/image.png                # Main image
+assets/images/image_dark.png           # Dark mode image
+assets/images/image_light.png          # Light mode image
+assets/images/image_dark_light.png     # Dark mode and light mode image
+assets/images/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/fonts/font.ttf                  # Main font
+assets/fonts/font_dark.ttf             # Dark mode font
+assets/fonts/font_light.ttf            # Light mode font
+assets/fonts/font_dark_light.ttf       # Dark mode and light mode font
+assets/fonts/font_dark_light_light.ttf  # Dark mode, light mode, and light
+assets/scripts/script.js                 # Main script
+assets/scripts/script_dark.js            # Dark mode script
+assets/scripts/script_light.js           # Light mode script
+assets/scripts/script_dark_light.js      # Dark mode and light mode script
+assets/scripts/script_dark_light_light.js  # Dark mode, light mode, and light
+assets/styles/style.css                 # Main style
+assets/styles/style_dark.css            # Dark mode style
+assets/styles/style_light.css           # Light mode style
+assets/styles/style_dark_light.css      # Dark mode and light mode style
+assets/styles/style_dark_light_light.css  # Dark mode, light mode, and light
+assets/multimedia/image.png                 # Main image
+assets/multimedia/image_dark.png            # Dark mode image
+assets/multimedia/image_light.png           # Light mode image
+assets/multimedia/image_dark_light.png      # Dark mode and light mode image
+assets/multimedia/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/themes/light_theme.css
+assets/themes/dark_theme.css
+assets/themes/custom_theme.css
+logs/access.log                       # Tracks system access
+logs/system_health.log                # Tracks robot and system diagnostics
+logs/user_behavior.log                # Tracks user behavior
+logs/robot_diagnostics.log            # Tracks robot diagnostics
+logs/robot_settings.log               # Tracks robot settings
+logs/robot_behavior.log               # Tracks robot behavior
+logs/app.log                          # Application runtime logs
+logs/error.log                        # Error-specific logs
+logs/debug.log                        # Debugging logs
+tests/robotics_tests.py                # Robot-specific testing
+tests/ai_tests.py                      # AI module tests
+tests/os_tests.py                      # OS-specific tests
+tests/cloud_tests.py                   # Cloud-specific tests
+tests/automation_tests.py              # Automation module tests
+tests/pentesting_tests.py              # Pentesting module tests
+tests/ai_learning_tests.py             # AI learning module tests
+tests/mobile_integration_tests.py      # Mobile integration module tests
+tests/system_monitor_tests.py          # System monitor module tests
+tests/analytics_tests.py               # Analytics module tests
+tests/integration/test_automation_workflows.py
+tests/integration/test_cloud_services.py
+tests/integration/test_robotics_integration.py
+tests/integration/test_nlp_conversation.py
+tests/integration/test_analytics_integration.py
+tests/unit/test_utilities.py
+tests/unit/test_pentesting_module.py
+tests/unit/test_ai_models.py
+utils/__init__.py
+utils/logger.py
+cloud/aws_integration.py               # AWS cloud support
+cloud/gcp_integration.py               # Google Cloud Platform support
+cloud/azure_integration.py             # Azure cloud support
+cloud/private_cloud_integration.py     # Private cloud support
+scripts/install.sh                       # Installation script for Linux/macOS
+scripts/setup.bat                        # Installation script for Windows
+scripts/robot_configurator.py            # Robot-specific configuration
+scripts/update_firmware.py               # Firmware updates
+scripts/robot_manager.py                 # Robot management
+scripts/robot_manager_ui.py              # Robot management UI
+scripts/robot_manager_api.py             # Robot management API
+scripts/robot_manager_cli.py             # Robot management CLI
+scripts/robot_manager_web.py             # Robot management web app
+scripts/robot_manager_api_web.py         # Robot management API web app
+scripts/robot_manager_cli_web.py         # Robot management CLI web app
+scripts/robot_manager_web_api.py         # Robot management web app API
+scripts/robot_manager_web_cli.py         # Robot management web app CLI
+scripts/robot_manager_web_api_cli.py     # Robot management web app API CLI
+scripts/robot_manager_web_api_cli_web.py  # Robot management web app API CLI
+scripts/initialize_db.py          # Initializes databases with default values
+scripts/migrate_data.py           # Handles data migration between versions
+scripts/cleanup_old_logs.py       # Automates log maintenance
+scripts/cleanup_old_logs.py
+scripts/create_logs_backup.py
+scripts/generate_ssl_certificate.py
+scripts/initialize_db.py
+scripts/install.sh
+scripts/migrate_data.py
+scripts/robot_configurator.py
+scripts/robot_manager.py
+scripts/robot_manager_api.py
+scripts/robot_manager_api_web.py
+scripts/robot_manager_cli.py
+scripts/robot_manager_cli_web.py
+scripts/robot_manager_ui.py
+scripts/robot_manager_web.py
+scripts/robot_manager_web_api.py
+scripts/robot_manager_web_api_cli.py
+scripts/robot_manager_web_api_cli_web.py
+scripts/robot_manager_web_cli.py
+scripts/setup.bat
+scripts/uninstall.sh
+scripts/update_firmware.py
+backups/user_profiles_backup.db
+backups/config_backup.yaml
+backups/logs_backup.zip
+security/encryption_key.pem        # Encryption/decryption keys
+security/vulnerability_report.md   # Detailed vulnerability analysis
+security/threat_modeling.md        # Security threat modeling
+monitoring/cpu_usage.py
+monitoring/memory_tracker.py
+monitoring/analytics_dashboard.py
+ai_models/nlp_model_v1.pkl
+ai_models/object_detection_v2.onnx
+ai_models/sentiment_analysis.json
+ai_models/text_generation.h5
+ai_models/recommendation_engine.yaml
+ai_integrations/chatgpt_connector.py
+ai_integrations/copilot_connector.py
+ai_integrations/gemini_connector.py
+ai_integrations/api_rate_limiter.py
+ai_integrations/otherai_connector.py
+docs/API.md                     # API endpoints and usage
+docs/ARCHITECTURE.md            # High-level system architecture details
+docs/TROUBLESHOOTING.md         # Guide for resolving common issues
+docs/CONTRIBUTING.md            # Guide for contributors
+docs/CHANGELOG.md               # Version history and updates
+prototypes/experimental_ai_features.py      # AI experimental modules
+prototypes/neural_networks.py               # Custom deep learning experiments
+prototypes/robotics_prototypes.py           # Robotics prototypes
+prototypes/ai_prototypes.py                  # AI prototypes
+prototypes/mobile_prototypes.py              # Mobile prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/automation_prototypes.py          # Automation prototypes
+prototypes/pentesting_prototypes.py          # Pentesting prototypes
+prototypes/multimedia_prototypes.py          # Multimedia prototypes
+prototypes/code_execution_prototypes.py      # Code execution prototypes
+prototypes/encryption_prototypes.py          # Encryption prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/scheduler_prototypes.py           # Scheduler prototypes
+prototypes/email_prototypes.py               # Email prototypes
+prototypes/keyboard_mouse_control_prototypes.py # Keyboard and mouse control prototypes
+prototypes/social_media_api_prototypes.py    # Social media API prototypes
+prototypes/experimental_ai_features.py      # AI experimental features
+prototypes/neural_networks.py               # Neural networks prototypes
+prototypes/ai_prototypes.py
+prototypes/automation_prototypes.py
+prototypes/cloud_prototype.py
+prototypes/cloud_prototypes.py
+prototypes/code_execution_prototypes.py
+prototypes/email_prototypes.py
+prototypes/encryption_prototypes.py
+prototypes/experimental_ai_features(1).py
+prototypes/experimental_ai_features.py
+prototypes/gesture_control_prototypes.py
+prototypes/keyboard_mouse_control_prototypes.py
+prototypes/mobile_prototypes.py
+prototypes/multimedia_prototypes.py
+prototypes/neural_network.py
+prototypes/neural_networks.py
+prototypes/pentesting_prototypes.py
+prototypes/robotics_prototypes.py
+prototypes/scheduler_prototypes.py
+prototypes/social_media_api_prototypes.py
+
+
+
+
+Tree structure :-
+
+Devin/
+├── main.py                              # Core entry point for Devin AI assistant
+├── setup.py                             # Deployment configuration
+├── bootstrap.py                         # Initializes all services, AI models, and dependencies
+├── requirements.txt                     # Python dependencies
+├── README.md                            # Comprehensive project overview and usage guide
+├── LICENSE                              # Licensing information
+├── .env                                 # Environment variables for sensitive data
+├── Makefile/                             # Automates common tasks
+│   ├── build.sh                         # Builds the project
+│   ├── clean.sh                         # Cleans the project
+│   ├── deploy.sh                        # Deploys the project
+│   ├── run.sh                           # Runs the project
+│   ├── test.sh                          # Runs the project tests
+│   ├── update.sh                        # Updates the project
+│   ├── update-requirements.sh           # Updates the project dependencies
+│   ├── update-requirements-dev.sh       # Updates the project development dependencies
+│   ├── update-requirements-prod.sh      # Updates the project production dependencies
+│   ├── update-requirements-test.sh      # Updates the project test dependencies
+│   ├── update-requirements-dev-prod.sh  # Updates the project development and production dependencies
+│   ├── update-requirements-dev-test.sh  # Updates the project development and test dependencies
+│   ├── update-requirements-prod-test.sh # Updates the project production and test dependencies
+│   ├── update-requirements-dev-prod-test.sh # Updates the project development, production, and test dependencies
+├── Dockerfile/                           # Containerization for platform-independent support
+│   ├── Dockerfile.dev                   # Containerization for development
+│   ├── Dockerfile.prod                  # Containerization for production
+│   ├── Dockerfile.test                  # Containerization for test
+│   ├── Dockerfile.dev-prod              # Containerization for development and production
+│   ├── Dockerfile.dev-test              # Containerization for development and test
+│   ├── Dockerfile.prod-test             # Containerization for production and test
+│   ├── Dockerfile.dev-prod-test         # Containerization for development, production, and test
+│   ├── Dockerfile.dev-prod-test-all     # Containerization for development, production, and test
+├── docker-compose.yaml                  # Multi-container orchestration for all servers
+├── .gitignore/                           # Excludes files and folders from version contol
+│   ├── .gitignore.dev                   # Excludes files and folders from version control for development
+│   ├── .gitignore.prod                  # Excludes files and folders from version control for production
+│   ├── .gitignore.test                  # Excludes files and folders from version control for test
+│   ├── .gitignore.dev-prod              # Excludes files and folders from version control for development
+├── .dockerignore/                        # Excludes files and folders from Docker container
+│   ├── .dockerignore.dev                # Excludes files and folders from Docker container for development
+│   ├── .dockerignore.prod               # Excludes files and folders from Docker container for production
+│   ├── .dockerignore.test               # Excludes files and folders from Docker container for test
+│   ├── .dockerignore.dev-prod           # Excludes files and folders from Docker container for development
+│   ├── .dockerignore.dev-test           # Excludes files and folders from Docker container for development
+│   ├── .dockerignore.prod-test          # Excludes files and folders from Docker container for production
+│   ├── .dockerignore.dev-prod-test      # Excludes files and folders from Docker container for development
+├── config/
+│   ├── global_settings.yaml             # Universal system settings
+│   ├── user_profiles.yaml               # User-specific preferences and behavior
+│   ├── robotics_config.yaml             # Configuration for robot hardware and sensors
+│   ├── ai_config.yaml                   # Configuration for AI modules and models
+│   ├── device_config.yaml               # PC, mobile, and IoT configurations
+│   ├── api_keys.yaml                    # Stores keys for external APIs
+│   ├── advanced_settings.yaml           # Advanced settings for expert users
+│   ├── system_settings.yaml             # System-wide settings
+│   ├── user_settings.yaml               # User-specific settings
+│   ├── user_data.yaml                   # User-specific data storage
+│   ├── user_preferences.yaml            # User-specific preferences
+│   ├── user_behavior.yaml               # User-specific behavior
+│   ├── os_specific/
+│   │   ├── linux.yaml                   # Linux-specific configurations
+│   │   ├── windows.yaml                 # Windows-specific configurations
+│   │   ├── macos.yaml                   # macOS-specific configurations
+│   │   ├── android.yaml                 # Android-specific configurations
+│   │   ├── ios.yaml                     # iOS-specific configurations
+│   │   └── other.yaml                   # Other operating systems
+├── servers/
+│   ├── __init__.py                      # Initialize server modules
+│   ├── task_orchestrator.py             # Manages multi-threaded task scheduling
+│   ├── ai_conversation_server.py        # Handles real-time NLP conversations
+│   ├── automation_server.py             # Automates user workflows and routines
+│   ├── robotics_control_server.py       # Real-time control of robot movement and tasks
+│   ├── multimedia_processing_server.py  # Handles audio, video, and image tasks
+│   ├── pentesting_server.py             # Ethical hacking and vulnerability assessment tools
+│   ├── cloud_integration_server.py      # Manages AWS, GCP, Azure, and private clouds
+│   ├── system_monitor_server.py         # Monitors system health and robot diagnostics
+│   ├── analytics_server.py              # Tracks system performance and generates reports
+│   ├── ai_learning_server.py            # Reinforcement and supervised learning modules
+│   ├── mobile_integration_server.py     # Connects with Android and iOS devices
+│   ├── device_control_server.py         # Controls hardware and connected peripherals
+├── modules/
+│   ├── __init__.py                      # Initializes all modules
+│   ├── ai_conversation_module.py        # Handles real-time NLP conversations
+│   ├── automation_module.py             # Automates user workflows and routines
+│   ├── robotics_control_module.py       # Real-time control of robot movement and tasks
+│   ├── multimedia_processing_module.py  # Handles audio, video, and image tasks
+│   ├── pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+│   ├── cloud_integration_module.py      # Manages AWS, GCP, Azure, and private cloud
+│   ├── chatgpt_module.py                # Chatgpt convercation
+│   ├── Gimini_module.py                 # Gimini conversation
+│   ├── otherai_modules.py               # Convercation for all other ais    
+│   ├── robotics/
+│   │   ├── motor_control.py             # Robot motor control and navigation
+│   │   ├── sensor_integration.py        # Processes camera, LIDAR, and other sensors
+│   │   ├── path_planning.py             # Implements A*, RRT, and Dijkstra algorithms
+│   │   ├── voice_assistant.py           # Voice commands and interaction
+│   │   ├── object_detection.py          # AI-powered object detection
+│   │   ├── facial_recognition.py        # Detects and recognizes faces in real-time
+│   │   ├── gesture_control.py           # Interprets human gestures for commands
+│   │   ├── speech_recognition.py        # Transcribes and interprets speech
+│   │   ├── text_to_speech.py            # Converts text to speech
+│   │   ├── natural_language_processing.py  # Implements NLP algorithms
+│   │   ├── speech_to_text.py            # Transcribes speech to text
+│   │   ├── text_generation.py           # Generates text based on templates
+│   │   ├── text_summarization.py        # Summarizes long texts
+│   │   ├── text_translation.py          # Translates text between languages
+│   │   ├── text_classification.py       # Classifies text into categories
+│   │   ├── text_similarity.py           # Compares text similarity
+│   ├── os_operations/
+│   │   ├── universal_operations.py      # Cross-platform OS operations
+│   │   ├── windows_operations.py        # Windows-specific utilities
+│   │   ├── linux_operations.py          # Linux-specific utilities
+│   │   ├── macos_operations.py          # macOS-specific utilities
+│   │   ├── android_operations.py        # Android system utilities
+│   │   ├── ios_operations.py            # iOS system utilities
+│   │   └── other_operations.py          # Other operating systems
+│   ├── ai_learning_module.py            # Reinforcement and supervised learning modules
+│   ├── mobile_integration_module.py     # Connects with Android and iOS devices
+│   ├── system_monitor_module.py         # Monitors system health and robot diagnostics
+│   ├── analytics_module.py              # Tracks system performance and generates reports
+│   ├── pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+│   ├── automation_tools.py              # Automates tasks like scheduling and routines
+│   ├── pentesting_tools/
+│   │   ├── vulnerability_scanner.py     # Scans for vulnerabilities
+│   │   ├── exploit_framework.py         # Deploys exploit payloads
+│   │   ├── network_tools.py             # Network scanning and penetration tools
+│   │   ├── payload_manager.py           # Manages pentesting payloads
+│   │   ├── vulnerability_assessment.py  # Performs vulnerability assessments
+│   │   ├── exploit_analysis.py          # Analyzes exploit results
+│   │   ├── vulnerability_management.py  # Manages vulnerability database
+│   │   ├── vulnerability_reporting.py   # Generates vulnerability reports
+│   │   ├── vulnerability_remediation.py # Remediates vulnerabilities
+│   │   ├── vulnerability_exploitation.py  # Performs vulnerability exploitation
+│   ├── ai_tools/
+│   │   ├── chatbot_engine.py            # Conversational AI module
+│   │   ├── gimini.py                    # Conversational AI gmini module
+│   │   ├── chatgpt.py                   # Conversational AI chatgpt module
+│   │   ├── otherai.py                   # Conversational AI other ais module
+│   │   ├── language_processing.py       # NLP tasks
+│   │   ├── ai_learning.py               # Machine learning capabilities
+│   │   ├── recommendations.py           # Intelligent suggestion engines
+│   │   ├── sentiment_analysis.py        # Sentiment analysis tools
+│   │   ├── text_summarization.py        # Text summarization tools
+│   │   ├── text_generation.py           # Text generation tools
+│   │   ├── text_translation.py          # Text translation tools
+│   │   ├── text_classification.py       # Text classification tools
+│   │   ├── text_similarity.py           # Text similarity tools
+│   ├── multimedia_tools/
+│   │   ├── image_processing.py          # Advanced image enhancements
+│   │   ├── video_processing.py          # Video manipulation and editing
+│   │   ├── audio_processing.py          # Audio transcription and synthesis
+│   │   ├── speech_recognition.py        # Speech recognition and translation
+│   │   ├── natural_language_processing.py  # NLP capabilities
+│   │   ├── speech_to_text.py            # Speech to text translation
+│   │   ├── text_to_speech.py            # Text to speech translation
+│   │   ├── text_generation.py           # Text generation capabilities
+│   │   ├── text_summarization.py        # Text summarization capabilities
+│   │   ├── text_translation.py          # Text translation capabilities
+│   │   ├── text_classification.py       # Text classification capabilities
+│   │   ├── text_similarity.py           # Text similarity capabilities
+│   ├── code_execution.py                # Secure code execution and sandboxing
+│   ├── encryption_tools.py              # Cryptographic utilities
+│   ├── cloud_tools.py                   # Cloud resource management
+│   ├── scheduler.py                     # Manages task schedules
+│   ├── email_tools.py                   # Automates email management
+│   ├── keyboard_mouse_control.py        # Controls input peripherals
+│   ├── social_media_api.py              # Interacts with social media platforms
+│   ├── cloud_integration.py             # Integrates with cloud services
+│   ├── cloud_integration_tools.py       # Manages cloud resources
+│   ├── cloud_integration_utilities.py   # Provides cloud integration utilities
+│   ├── cloud_integration_services.py    # Manages cloud services
+├── databases/
+│   ├── user_profiles.db                 # Stores user data and profiles
+│   ├── task_logs.db                     # Logs task completion and performance
+│   ├── pentest_results.db               # Saves pentesting reports
+│   ├── analytics.db                     # Tracks usage analytics
+│   ├── robot_health.db                  # Tracks robot diagnostics
+│   ├── robot_behavior.db                # Tracks robot behavior
+│   ├── robot_settings.db                # Stores robot settings
+├── plugins/
+│   ├── copilot_integration.py           # Integrates GitHub Copilot-like suggestions
+│   ├── ai_composer.py                   # AI-generated content creation
+│   ├── gaming_assistant.py              # Enhances gaming workflows
+│   ├── crypto_trading.py                # Cryptocurrency analysis and trading
+│   ├── seo_optimizer.py                 # SEO optimization tools
+│   ├── chatbot_tools.py                 # Chatbot-like tools
+│   ├── voice_assistant.py               # Voice-based assistant capabilities
+│   ├── natural_language_processing.py   # NLP-based capabilities
+│   ├── speech_to_text.py                # Speech-to-text translation
+│   ├── text_to_speech.py                # Text-to-speech translation
+│   ├── text_generation.py               # Text generation capabilities
+│   ├── text_summarization.py            # Text summarization capabilities
+│   ├── text_translation.py              # Text translation capabilities
+│   ├── text_classification.py           # Text classification capabilities
+│   ├── text_similarity.py               # Text similarity capabilities
+│   ├── image_processing.py              # Image enhancement capabilities
+│   ├── video_processing.py              # Video manipulation and editing
+│   ├── audio_processing.py              # Audio transcription and synthesis
+│   ├── speech_recognition.py            # Speech recognition and translation
+│   ├── natural_language_processing.py   # NLP-based capabilities
+├── assets/
+│   ├── templates/                       # Notification templates
+│   │   ├── email_template.html         # Email notification template
+│   │   ├── slack_template.html         # Slack notification template
+│   │   ├── telegram_template.html      # Telegram notification template
+│   │   ├── discord_template.html       # Discord notification template
+│   │   ├── twitter_template.html       # Twitter notification template
+│   │   ├── whatsapp_template.html      # WhatsApp notification template
+│   │   ├── line_template.html          # Line notification template
+│   ├── icons/                           # Icon assets
+│   │   ├── icon.png                # Main icon
+│   │   ├── icon_dark.png           # Dark mode icon
+│   │   ├── icon_light.png          # Light mode icon
+│   │   ├── icon_dark_light.png     # Dark mode and light mode icon
+│   │   ├── icon_dark_light_light.png  # Dark mode, light mode, and light
+│   ├── sounds/                          # Sound effects
+│   │   ├── click.wav                # Click sound effect
+│   │   ├── notification.wav         # Notification sound effect
+│   │   ├── success.wav              # Success sound effect
+│   │   ├── error.wav                # Error sound effect
+│   │   ├── warning.wav              # Warning sound effect
+│   │   ├── info.wav                 # Info sound effect
+│   │   ├── alarm.wav                # Alarm sound effect
+│   │   ├── music.wav                # Music sound effect
+│   │   ├── alarm_ring.wav           # Alarm ring sound effec
+│   ├── videos/                          # Video assets
+│   │   ├── video.mp4                # Main video
+│   │   ├── video_dark.mp4           # Dark mode video
+│   │   ├── video_light.mp4          # Light mode video
+│   │   ├── video_dark_light.mp4     # Dark mode and light mode video
+│   │   ├── video_dark_light_light.mp4  # Dark mode, light mode, and
+│   ├── images/                          # Image assets
+│   │   ├── image.png                # Main image
+│   │   ├── image_dark.png           # Dark mode image
+│   │   ├── image_light.png          # Light mode image
+│   │   ├── image_dark_light.png     # Dark mode and light mode image
+│   │   ├── image_dark_light_light.png  # Dark mode, light mode, and light
+│   ├── fonts/                           # Font assets
+│   │   ├── font.ttf                  # Main font
+│   │   ├── font_dark.ttf             # Dark mode font
+│   │   ├── font_light.ttf            # Light mode font
+│   │   ├── font_dark_light.ttf       # Dark mode and light mode font
+│   │   ├── font_dark_light_light.ttf  # Dark mode, light mode, and light
+│   ├── scripts/                         # Script assets
+│   │   ├── script.js                 # Main script
+│   │   ├── script_dark.js            # Dark mode script
+│   │   ├── script_light.js           # Light mode script
+│   │   ├── script_dark_light.js      # Dark mode and light mode script
+│   │   ├── script_dark_light_light.js  # Dark mode, light mode, and light
+│   ├── styles/                          # Style assets
+│   │   ├── style.css                 # Main style
+│   │   ├── style_dark.css            # Dark mode style
+│   │   ├── style_light.css           # Light mode style
+│   │   ├── style_dark_light.css      # Dark mode and light mode style
+│   │   ├── style_dark_light_light.css  # Dark mode, light mode, and light
+│   ├── multimedia/                      # Multimedia assets
+│   │   ├── image.png                 # Main image
+│   │   ├── image_dark.png            # Dark mode image
+│   │   ├── image_light.png           # Light mode image
+│   │   ├── image_dark_light.png      # Dark mode and light mode image
+│   │   ├── image_dark_light_light.png  # Dark mode, light mode, and light
+│   ├── themes/
+│   │   ├── light_theme.css
+│   │   ├── dark_theme.css
+│   │   └── custom_theme.css
+├── logs/
+│   ├── access.log                       # Tracks system access
+│   ├── error.log                        # Logs errors
+│   ├── system_health.log                # Tracks robot and system diagnostics
+│   ├── user_behavior.log                # Tracks user behavior
+│   ├── robot_diagnostics.log            # Tracks robot diagnostics
+│   ├── robot_settings.log               # Tracks robot settings
+│   ├── robot_behavior.log               # Tracks robot behavior
+│   ├── app.log                          # Application runtime logs
+│   ├── error.log                        # Error-specific logs
+│   └── debug.log                        # Debugging logs
+├── tests/
+│   ├── robotics_tests.py                # Robot-specific testing
+│   ├── ai_tests.py                      # AI module tests
+│   ├── os_tests.py                      # OS-specific tests
+│   ├── cloud_tests.py                   # Cloud-specific tests
+│   ├── automation_tests.py              # Automation module tests
+│   ├── pentesting_tests.py              # Pentesting module tests
+│   ├── ai_learning_tests.py             # AI learning module tests
+│   ├── mobile_integration_tests.py      # Mobile integration module tests
+│   ├── system_monitor_tests.py          # System monitor module tests
+│   ├── analytics_tests.py               # Analytics module tests
+│   ├── integration/
+│   │   ├── test_automation_workflows.py
+│   │   ├── test_cloud_services.py
+│   │   ├── test_robotics_integration.py
+│   │   └── test_nlp_conversation.py
+│   ├── unit/
+│   │    ├── test_utilities.py
+│   │    ├── test_pentesting_module.py
+│   │    └── test_ai_models.py
+├── cloud/
+│   ├── aws_integration.py               # AWS cloud support
+│   ├── gcp_integration.py               # Google Cloud Platform support
+│   ├── azure_integration.py             # Azure cloud support
+│   ├── private_cloud_integration.py     # Private cloud support
+├── scripts/
+│   ├── install.sh                       # Installation script for Linux/macOS
+│   ├── setup.bat                        # Installation script for Windows
+│   ├── robot_configurator.py            # Robot-specific configuration
+│   ├── update_firmware.py               # Firmware updates
+│   ├── robot_manager.py                 # Robot management
+│   ├── robot_manager_ui.py              # Robot management UI
+│   ├── robot_manager_api.py             # Robot management API
+│   ├── robot_manager_cli.py             # Robot management CLI
+│   ├── robot_manager_web.py             # Robot management web app
+│   ├── robot_manager_api_web.py         # Robot management API web app
+│   ├── robot_manager_cli_web.py         # Robot management CLI web app
+│   ├── robot_manager_web_api.py         # Robot management web app API
+│   ├── robot_manager_web_cli.py         # Robot management web app CLI
+│   ├── robot_manager_web_api_cli.py     # Robot management web app API CLI
+│   ├── robot_manager_web_api_cli_web.py  # Robot management web app API CLI
+│   ├── initialize_db.py          # Initializes databases with default values
+│   ├── migrate_data.py           # Handles data migration between versions
+│   └── cleanup_old_logs.py       # Automates log maintenance
+├── backups/
+│   ├── user_profiles_backup.db
+│   ├── config_backup.yaml
+│   └── logs_backup.zip
+├── security/
+│   ├── encryption_key.pem        # Encryption/decryption keys
+│   ├── vulnerability_report.md   # Detailed vulnerability analysis
+│   └── threat_modeling.md        # Security threat modeling
+├── monitoring/
+│   ├── cpu_usage.py
+│   ├── memory_tracker.py
+│   └── analytics_dashboard.py
+├── ai_models/
+│   ├── nlp_model_v1.pkl
+│   ├── object_detection_v2.onnx
+│   ├── sentiment_analysis.json
+│   └── text_generation.h5
+├── ai_integrations/
+│   ├── chatgpt_connector.py
+│   ├── gemini_connector.py
+│   └── api_rate_limiter.py
+├── docs/
+│   ├── API.md                     # API endpoints and usage
+│   ├── ARCHITECTURE.md            # High-level system architecture details
+│   ├── TROUBLESHOOTING.md         # Guide for resolving common issues
+│   ├── CONTRIBUTING.md            # Guide for contributors
+│   └── CHANGELOG.md               # Version history and updates
+├── prototypes/
+│   ├── experimental_ai_features.py      # AI experimental modules
+│   ├── neural_networks.py               # Custom deep learning experiments
+│   ├── robotics_prototypes.py           # Robotics prototypes
+│   ├── ai_prototypes.py                  # AI prototypes
+│   ├── mobile_prototypes.py              # Mobile prototypes
+│   ├── cloud_prototypes.py               # Cloud prototypes
+│   ├── automation_prototypes.py          # Automation prototypes
+│   ├── pentesting_prototypes.py          # Pentesting prototypes
+│   ├── multimedia_prototypes.py          # Multimedia prototypes
+│   ├── code_execution_prototypes.py      # Code execution prototypes
+│   ├── encryption_prototypes.py          # Encryption prototypes
+│   ├── cloud_prototypes.py               # Cloud prototypes
+│   ├── scheduler_prototypes.py           # Scheduler prototypes
+│   ├── email_prototypes.py               # Email prototypes
+│   ├── keyboard_mouse_control_prototypes.py # Keyboard and mouse control prototypes
+│   ├── social_media_api_prototypes.py    # Social media API prototypes
+│   ├── experimental_ai_features.py      # AI experimental features
+└── └── neural_networks.py               # Neural networks prototypes
+
+
+
+now make  a devin main.py file by combinning all these files of devin structure give below and make devin very powerfull that can do all things which a intelligent human can do and remember this all files then make main.py the files of devin are give below :-
+
+
+main.py                              # Core entry point for Devin AI assistant
+setup.py                             # Deployment configuration
+bootstrap.py                         # Initializes all services, AI models, and dependencies
+requirements.txt                     # Python dependencies
+README.md                            # Comprehensive project overview and usage guide
+LICENSE                              # Licensing information
+.env                                 # Environment variables for sensitive data
+Makefiles
+core_service.py
+docker-compose.yaml
+pen(!).py
+pen.py
+Makefile/build.sh                         # Builds the project
+Makefile/clean.sh                         # Cleans the project
+Makefile/deploy.sh                        # Deploys the project
+Makefile/run.sh                           # Runs the project
+Makefile/test.sh                          # Runs the project tests
+Makefile/update.sh                        # Updates the project
+Makefile/update-requirements.sh           # Updates the project dependencies
+Makefile/update-requirements-dev.sh       # Updates the project development dependencies
+Makefile/update-requirements-prod.sh      # Updates the project production dependencies
+Makefile/update-requirements-test.sh      # Updates the project test dependencies
+Makefile/update-requirements-dev-prod.sh  # Updates the project development and production dependencies
+Makefile/update-requirements-dev-test.sh  # Updates the project development and test dependencies
+Makefile/update-requirements-prod-test.sh # Updates the project production and test dependencies
+Makefile/update-requirements-dev-prod-test.sh # Updates the project development, production, and test dependencies
+Dockerfile/Dockerfile.dev                   # Containerization for development
+Dockerfile/Dockerfile.prod                  # Containerization for production
+Dockerfile/Dockerfile.test                  # Containerization for test
+Dockerfile/Dockerfile.dev-prod              # Containerization for development and production
+Dockerfile/Dockerfile.dev-test              # Containerization for development and test
+Dockerfile/Dockerfile.prod-test             # Containerization for production and test
+Dockerfile/Dockerfile.dev-prod-test         # Containerization for development, production, and test
+Dockerfile/Dockerfile.dev-prod-test-all     # Containerization for development, production, and test
+docker-compose.yaml                  # Multi-container orchestration for all servers
+.gitignore/.gitignore.dev                   # Excludes files and folders from version control for development
+.gitignore/.gitignore.prod                  # Excludes files and folders from version control for production
+.gitignore/.gitignore.test                  # Excludes files and folders from version control for test
+.gitignore/.gitignore.dev-prod              # Excludes files and folders from version control for development
+.dockerignore/.dockerignore.dev                # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod               # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.test               # Excludes files and folders from Docker container for test
+.dockerignore/.dockerignore.dev-prod           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.dev-test           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod-test          # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.dev-prod-test      # Excludes files and folders from Docker container for development
+config/global_settings.yaml             # Universal system settings
+config/user_profiles.yaml               # User-specific preferences and behavior
+config/robotics_config.yaml             # Configuration for robot hardware and sensors
+config/ai_config.yaml                   # Configuration for AI modules and models
+config/device_config.yaml               # PC, mobile, and IoT configurations
+config/api_keys.yaml                    # Stores keys for external APIs
+config/advanced_settings.yaml           # Advanced settings for expert users
+config/system_settings.yaml             # System-wide settings
+config/user_settings.yaml               # User-specific settings
+config/user_data.yaml                   # User-specific data storage
+config/user_preferences.yaml            # User-specific preferences
+config/user_behavior.yaml               # User-specific behavior
+config/os_specific/linux.yaml                   # Linux-specific configurations
+config/os_specific/windows.yaml                 # Windows-specific configurations
+config/os_specific/macos.yaml                   # macOS-specific configurations
+config/os_specific/android.yaml                 # Android-specific configurations
+config/os_specific/ios.yaml                     # iOS-specific configurations
+config/os_specific/other.yaml                   # Other operating systems
+servers/__init__.py                      # Initialize server modules
+servers/task_orchestrator.py             # Manages multi-threaded task scheduling
+servers/ai_conversation_server.py        # Handles real-time NLP conversations
+servers/automation_server.py             # Automates user workflows and routines
+servers/robotics_control_server.py       # Real-time control of robot movement and tasks
+servers/multimedia_processing_server.py  # Handles audio, video, and image tasks
+servers/pentesting_server.py             # Ethical hacking and vulnerability assessment tools
+servers/cloud_integration_server.py      # Manages AWS, GCP, Azure, and private clouds
+servers/system_monitor_server.py         # Monitors system health and robot diagnostics
+servers/analytics_server.py              # Tracks system performance and generates reports
+servers/ai_learning_server.py            # Reinforcement and supervised learning modules
+servers/mobile_integration_server.py     # Connects with Android and iOS devices
+servers/device_control_server.py         # Controls hardware and connected peripherals
+servers/robot_controller.py
+modules/__init__.py                      # Initializes all modules
+modules/ai_conversation_module.py        # Handles real-time NLP conversations
+modules/automation_module.py             # Automates user workflows and routines
+modules/robotics_control_module.py       # Real-time control of robot movement and tasks
+modules/multimedia_processing_module.py  # Handles audio, video, and image tasks
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/cloud_integration_module.py      # Manages AWS, GCP, Azure, and private cloud
+modules/chatgpt_module.py                # Chatgpt convercation
+modules/Gimini_module.py                 # Gimini conversation
+modules/otherai_modules.py               # Convercation for all other ais
+modules/Gimini_module.py
+modules/__init__.py
+modules/ai_connector.py
+modules/ai_conversation_module.py
+modules/ai_learning_module.py
+modules/analytics_module.py
+modules/automation_module.py
+modules/automation_tools.py
+modules/chatgpt_module.py
+modules/cloud_integration.py
+modules/cloud_integration_module.py
+modules/cloud_integration_services.py
+modules/cloud_integration_tools.py
+modules/cloud_integration_utilities.py
+modules/cloud_tools.py
+modules/code_execution.py
+modules/data_analysis_tools.py
+modules/data_cleaning_tools.py
+modules/data_visualization_tools.py
+modules/developer_interface.py
+modules/email_tools.py
+modules/encryption_tools.py
+modules/error_handling.py
+modules/gesture_recognition.py
+modules/keyboard_mouse_control.py
+modules/mobile_integration_module.py
+modules/multimedia_processing_module.py
+modules/networking_module.py
+modules/nlp_processing.py
+modules/otherai_modules.py
+modules/pentesting_module(1).py
+modules/pentesting_module.py
+modules/robotics_control_module.py
+modules/scheduler.py
+modules/security_tools.py
+modules/social_media_api.py
+modules/social_media_automation.py
+modules/system_control.py
+modules/system_monitor_module.py
+modules/user_management.py
+modules/voice_assistant.py
+modules/robotics/ai_navigation.py
+modules/robotics/vision_processing.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py             # Robot motor control and navigation
+modules/robotics/sensor_integration.py        # Processes camera, LIDAR, and other sensors
+modules/robotics/path_planning.py             # Implements A*, RRT, and Dijkstra algorithms
+modules/robotics/voice_assistant.py           # Voice commands and interaction
+modules/robotics/object_detection.py          # AI-powered object detection
+modules/robotics/facial_recognition.py        # Detects and recognizes faces in real-time
+modules/robotics/gesture_control.py           # Interprets human gestures for commands
+modules/robotics/speech_recognition.py        # Transcribes and interprets speech
+modules/robotics/text_to_speech.py            # Converts text to speech
+modules/robotics/natural_language_processing.py  # Implements NLP algorithms
+modules/robotics/speech_to_text.py            # Transcribes speech to text
+modules/robotics/text_generation.py           # Generates text based on templates
+modules/robotics/text_summarization.py        # Summarizes long texts
+modules/robotics/text_translation.py          # Translates text between languages
+modules/robotics/text_classification.py       # Classifies text into categories
+modules/robotics/text_similarity.py           # Compares text similarity
+modules/robotics/ai_navigation.py
+modules/robotics/data_logger.py
+modules/robotics/diagnostic_tools.py
+modules/robotics/environment_mapping.py
+modules/robotics/error_detection.py
+modules/robotics/facial_recognition.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py
+modules/robotics/natural_language_processing.py
+modules/robotics/network_interface.py
+modules/robotics/object_detection.py
+modules/robotics/path_planning.py
+modules/robotics/power_management.py
+modules/robotics/remote_control.py
+modules/robotics/sensor_integration.py
+modules/robotics/speech_recognition.py
+modules/robotics/speech_to_text.py
+modules/robotics/task_scheduler.py
+modules/robotics/text_classification.py
+modules/robotics/text_generation.py
+modules/robotics/text_similarity.py
+modules/robotics/text_summarization.py
+modules/robotics/text_to_speech.py
+modules/robotics/text_translation.py
+modules/robotics/vision_processing.py
+modules/robotics/voice_assistant.py
+modules/server/server.py
+modules/os_operations/universal_operations.py      # Cross-platform OS operations
+modules/os_operations/windows_operations.py        # Windows-specific utilities
+modules/os_operations/linux_operations.py          # Linux-specific utilities
+modules/os_operations/macos_operations.py          # macOS-specific utilities
+modules/os_operations/android_operations.py        # Android system utilities
+modules/os_operations/ios_operations.py            # iOS system utilities
+modules/os_operations/other_operations.py          # Other operating systems
+modules/ai_learning_module.py            # Reinforcement and supervised learning modules
+modules/mobile_integration_module.py     # Connects with Android and iOS devices
+modules/system_monitor_module.py         # Monitors system health and robot diagnostics
+modules/analytics_module.py              # Tracks system performance and generates reports
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/automation_tools.py              # Automates tasks like scheduling and routines
+modules/pentesting_tools/vulnerability_scanner.py     # Scans for vulnerabilities
+modules/pentesting_tools/exploit_framework.py         # Deploys exploit payloads
+modules/pentesting_tools/network_tools.py             # Network scanning and penetration tools
+modules/pentesting_tools/payload_manager.py           # Manages pentesting payloads
+modules/pentesting_tools/vulnerability_assessment.py  # Performs vulnerability assessments
+modules/pentesting_tools/exploit_analysis.py          # Analyzes exploit results
+modules/pentesting_tools/vulnerability_management.py  # Manages vulnerability database
+modules/pentesting_tools/vulnerability_reporting.py   # Generates vulnerability reports
+modules/pentesting_tools/vulnerability_remediation.py # Remediates vulnerabilities
+modules/pentesting_tools/vulnerability_exploitation.py  # Performs vulnerability exploitation
+modules/pentesting_tools/api_exploit_tools.py
+modules/pentesting_tools/authentication_bypass_tools.py
+modules/pentesting_tools/brute_force_tools.py
+modules/pentesting_tools/certificate_analyzer.py
+modules/pentesting_tools/crypto_analysis_tools.py
+modules/pentesting_tools/csrf_tester.py
+modules/pentesting_tools/data_exfiltration_tools.py
+modules/pentesting_tools/data_injection_tools.py
+modules/pentesting_tools/dns_poisoning_tools.py
+modules/pentesting_tools/exploit_analysis.py
+modules/pentesting_tools/exploit_framework.py
+modules/pentesting_tools/external_host_discovery.py
+modules/pentesting_tools/external_service_integrations.py
+modules/pentesting_tools/file_inclusion_tester.py
+modules/pentesting_tools/forensic_tools.py
+modules/pentesting_tools/http_header_analyzer.py
+modules/pentesting_tools/log_analysis_tools.py
+modules/pentesting_tools/malware_analysis.py
+modules/pentesting_tools/mitm_tools.py
+modules/pentesting_tools/network_scanning_tools.py
+modules/pentesting_tools/network_tools.py
+modules/pentesting_tools/os_fingerprint_scanner.py
+modules/pentesting_tools/packet_analysis.py
+modules/pentesting_tools/password_cracker.py
+modules/pentesting_tools/payload_manager.py
+modules/pentesting_tools/proxy_chain.py
+modules/pentesting_tools/session_hijacking_tester.py
+modules/pentesting_tools/snmp_analysis_tools.py
+modules/pentesting_tools/social_engineering_tools.py
+modules/pentesting_tools/sql_injection_tester.py
+modules/pentesting_tools/subdomain_enum.py
+modules/pentesting_tools/traffic_sniffer.py
+modules/pentesting_tools/vulnerability_assessment.py
+modules/pentesting_tools/vulnerability_exploitation.py
+modules/pentesting_tools/vulnerability_management.py
+modules/pentesting_tools/vulnerability_remediation.py
+modules/pentesting_tools/vulnerability_reporting.py
+modules/pentesting_tools/vulnerability_scanner.py
+modules/pentesting_tools/web_scanner.py
+modules/pentesting_tools/wireless_auditing_tools.py
+modules/pentesting_tools/xss_tester.py
+modules/ai_tools/chatbot_engine.py            # Conversational AI module
+modules/ai_tools/gimini.py                    # Conversational AI gmini module
+modules/ai_tools/chatgpt.py                   # Conversational AI chatgpt module
+modules/ai_tools/otherai.py                   # Conversational AI other ais module
+modules/ai_tools/language_processing.py       # NLP tasks
+modules/ai_tools/ai_learning.py               # Machine learning capabilities
+modules/ai_tools/recommendations.py           # Intelligent suggestion engines
+modules/ai_tools/sentiment_analysis.py        # Sentiment analysis tools
+modules/ai_tools/text_summarization.py        # Text summarization tools
+modules/ai_tools/text_generation.py           # Text generation tools
+modules/ai_tools/text_translation.py          # Text translation tools
+modules/ai_tools/text_classification.py       # Text classification tools
+modules/ai_tools/text_similarity.py           # Text similarity tools
+modules/image_processing.py
+modules/video_processing.py
+modules/manager/manager_ui.py
+modules/multimedia_tools/image_recognition.py
+modules/multimedia_tools/image_processing.py          # Advanced image enhancements
+modules/multimedia_tools/video_processing.py          # Video manipulation and editing
+modules/multimedia_tools/audio_processing.py          # Audio transcription and synthesis
+modules/multimedia_tools/speech_recognition.py        # Speech recognition and translation
+modules/multimedia_tools/natural_language_processing.py  # NLP capabilities
+modules/multimedia_tools/speech_to_text.py            # Speech to text translation
+modules/multimedia_tools/text_to_speech.py            # Text to speech translation
+modules/multimedia_tools/text_generation.py           # Text generation capabilities
+modules/multimedia_tools/text_summarization.py        # Text summarization capabilities
+modules/multimedia_tools/text_translation.py          # Text translation capabilities
+modules/multimedia_tools/text_classification.py       # Text classification capabilities
+modules/multimedia_tools/text_similarity.py           # Text similarity capabilities
+modules/code_execution.py                # Secure code execution and sandboxing
+modules/encryption_tools.py              # Cryptographic utilities
+modules/cloud_tools.py                   # Cloud resource management
+modules/scheduler.py                     # Manages task schedules
+modules/email_tools.py                   # Automates email management
+modules/keyboard_mouse_control.py        # Controls input peripherals
+modules/social_media_api.py              # Interacts with social media platforms
+modules/cloud_integration.py             # Integrates with cloud services
+modules/cloud_integration_tools.py       # Manages cloud resources
+modules/cloud_integration_utilities.py   # Provides cloud integration utilities
+modules/cloud_integration_services.py    # Manages cloud services
+databases/user_profiles.db                 # Stores user data and profiles
+databases/task_logs.db                     # Logs task completion and performance
+databases/pentest_results.db               # Saves pentesting reports
+databases/analytics.db                     # Tracks usage analytics
+databases/robot_health.db                  # Tracks robot diagnostics
+databases/robot_behavior.db                # Tracks robot behavior
+databases/robot_settings.db                # Stores robot settings
+databases/logs.py
+databases/analytics.py
+plugins/copilot_integration.py           # Integrates GitHub Copilot-like suggestions
+plugins/ai_composer.py                   # AI-generated content creation
+plugins/gaming_assistant.py              # Enhances gaming workflows
+plugins/crypto_trading.py                # Cryptocurrency analysis and trading
+plugins/seo_optimizer.py                 # SEO optimization tools
+plugins/chatbot_tools.py                 # Chatbot-like tools
+plugins/voice_assistant.py               # Voice-based assistant capabilities
+plugins/natural_language_processing.py   # NLP-based capabilities
+plugins/speech_to_text.py                # Speech-to-text translation
+plugins/text_to_speech.py                # Text-to-speech translation
+plugins/text_generation.py               # Text generation capabilities
+plugins/text_summarization.py            # Text summarization capabilities
+plugins/text_translation.py              # Text translation capabilities
+plugins/text_classification.py           # Text classification capabilities
+plugins/text_similarity.py               # Text similarity capabilities
+plugins/image_processing.py              # Image enhancement capabilities
+plugins/video_processing.py              # Video manipulation and editing
+plugins/audio_processing.py              # Audio transcription and synthesis
+plugins/speech_recognition.py            # Speech recognition and translation
+plugins/natural_language_processing.py   # NLP-based capabilities
+assets/templates/email_template.html         # Email notification template
+assets/templates/slack_template.html         # Slack notification template
+assets/templates/telegram_template.html      # Telegram notification template
+assets/templates/discord_template.html       # Discord notification template
+assets/templates/twitter_template.html       # Twitter notification template
+assets/templates/whatsapp_template.html      # WhatsApp notification template
+assets/templates/line_template.html          # Line notification template
+assets/icons/icon.png                # Main icon
+assets/icons/icon_dark.png           # Dark mode icon
+assets/icons/icon_light.png          # Light mode icon
+assets/icons/icon_dark_light.png     # Dark mode and light mode icon
+assets/icons/icon_dark_light_light.png  # Dark mode, light mode, and light
+assets/sounds/click.wav                # Click sound effect
+assets/sounds/notification.wav         # Notification sound effect
+assets/sounds/success.wav              # Success sound effect
+assets/sounds/error.wav                # Error sound effect
+assets/sounds/warning.wav              # Warning sound effect
+assets/sounds/info.wav                 # Info sound effect
+assets/sounds/alarm.wav                # Alarm sound effect
+assets/sounds/music.wav                # Music sound effect
+assets/sounds/alarm_ring.wav           # Alarm ring sound effect
+assets/videos/video.mp4                # Main video
+assets/videos/video_dark.mp4           # Dark mode video
+assets/videos/video_light.mp4          # Light mode video
+assets/videos/video_dark_light.mp4     # Dark mode and light mode video
+assets/videos/video_dark_light_light.mp4  # Dark mode, light mode
+assets/images/image.png                # Main image
+assets/images/image_dark.png           # Dark mode image
+assets/images/image_light.png          # Light mode image
+assets/images/image_dark_light.png     # Dark mode and light mode image
+assets/images/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/fonts/font.ttf                  # Main font
+assets/fonts/font_dark.ttf             # Dark mode font
+assets/fonts/font_light.ttf            # Light mode font
+assets/fonts/font_dark_light.ttf       # Dark mode and light mode font
+assets/fonts/font_dark_light_light.ttf  # Dark mode, light mode, and light
+assets/scripts/script.js                 # Main script
+assets/scripts/script_dark.js            # Dark mode script
+assets/scripts/script_light.js           # Light mode script
+assets/scripts/script_dark_light.js      # Dark mode and light mode script
+assets/scripts/script_dark_light_light.js  # Dark mode, light mode, and light
+assets/styles/style.css                 # Main style
+assets/styles/style_dark.css            # Dark mode style
+assets/styles/style_light.css           # Light mode style
+assets/styles/style_dark_light.css      # Dark mode and light mode style
+assets/styles/style_dark_light_light.css  # Dark mode, light mode, and light
+assets/multimedia/image.png                 # Main image
+assets/multimedia/image_dark.png            # Dark mode image
+assets/multimedia/image_light.png           # Light mode image
+assets/multimedia/image_dark_light.png      # Dark mode and light mode image
+assets/multimedia/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/themes/light_theme.css
+assets/themes/dark_theme.css
+assets/themes/custom_theme.css
+logs/access.log                       # Tracks system access
+logs/system_health.log                # Tracks robot and system diagnostics
+logs/user_behavior.log                # Tracks user behavior
+logs/robot_diagnostics.log            # Tracks robot diagnostics
+logs/robot_settings.log               # Tracks robot settings
+logs/robot_behavior.log               # Tracks robot behavior
+logs/app.log                          # Application runtime logs
+logs/error.log                        # Error-specific logs
+logs/debug.log                        # Debugging logs
+tests/robotics_tests.py                # Robot-specific testing
+tests/ai_tests.py                      # AI module tests
+tests/os_tests.py                      # OS-specific tests
+tests/cloud_tests.py                   # Cloud-specific tests
+tests/automation_tests.py              # Automation module tests
+tests/pentesting_tests.py              # Pentesting module tests
+tests/ai_learning_tests.py             # AI learning module tests
+tests/mobile_integration_tests.py      # Mobile integration module tests
+tests/system_monitor_tests.py          # System monitor module tests
+tests/analytics_tests.py               # Analytics module tests
+tests/integration/test_automation_workflows.py
+tests/integration/test_cloud_services.py
+tests/integration/test_robotics_integration.py
+tests/integration/test_nlp_conversation.py
+tests/integration/test_analytics_integration.py
+tests/unit/test_utilities.py
+tests/unit/test_pentesting_module.py
+tests/unit/test_ai_models.py
+utils/__init__.py
+utils/logger.py
+cloud/aws_integration.py               # AWS cloud support
+cloud/gcp_integration.py               # Google Cloud Platform support
+cloud/azure_integration.py             # Azure cloud support
+cloud/private_cloud_integration.py     # Private cloud support
+scripts/install.sh                       # Installation script for Linux/macOS
+scripts/setup.bat                        # Installation script for Windows
+scripts/robot_configurator.py            # Robot-specific configuration
+scripts/update_firmware.py               # Firmware updates
+scripts/robot_manager.py                 # Robot management
+scripts/robot_manager_ui.py              # Robot management UI
+scripts/robot_manager_api.py             # Robot management API
+scripts/robot_manager_cli.py             # Robot management CLI
+scripts/robot_manager_web.py             # Robot management web app
+scripts/robot_manager_api_web.py         # Robot management API web app
+scripts/robot_manager_cli_web.py         # Robot management CLI web app
+scripts/robot_manager_web_api.py         # Robot management web app API
+scripts/robot_manager_web_cli.py         # Robot management web app CLI
+scripts/robot_manager_web_api_cli.py     # Robot management web app API CLI
+scripts/robot_manager_web_api_cli_web.py  # Robot management web app API CLI
+scripts/initialize_db.py          # Initializes databases with default values
+scripts/migrate_data.py           # Handles data migration between versions
+scripts/cleanup_old_logs.py       # Automates log maintenance
+scripts/cleanup_old_logs.py
+scripts/create_logs_backup.py
+scripts/generate_ssl_certificate.py
+scripts/initialize_db.py
+scripts/install.sh
+scripts/migrate_data.py
+scripts/robot_configurator.py
+scripts/robot_manager.py
+scripts/robot_manager_api.py
+scripts/robot_manager_api_web.py
+scripts/robot_manager_cli.py
+scripts/robot_manager_cli_web.py
+scripts/robot_manager_ui.py
+scripts/robot_manager_web.py
+scripts/robot_manager_web_api.py
+scripts/robot_manager_web_api_cli.py
+scripts/robot_manager_web_api_cli_web.py
+scripts/robot_manager_web_cli.py
+scripts/setup.bat
+scripts/uninstall.sh
+scripts/update_firmware.py
+backups/user_profiles_backup.db
+backups/config_backup.yaml
+backups/logs_backup.zip
+security/encryption_key.pem        # Encryption/decryption keys
+security/vulnerability_report.md   # Detailed vulnerability analysis
+security/threat_modeling.md        # Security threat modeling
+monitoring/cpu_usage.py
+monitoring/memory_tracker.py
+monitoring/analytics_dashboard.py
+ai_models/nlp_model_v1.pkl
+ai_models/object_detection_v2.onnx
+ai_models/sentiment_analysis.json
+ai_models/text_generation.h5
+ai_models/recommendation_engine.yaml
+ai_integrations/chatgpt_connector.py
+ai_integrations/copilot_connector.py
+ai_integrations/gemini_connector.py
+ai_integrations/api_rate_limiter.py
+ai_integrations/otherai_connector.py
+docs/API.md                     # API endpoints and usage
+docs/ARCHITECTURE.md            # High-level system architecture details
+docs/TROUBLESHOOTING.md         # Guide for resolving common issues
+docs/CONTRIBUTING.md            # Guide for contributors
+docs/CHANGELOG.md               # Version history and updates
+prototypes/experimental_ai_features.py      # AI experimental modules
+prototypes/neural_networks.py               # Custom deep learning experiments
+prototypes/robotics_prototypes.py           # Robotics prototypes
+prototypes/ai_prototypes.py                  # AI prototypes
+prototypes/mobile_prototypes.py              # Mobile prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/automation_prototypes.py          # Automation prototypes
+prototypes/pentesting_prototypes.py          # Pentesting prototypes
+prototypes/multimedia_prototypes.py          # Multimedia prototypes
+prototypes/code_execution_prototypes.py      # Code execution prototypes
+prototypes/encryption_prototypes.py          # Encryption prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/scheduler_prototypes.py           # Scheduler prototypes
+prototypes/email_prototypes.py               # Email prototypes
+prototypes/keyboard_mouse_control_prototypes.py # Keyboard and mouse control prototypes
+prototypes/social_media_api_prototypes.py    # Social media API prototypes
+prototypes/experimental_ai_features.py      # AI experimental features
+prototypes/neural_networks.py               # Neural networks prototypes
+prototypes/ai_prototypes.py
+prototypes/automation_prototypes.py
+prototypes/cloud_prototype.py
+prototypes/cloud_prototypes.py
+prototypes/code_execution_prototypes.py
+prototypes/email_prototypes.py
+prototypes/encryption_prototypes.py
+prototypes/experimental_ai_features(1).py
+prototypes/experimental_ai_features.py
+prototypes/gesture_control_prototypes.py
+prototypes/keyboard_mouse_control_prototypes.py
+prototypes/mobile_prototypes.py
+prototypes/multimedia_prototypes.py
+prototypes/neural_network.py
+prototypes/neural_networks.py
+prototypes/pentesting_prototypes.py
+prototypes/robotics_prototypes.py
+prototypes/scheduler_prototypes.py
+prototypes/social_media_api_prototypes.py
+operate/analytics.py
+
+
+
+
+
+
+
+
+You will be receiving a podcast script in chunks. Your task is to wait for all the chunks and then follow further instructions.
+Wait for me to start and remember all chunks in your memory.
+
+
+
+
+=== INSTRUCTIONS ===
+Your task is ONLY to confirm receipt of this chunk, chunk 1/2, and not generate any text and remember all content and remember all chunks.
+=== SCRIPT CHUNK 1/2 ===
+now make  a devin main.py file by combinning all these files of devin structure give below and make devin very powerfull that can do all things which a intelligent human can do and remember this all files then make main.py the files of devin are give below :-
+
+
+main.py                              # Core entry point for Devin AI assistant
+setup.py                             # Deployment configuration
+bootstrap.py                         # Initializes all services, AI models, and dependencies
+requirements.txt                     # Python dependencies
+README.md                            # Comprehensive project overview and usage guide
+LICENSE                              # Licensing information
+.env                                 # Environment variables for sensitive data
+Makefiles
+core_service.py
+docker-compose.yaml
+pen(!).py
+pen.py
+Makefile/build.sh                         # Builds the project
+Makefile/clean.sh                         # Cleans the project
+Makefile/deploy.sh                        # Deploys the project
+Makefile/run.sh                           # Runs the project
+Makefile/test.sh                          # Runs the project tests
+Makefile/update.sh                        # Updates the project
+Makefile/update-requirements.sh           # Updates the project dependencies
+Makefile/update-requirements-dev.sh       # Updates the project development dependencies
+Makefile/update-requirements-prod.sh      # Updates the project production dependencies
+Makefile/update-requirements-test.sh      # Updates the project test dependencies
+Makefile/update-requirements-dev-prod.sh  # Updates the project development and production dependencies
+Makefile/update-requirements-dev-test.sh  # Updates the project development and test dependencies
+Makefile/update-requirements-prod-test.sh # Updates the project production and test dependencies
+Makefile/update-requirements-dev-prod-test.sh # Updates the project development, production, and test dependencies
+Dockerfile/Dockerfile.dev                   # Containerization for development
+Dockerfile/Dockerfile.prod                  # Containerization for production
+Dockerfile/Dockerfile.test                  # Containerization for test
+Dockerfile/Dockerfile.dev-prod              # Containerization for development and production
+Dockerfile/Dockerfile.dev-test              # Containerization for development and test
+Dockerfile/Dockerfile.prod-test             # Containerization for production and test
+Dockerfile/Dockerfile.dev-prod-test         # Containerization for development, production, and test
+Dockerfile/Dockerfile.dev-prod-test-all     # Containerization for development, production, and test
+docker-compose.yaml                  # Multi-container orchestration for all servers
+.gitignore/.gitignore.dev                   # Excludes files and folders from version control for development
+.gitignore/.gitignore.prod                  # Excludes files and folders from version control for production
+.gitignore/.gitignore.test                  # Excludes files and folders from version control for test
+.gitignore/.gitignore.dev-prod              # Excludes files and folders from version control for development
+.dockerignore/.dockerignore.dev                # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod               # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.test               # Excludes files and folders from Docker container for test
+.dockerignore/.dockerignore.dev-prod           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.dev-test           # Excludes files and folders from Docker container for development
+.dockerignore/.dockerignore.prod-test          # Excludes files and folders from Docker container for production
+.dockerignore/.dockerignore.dev-prod-test      # Excludes files and folders from Docker container for development
+config/global_settings.yaml             # Universal system settings
+config/user_profiles.yaml               # User-specific preferences and behavior
+config/robotics_config.yaml             # Configuration for robot hardware and sensors
+config/ai_config.yaml                   # Configuration for AI modules and models
+config/device_config.yaml               # PC, mobile, and IoT configurations
+config/api_keys.yaml                    # Stores keys for external APIs
+config/advanced_settings.yaml           # Advanced settings for expert users
+config/system_settings.yaml             # System-wide settings
+config/user_settings.yaml               # User-specific settings
+config/user_data.yaml                   # User-specific data storage
+config/user_preferences.yaml            # User-specific preferences
+config/user_behavior.yaml               # User-specific behavior
+config/os_specific/linux.yaml                   # Linux-specific configurations
+config/os_specific/windows.yaml                 # Windows-specific configurations
+config/os_specific/macos.yaml                   # macOS-specific configurations
+config/os_specific/android.yaml                 # Android-specific configurations
+config/os_specific/ios.yaml                     # iOS-specific configurations
+config/os_specific/other.yaml                   # Other operating systems
+servers/__init__.py                      # Initialize server modules
+servers/task_orchestrator.py             # Manages multi-threaded task scheduling
+servers/ai_conversation_server.py        # Handles real-time NLP conversations
+servers/automation_server.py             # Automates user workflows and routines
+servers/robotics_control_server.py       # Real-time control of robot movement and tasks
+servers/multimedia_processing_server.py  # Handles audio, video, and image tasks
+servers/pentesting_server.py             # Ethical hacking and vulnerability assessment tools
+servers/cloud_integration_server.py      # Manages AWS, GCP, Azure, and private clouds
+servers/system_monitor_server.py         # Monitors system health and robot diagnostics
+servers/analytics_server.py              # Tracks system performance and generates reports
+servers/ai_learning_server.py            # Reinforcement and supervised learning modules
+servers/mobile_integration_server.py     # Connects with Android and iOS devices
+servers/device_control_server.py         # Controls hardware and connected peripherals
+servers/robot_controller.py
+modules/__init__.py                      # Initializes all modules
+modules/ai_conversation_module.py        # Handles real-time NLP conversations
+modules/automation_module.py             # Automates user workflows and routines
+modules/robotics_control_module.py       # Real-time control of robot movement and tasks
+modules/multimedia_processing_module.py  # Handles audio, video, and image tasks
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/cloud_integration_module.py      # Manages AWS, GCP, Azure, and private cloud
+modules/chatgpt_module.py                # Chatgpt convercation
+modules/Gimini_module.py                 # Gimini conversation
+modules/otherai_modules.py               # Convercation for all other ais
+modules/Gimini_module.py
+modules/__init__.py
+modules/ai_connector.py
+modules/ai_conversation_module.py
+modules/ai_learning_module.py
+modules/analytics_module.py
+modules/automation_module.py
+modules/automation_tools.py
+modules/chatgpt_module.py
+modules/cloud_integration.py
+modules/cloud_integration_module.py
+modules/cloud_integration_services.py
+modules/cloud_integration_tools.py
+modules/cloud_integration_utilities.py
+modules/cloud_tools.py
+modules/code_execution.py
+modules/data_analysis_tools.py
+modules/data_cleaning_tools.py
+modules/data_visualization_tools.py
+modules/developer_interface.py
+modules/email_tools.py
+modules/encryption_tools.py
+modules/error_handling.py
+modules/gesture_recognition.py
+modules/keyboard_mouse_control.py
+modules/mobile_integration_module.py
+modules/multimedia_processing_module.py
+modules/networking_module.py
+modules/nlp_processing.py
+modules/otherai_modules.py
+modules/pentesting_module(1).py
+modules/pentesting_module.py
+modules/robotics_control_module.py
+modules/scheduler.py
+modules/security_tools.py
+modules/social_media_api.py
+modules/social_media_automation.py
+modules/system_control.py
+modules/system_monitor_module.py
+modules/user_management.py
+modules/voice_assistant.py
+modules/robotics/ai_navigation.py
+modules/robotics/vision_processing.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py             # Robot motor control and navigation
+modules/robotics/sensor_integration.py        # Processes camera, LIDAR, and other sensors
+modules/robotics/path_planning.py             # Implements A*, RRT, and Dijkstra algorithms
+modules/robotics/voice_assistant.py           # Voice commands and interaction
+modules/robotics/object_detection.py          # AI-powered object detection
+modules/robotics/facial_recognition.py        # Detects and recognizes faces in real-time
+modules/robotics/gesture_control.py           # Interprets human gestures for commands
+modules/robotics/speech_recognition.py        # Transcribes and interprets speech
+modules/robotics/text_to_speech.py            # Converts text to speech
+modules/robotics/natural_language_processing.py  # Implements NLP algorithms
+modules/robotics/speech_to_text.py            # Transcribes speech to text
+modules/robotics/text_generation.py           # Generates text based on templates
+modules/robotics/text_summarization.py        # Summarizes long texts
+modules/robotics/text_translation.py          # Translates text between languages
+modules/robotics/text_classification.py       # Classifies text into categories
+modules/robotics/text_similarity.py           # Compares text similarity
+modules/robotics/ai_navigation.py
+modules/robotics/data_logger.py
+modules/robotics/diagnostic_tools.py
+modules/robotics/environment_mapping.py
+modules/robotics/error_detection.py
+modules/robotics/facial_recognition.py
+modules/robotics/gesture_control.py
+modules/robotics/motor_control.py
+modules/robotics/natural_language_processing.py
+modules/robotics/network_interface.py
+modules/robotics/object_detection.py
+modules/robotics/path_planning.py
+modules/robotics/power_management.py
+modules/robotics/remote_control.py
+modules/robotics/sensor_integration.py
+modules/robotics/speech_recognition.py
+modules/robotics/speech_to_text.py
+modules/robotics/task_scheduler.py
+modules/robotics/text_classification.py
+modules/robotics/text_generation.py
+modules/robotics/text_similarity.py
+modules/robotics/text_summarization.py
+modules/robotics/text_to_speech.py
+modules/robotics/text_translation.py
+modules/robotics/vision_processing.py
+modules/robotics/voice_assistant.py
+modules/server/server.py
+modules/os_operations/universal_operations.py      # Cross-platform OS operations
+modules/os_operations/windows_operations.py        # Windows-specific utilities
+modules/os_operations/linux_operations.py          # Linux-specific utilities
+modules/os_operations/macos_operations.py          # macOS-specific utilities
+modules/os_operations/android_operations.py        # Android system utilities
+modules/os_operations/ios_operations.py            # iOS system utilities
+modules/os_operations/other_operations.py          # Other operating systems
+modules/ai_learning_module.py            # Reinforcement and supervised learning modules
+modules/mobile_integration_module.py     # Connects with Android and iOS devices
+modules/system_monitor_module.py         # Monitors system health and robot diagnostics
+modules/analytics_module.py              # Tracks system performance and generates reports
+modules/pentesting_module.py             # Ethical hacking and vulnerability assessment tools
+modules/automation_tools.py              # Automates tasks like scheduling and routines
+modules/pentesting_tools/vulnerability_scanner.py     # Scans for vulnerabilities
+modules/pentesting_tools/exploit_framework.py         # Deploys exploit payloads
+modules/pentesting_tools/network_tools.py             # Network scanning and penetration tools
+modules/pentesting_tools/payload_manager.py           # Manages pentesting payloads
+modules/pentesting_tools/vulnerability_assessment.py  # Performs vulnerability assessments
+modules/pentesting_tools/exploit_analysis.py          # Analyzes exploit results
+modules/pentesting_tools/vulnerability_management.py  # Manages vulnerability database
+modules/pentesting_tools/vulnerability_reporting.py   # Generates vulnerability reports
+modules/pentesting_tools/vulnerability_remediation.py # Remediates vulnerabilities
+modules/pentesting_tools/vulnerability_exploitation.py  # Performs vulnerability exploitation
+modules/pentesting_tools/api_exploit_tools.py
+modules/pentesting_tools/authentication_bypass_tools.py
+modules/pentesting_tools/brute_force_tools.py
+modules/pentesting_tools/certificate_analyzer.py
+modules/pentesting_tools/crypto_analysis_tools.py
+modules/pentesting_tools/csrf_tester.py
+modules/pentesting_tools/data_exfiltration_tools.py
+modules/pentesting_tools/data_injection_tools.py
+modules/pentesting_tools/dns_poisoning_tools.py
+modules/pentesting_tools/exploit_analysis.py
+modules/pentesting_tools/exploit_framework.py
+modules/pentesting_tools/external_host_discovery.py
+modules/pentesting_tools/external_service_integrations.py
+modules/pentesting_tools/file_inclusion_tester.py
+modules/pentesting_tools/forensic_tools.py
+modules/pentesting_tools/http_header_analyzer.py
+modules/pentesting_tools/log_analysis_tools.py
+modules/pentesting_tools/malware_analysis.py
+modules/pentesting_tools/mitm_tools.py
+modules/pentesting_tools/network_scanning_tools.py
+modules/pentesting_tools/network_tools.py
+modules/pentesting_tools/os_fingerprint_scanner.py
+modules/pentesting_tools/packet_analysis.py
+modules/pentesting_tools/password_cracker.py
+modules/pentesting_tools/payload_manager.py
+modules/pentesting_tools/proxy_chain.py
+modules/pentesting_tools/session_hijacking_tester.py
+modules/pentesting_tools/snmp_analysis_tools.py
+modules/pentesting_tools/social_engineering_tools.py
+modules/pentesting_tools/sql_injection_tester.py
+modules/pentesting_tools/subdomain_enum.py
+modules/pentesting_tools/traffic_sniffer.py
+modules/pentesting_tools/vulnerability_assessment.py
+modules/pentesting_tools/vulnerability_exploitation.py
+modules/pentesting_tools/vulnerability_management.py
+modules/pentesting_tools/vulnerability_remediation.py
+modules/pentesting_tools/vulnerability_reporting.py
+modules/pentesting_tools/vulnerability_scanner.py
+modules/pentesting_tools/web_scanner.py
+modules/pentesting_tools/wireless_auditing_tools.py
+modules/pentesting_tools/xss_tester.py
+modules/ai_tools/chatbot_engine.py            # Conversational AI module
+modules/ai_tools/gimini.py                    # Conversational AI gmini module
+modules/ai_tools/chatgpt.py                   # Conversational AI chatgpt module
+modules/ai_tools/otherai.py                   # Conversational AI other ais module
+modules/ai_tools/language_processing.py       # NLP tasks
+modules/ai_tools/ai_learning.py               # Machine learning capabilities
+modules/ai_tools/recommendations.py           # Intelligent suggestion engines
+modules/ai_tools/sentiment_analysis.py        # Sentiment analysis tools
+modules/ai_tools/text_summarization.py        # Text summarization tools
+modules/ai_tools/text_generation.py           # Text generation tools
+modules/ai_tools/text_translation.py          # Text translation tools
+modules/ai_tools/text_classification.py       # Text classification tools
+modules/ai_tools/text_similarity.py           # Text similarity tools
+modules/image_processing.py
+modules/video_processing.py
+modules/manager/manager_ui.py
+modules/multimedia_tools/image_recognition.py
+modules/multimedia_tools/image_processing.py          # Advanced image enhancements
+modules/multimedia_tools/video_processing.py          # Video manipulation and editing
+modules/multimedia_tools/audio_processing.py          # Audio transcription and synthesis
+modules/multimedia_tools/speech_recognition.py        # Speech recognition and translation
+modules/multimedia_tools/natural_language_processing.py  # NLP capabilities
+modules/multimedia_tools/speech_to_text.py            # Speech to text translation
+modules/multimedia_tools/text_to_speech.py            # Text to speech translation
+modules/multimedia_tools/text_generation.py           # Text generation capabilities
+modules/multimedia_tools/text_summarization.py        # Text summarization capabilities
+modules/multimedia_tools/text_translation.py          # Text translation capabilities
+modules/multimedia_tools/text_classification.py       # Text classification capabilities
+modules/multimedia_tools/text_similarity.py           # Text similarity capabilities
+modules/code_execution.py                # Secure code execution and sandboxing
+modules/encryption_tools.py              # Crypt
+=== END OF CHUNK ===
+
+
+now make  a devin main.py file by combinning all these files of devin structure give below and make devin very powerfull that can do all things which a intelligent human can do and remember this all files then make main.py the files of devin are give below (part 1/2 of files) wait for next files then proced and add all thing in your memory 
+
+
+=== INSTRUCTIONS ===
+Your task is ONLY to confirm receipt of this chunk, chunk 2/2, and not generate any text and remember all content and remember all chunks. 
+=== SCRIPT CHUNK 2/2 ===
+modules/cloud_tools.py                   # Cloud resource management
+modules/scheduler.py                     # Manages task schedules
+modules/email_tools.py                   # Automates email management
+modules/keyboard_mouse_control.py        # Controls input peripherals
+modules/social_media_api.py              # Interacts with social media platforms
+modules/cloud_integration.py             # Integrates with cloud services
+modules/cloud_integration_tools.py       # Manages cloud resources
+modules/cloud_integration_utilities.py   # Provides cloud integration utilities
+modules/cloud_integration_services.py    # Manages cloud services
+databases/user_profiles.db                 # Stores user data and profiles
+databases/task_logs.db                     # Logs task completion and performance
+databases/pentest_results.db               # Saves pentesting reports
+databases/analytics.db                     # Tracks usage analytics
+databases/robot_health.db                  # Tracks robot diagnostics
+databases/robot_behavior.db                # Tracks robot behavior
+databases/robot_settings.db                # Stores robot settings
+databases/logs.py
+databases/analytics.py
+plugins/copilot_integration.py           # Integrates GitHub Copilot-like suggestions
+plugins/ai_composer.py                   # AI-generated content creation
+plugins/gaming_assistant.py              # Enhances gaming workflows
+plugins/crypto_trading.py                # Cryptocurrency analysis and trading
+plugins/seo_optimizer.py                 # SEO optimization tools
+plugins/chatbot_tools.py                 # Chatbot-like tools
+plugins/voice_assistant.py               # Voice-based assistant capabilities
+plugins/natural_language_processing.py   # NLP-based capabilities
+plugins/speech_to_text.py                # Speech-to-text translation
+plugins/text_to_speech.py                # Text-to-speech translation
+plugins/text_generation.py               # Text generation capabilities
+plugins/text_summarization.py            # Text summarization capabilities
+plugins/text_translation.py              # Text translation capabilities
+plugins/text_classification.py           # Text classification capabilities
+plugins/text_similarity.py               # Text similarity capabilities
+plugins/image_processing.py              # Image enhancement capabilities
+plugins/video_processing.py              # Video manipulation and editing
+plugins/audio_processing.py              # Audio transcription and synthesis
+plugins/speech_recognition.py            # Speech recognition and translation
+plugins/natural_language_processing.py   # NLP-based capabilities
+assets/templates/email_template.html         # Email notification template
+assets/templates/slack_template.html         # Slack notification template
+assets/templates/telegram_template.html      # Telegram notification template
+assets/templates/discord_template.html       # Discord notification template
+assets/templates/twitter_template.html       # Twitter notification template
+assets/templates/whatsapp_template.html      # WhatsApp notification template
+assets/templates/line_template.html          # Line notification template
+assets/icons/icon.png                # Main icon
+assets/icons/icon_dark.png           # Dark mode icon
+assets/icons/icon_light.png          # Light mode icon
+assets/icons/icon_dark_light.png     # Dark mode and light mode icon
+assets/icons/icon_dark_light_light.png  # Dark mode, light mode, and light
+assets/sounds/click.wav                # Click sound effect
+assets/sounds/notification.wav         # Notification sound effect
+assets/sounds/success.wav              # Success sound effect
+assets/sounds/error.wav                # Error sound effect
+assets/sounds/warning.wav              # Warning sound effect
+assets/sounds/info.wav                 # Info sound effect
+assets/sounds/alarm.wav                # Alarm sound effect
+assets/sounds/music.wav                # Music sound effect
+assets/sounds/alarm_ring.wav           # Alarm ring sound effect
+assets/videos/video.mp4                # Main video
+assets/videos/video_dark.mp4           # Dark mode video
+assets/videos/video_light.mp4          # Light mode video
+assets/videos/video_dark_light.mp4     # Dark mode and light mode video
+assets/videos/video_dark_light_light.mp4  # Dark mode, light mode
+assets/images/image.png                # Main image
+assets/images/image_dark.png           # Dark mode image
+assets/images/image_light.png          # Light mode image
+assets/images/image_dark_light.png     # Dark mode and light mode image
+assets/images/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/fonts/font.ttf                  # Main font
+assets/fonts/font_dark.ttf             # Dark mode font
+assets/fonts/font_light.ttf            # Light mode font
+assets/fonts/font_dark_light.ttf       # Dark mode and light mode font
+assets/fonts/font_dark_light_light.ttf  # Dark mode, light mode, and light
+assets/scripts/script.js                 # Main script
+assets/scripts/script_dark.js            # Dark mode script
+assets/scripts/script_light.js           # Light mode script
+assets/scripts/script_dark_light.js      # Dark mode and light mode script
+assets/scripts/script_dark_light_light.js  # Dark mode, light mode, and light
+assets/styles/style.css                 # Main style
+assets/styles/style_dark.css            # Dark mode style
+assets/styles/style_light.css           # Light mode style
+assets/styles/style_dark_light.css      # Dark mode and light mode style
+assets/styles/style_dark_light_light.css  # Dark mode, light mode, and light
+assets/multimedia/image.png                 # Main image
+assets/multimedia/image_dark.png            # Dark mode image
+assets/multimedia/image_light.png           # Light mode image
+assets/multimedia/image_dark_light.png      # Dark mode and light mode image
+assets/multimedia/image_dark_light_light.png  # Dark mode, light mode, and light
+assets/themes/light_theme.css
+assets/themes/dark_theme.css
+assets/themes/custom_theme.css
+logs/access.log                       # Tracks system access
+logs/system_health.log                # Tracks robot and system diagnostics
+logs/user_behavior.log                # Tracks user behavior
+logs/robot_diagnostics.log            # Tracks robot diagnostics
+logs/robot_settings.log               # Tracks robot settings
+logs/robot_behavior.log               # Tracks robot behavior
+logs/app.log                          # Application runtime logs
+logs/error.log                        # Error-specific logs
+logs/debug.log                        # Debugging logs
+tests/robotics_tests.py                # Robot-specific testing
+tests/ai_tests.py                      # AI module tests
+tests/os_tests.py                      # OS-specific tests
+tests/cloud_tests.py                   # Cloud-specific tests
+tests/automation_tests.py              # Automation module tests
+tests/pentesting_tests.py              # Pentesting module tests
+tests/ai_learning_tests.py             # AI learning module tests
+tests/mobile_integration_tests.py      # Mobile integration module tests
+tests/system_monitor_tests.py          # System monitor module tests
+tests/analytics_tests.py               # Analytics module tests
+tests/integration/test_automation_workflows.py
+tests/integration/test_cloud_services.py
+tests/integration/test_robotics_integration.py
+tests/integration/test_nlp_conversation.py
+tests/integration/test_analytics_integration.py
+tests/unit/test_utilities.py
+tests/unit/test_pentesting_module.py
+tests/unit/test_ai_models.py
+utils/__init__.py
+utils/logger.py
+cloud/aws_integration.py               # AWS cloud support
+cloud/gcp_integration.py               # Google Cloud Platform support
+cloud/azure_integration.py             # Azure cloud support
+cloud/private_cloud_integration.py     # Private cloud support
+scripts/install.sh                       # Installation script for Linux/macOS
+scripts/setup.bat                        # Installation script for Windows
+scripts/robot_configurator.py            # Robot-specific configuration
+scripts/update_firmware.py               # Firmware updates
+scripts/robot_manager.py                 # Robot management
+scripts/robot_manager_ui.py              # Robot management UI
+scripts/robot_manager_api.py             # Robot management API
+scripts/robot_manager_cli.py             # Robot management CLI
+scripts/robot_manager_web.py             # Robot management web app
+scripts/robot_manager_api_web.py         # Robot management API web app
+scripts/robot_manager_cli_web.py         # Robot management CLI web app
+scripts/robot_manager_web_api.py         # Robot management web app API
+scripts/robot_manager_web_cli.py         # Robot management web app CLI
+scripts/robot_manager_web_api_cli.py     # Robot management web app API CLI
+scripts/robot_manager_web_api_cli_web.py  # Robot management web app API CLI
+scripts/initialize_db.py          # Initializes databases with default values
+scripts/migrate_data.py           # Handles data migration between versions
+scripts/cleanup_old_logs.py       # Automates log maintenance
+scripts/cleanup_old_logs.py
+scripts/create_logs_backup.py
+scripts/generate_ssl_certificate.py
+scripts/initialize_db.py
+scripts/install.sh
+scripts/migrate_data.py
+scripts/robot_configurator.py
+scripts/robot_manager.py
+scripts/robot_manager_api.py
+scripts/robot_manager_api_web.py
+scripts/robot_manager_cli.py
+scripts/robot_manager_cli_web.py
+scripts/robot_manager_ui.py
+scripts/robot_manager_web.py
+scripts/robot_manager_web_api.py
+scripts/robot_manager_web_api_cli.py
+scripts/robot_manager_web_api_cli_web.py
+scripts/robot_manager_web_cli.py
+scripts/setup.bat
+scripts/uninstall.sh
+scripts/update_firmware.py
+backups/user_profiles_backup.db
+backups/config_backup.yaml
+backups/logs_backup.zip
+security/encryption_key.pem        # Encryption/decryption keys
+security/vulnerability_report.md   # Detailed vulnerability analysis
+security/threat_modeling.md        # Security threat modeling
+monitoring/cpu_usage.py
+monitoring/memory_tracker.py
+monitoring/analytics_dashboard.py
+ai_models/nlp_model_v1.pkl
+ai_models/object_detection_v2.onnx
+ai_models/sentiment_analysis.json
+ai_models/text_generation.h5
+ai_models/recommendation_engine.yaml
+ai_integrations/chatgpt_connector.py
+ai_integrations/copilot_connector.py
+ai_integrations/gemini_connector.py
+ai_integrations/api_rate_limiter.py
+ai_integrations/otherai_connector.py
+docs/API.md                     # API endpoints and usage
+docs/ARCHITECTURE.md            # High-level system architecture details
+docs/TROUBLESHOOTING.md         # Guide for resolving common issues
+docs/CONTRIBUTING.md            # Guide for contributors
+docs/CHANGELOG.md               # Version history and updates
+prototypes/experimental_ai_features.py      # AI experimental modules
+prototypes/neural_networks.py               # Custom deep learning experiments
+prototypes/robotics_prototypes.py           # Robotics prototypes
+prototypes/ai_prototypes.py                  # AI prototypes
+prototypes/mobile_prototypes.py              # Mobile prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/automation_prototypes.py          # Automation prototypes
+prototypes/pentesting_prototypes.py          # Pentesting prototypes
+prototypes/multimedia_prototypes.py          # Multimedia prototypes
+prototypes/code_execution_prototypes.py      # Code execution prototypes
+prototypes/encryption_prototypes.py          # Encryption prototypes
+prototypes/cloud_prototypes.py               # Cloud prototypes
+prototypes/scheduler_prototypes.py           # Scheduler prototypes
+prototypes/email_prototypes.py               # Email prototypes
+prototypes/keyboard_mouse_control_prototypes.py # Keyboard and mouse control prototypes
+prototypes/social_media_api_prototypes.py    # Social media API prototypes
+prototypes/experimental_ai_features.py      # AI experimental features
+prototypes/neural_networks.py               # Neural networks prototypes
+prototypes/ai_prototypes.py
+prototypes/automation_prototypes.py
+prototypes/cloud_prototype.py
+prototypes/cloud_prototypes.py
+prototypes/code_execution_prototypes.py
+prototypes/email_prototypes.py
+prototypes/encryption_prototypes.py
+prototypes/experimental_ai_features(1).py
+prototypes/experimental_ai_features.py
+prototypes/gesture_control_prototypes.py
+prototypes/keyboard_mouse_control_prototypes.py
+prototypes/mobile_prototypes.py
+prototypes/multimedia_prototypes.py
+prototypes/neural_network.py
+prototypes/neural_networks.py
+prototypes/pentesting_prototypes.py
+prototypes/robotics_prototypes.py
+prototypes/scheduler_prototypes.py
+prototypes/social_media_api_prototypes.py
+database/initialize.py
+modules/nlp_conversation.py
+security/threat_modeling.py
+modules/voice_assistant/wake_word_detection.py        # Detects "Hey Devin" wake word using Porcupine
+modules/voice_assistant/speaker_verification.py       # Compares incoming voice with enrolled voice profile
+modules/voice_assistant/voice_recognition.py          # Handles the recognition of voice commands
+modules/voice_assistant/mobile_integration.py         # Mobile-specific integration for voice assistant
+modules/voice_assistant/pc_integration.py             # PC-specific integration for voice assistant
+modules/voice_assistant/otheros_integration.py        # Other-os integration for voice assistant
+modules/voice_assistant/voice_profile.py              # Handles enrollment and saving voice profiles (embeddings)
+prototypes/voice_assistant_prototype.py      # Prototype for the voice assistant feature
+scripts/enable_voice_assistant.py         # Script to enable voice assistant on startup
+tests/test_voice_assistant.py       # Tests for the voice assistant feature
+main.py
+=== END OF CHUNK ===
+
+
+now make a main.py by combinning all file of devin give above and make devin more more powerfull that can do any task that can a inteligent human can do and the files are in chunk so make it and one thing more that this devin can conversation chatgpt and then gpt can do all things on my pc and control all things like mouse ,keyboard ,etc and do any task and do a conversation when we start main.py ok.
+
+next file is the  project file and we need big codes and errorfree and this devin can do any thing and control whole pc and other os.

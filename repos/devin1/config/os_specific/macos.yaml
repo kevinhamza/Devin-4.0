@@ -1,0 +1,53 @@
+# macOS-Specific Configurations for Devin Project
+
+# Operating System Specific Configurations
+macos:
+  package_manager: "brew" # Default package manager for macOS (Homebrew)
+  preferred_shell: "/bin/zsh" # Preferred shell for execution
+  firewall:
+    enabled: true # Enable the macOS Firewall
+    rules:
+      - "allow app devin" # Allow Devin application through the firewall
+      - "allow incoming connections for all services" # Allow all incoming connections for development purposes
+  service_management:
+    enabled: false # macOS does not use traditional services management like Windows
+  network:
+    settings:
+      hostname: "devin-macos" # Default hostname for the system
+      static_ip:
+        enabled: false # Disable static IP configuration
+        address: "" # No static IP by default
+        netmask: "" # No netmask by default
+        gateway: "" # No gateway by default
+      dns_servers:
+        - "1.1.1.1" # Cloudflare DNS
+        - "8.8.8.8" # Google DNS
+  directory_structure:
+    home_dir: "/Users/devin" # Home directory for the Devin project
+    data_storage: "/Library/Application Support/devin/data" # Directory for storing data
+    log_dir: "/Library/Logs/devin" # Directory for log files
+    config_dir: "/Library/Application Support/devin" # Directory for configuration files
+  scheduled_tasks:
+    enabled: true # Enable scheduled tasks for regular tasks
+    tasks:
+      - name: "Backup Script"
+        schedule: "Weekly" # Weekly backup
+        trigger: "At 2 AM on Sunday"
+        command: "scripts/backup.sh"
+      - name: "Clean Temporary Files"
+        schedule: "Daily" # Daily cleanup
+        trigger: "At 3 AM every day"
+        command: "scripts/cleanup.sh"
+  system_updates:
+    enabled: true # Enable automatic system updates
+    update_frequency: "daily" # Frequency of updates (hourly, daily, weekly)
+  file_permissions:
+    user: "devin" # User for Devin application
+    group: "devin" # Group for Devin application
+    permissions: "755" # Default directory permissions
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last macOS-specific configuration update
+
+# Note:
+# - Adjust the scheduled task commands (`backup.sh` and `cleanup.sh`) according to your scripts.
+# - Update the network settings if your use case requires a specific setup.
+# - Modify the directories and paths according to your project’s directory structure.

@@ -1,0 +1,83 @@
+# Devin/.github/dependabot.yml # Configuration for automated dependency updates by Dependabot.
+# Purpose: Configures GitHub Dependabot to automatically create Pull Requests
+#          for updating dependencies across different ecosystems used in the project.
+
+version: 2 # Use version 2 of the Dependabot configuration syntax
+
+updates:
+  # --- Python Dependencies (pip) ---
+  # Checks requirements.txt, requirements-dev.txt, etc. in the specified directory
+  - package-ecosystem: "pip"
+    directory: "/" # Location of requirements files (root directory)
+    schedule:
+      interval: "weekly" # How often to check for updates (daily, weekly, monthly)
+      day: "monday" # Optional: Specify day for weekly/monthly checks
+      time: "04:00" # Optional: Specify time (UTC)
+      timezone: "Etc/UTC" # Optional: Specify timezone
+    open-pull-requests-limit: 10 # Limit the number of open PRs for pip dependencies
+    reviewers:
+      - "github_username_reviewer1" # Optional: Assign reviewers (replace with actual usernames/teams)
+      # - "your_org/python-team"
+    assignees:
+      - "github_username_assignee" # Optional: Assign someone to the PR
+    labels:
+      - "dependencies" # Apply label for easier filtering
+      - "python"
+    # Optional: Group related dependencies together in a single PR
+    groups:
+      # Example: Group common web framework updates
+      flask-stack:
+        patterns:
+          - "flask*"
+          - "werkzeug"
+          - "jinja2"
+      # Example: Group testing libraries
+      pytest-stack:
+        patterns:
+          - "pytest*"
+          - "pytest-cov"
+    # Optional: Ignore specific dependencies or versions
+    # ignore:
+    #   - dependency-name: "requests"
+    #     versions: ["< 2.30"] # Ignore updates below version 2.30
+    #   - dependency-name: "internal-package" # Ignore internal packages
+
+  # --- GitHub Actions ---
+  # Checks for updates to GitHub Actions used in workflow files
+  - package-ecosystem: "github-actions"
+    directory: "/" # Location of workflows (usually .github/workflows/)
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github_actions"
+    reviewers:
+      - "github_username_reviewer2" # Optional: Assign different reviewer for actions
+    open-pull-requests-limit: 5 # Lower limit for actions maybe
+
+  # --- Docker Dependencies ---
+  # Checks for updates to base images in Dockerfiles
+  - package-ecosystem: "docker"
+    # Check the root directory and potentially specific subdirectories if needed
+    # If Dockerfiles are ONLY in Dockerfile/ use directory: "/Dockerfile"
+    directory: "/" # Check root first
+    schedule:
+      interval: "monthly" # Check base images less frequently maybe
+    labels:
+      - "dependencies"
+      - "docker"
+    open-pull-requests-limit: 5
+    # Optional: Ignore specific images or tags
+    # ignore:
+    #  - dependency-name: "ubuntu"
+    #    update-types: ["version-update:semver-major"] # Ignore major version bumps for ubuntu base image
+
+  # --- Add other ecosystems if needed ---
+  # Example: npm for JavaScript frontend dependencies if you add package.json
+  # - package-ecosystem: "npm"
+  #   directory: "/path/to/frontend/" # Specify directory if not root
+  #   schedule:
+  #     interval: "weekly"
+  #   labels:
+  #     - "dependencies"
+  #     - "javascript"

@@ -1,0 +1,17 @@
+# Editor Files and Folders
+
+.idea/
+.vscode/
+.DS_Store
+*~
+\#*
+
+# Build Folder
+
+/target
+
+# Build artifacts
+
+*.deb
+*.rpm
+*.tar.zst

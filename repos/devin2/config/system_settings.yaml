@@ -1,0 +1,31 @@
+# Devin/config/system_settings.yaml
+# Purpose: Stores system-wide settings.
+#
+# !!! WARNING: LIKELY REDUNDANT WITH global_settings.yaml !!!
+# It is strongly recommended to consolidate all system-wide settings into
+# a single file (e.g., global_settings.yaml) to avoid confusion and
+# ensure consistency. The settings below likely duplicate information
+# found elsewhere.
+
+# --- Example Duplicated System Settings ---
+# These conceptually overlap with entries in global_settings.yaml
+
+# Deployment environment (e.g., development, staging, production)
+# (Already present in global_settings.yaml as system.environment)
+system_environment: "development"
+
+# Default logging level
+# (Already present in global_settings.yaml as logging.default_log_level)
+system_log_level: "INFO"
+
+# Global limit on concurrent tasks
+# (Already present in global_settings.yaml as system.max_concurrent_tasks)
+global_task_limit: 50
+
+# Default base path for data storage
+# (Already present in global_settings.yaml as defaults.data_storage_base_path)
+default_data_path: "/opt/devin/data"
+
+# --- End of Redundant Settings ---
+# Recommendation: Remove this file and ensure all necessary system-wide
+# configurations are present and organized within global_settings.yaml.

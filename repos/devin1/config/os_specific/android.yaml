@@ -1,0 +1,52 @@
+# Android-Specific Configurations for Devin Project
+
+# Android Specific Configurations
+android:
+  package_manager: "adb" # Default package manager for Android (Android Debug Bridge)
+  preferred_shell: "/system/bin/sh" # Preferred shell for execution
+  usb_debugging: true # Enable USB Debugging on Android devices
+  wifi: # Wi-Fi settings
+    enabled: true # Enable Wi-Fi
+    auto_connect: true # Automatically connect to known networks
+    preferred_networks:
+      - "Home Network" # Preferred Wi-Fi network
+      - "Work Network" # Additional network
+  firewall: # Android firewall settings (if applicable)
+    enabled: false # Android devices do not generally use firewalls in the same way as PCs
+  app_installation:
+    enable_unknown_sources: true # Allow installation from unknown sources
+    app_directory: "/data/app/" # Directory for installed apps
+  adb_commands: # Common ADB commands for automation
+    shell_commands:
+      - "pm clear com.package.name" # Clear application data
+      - "pm uninstall com.package.name" # Uninstall application
+  storage_management:
+    data_storage: "/sdcard/Android/data/devin" # Directory for user data storage
+    cache_dir: "/data/cache/" # Directory for cached data
+    log_dir: "/sdcard/Android/data/devin/logs" # Directory for log files
+  system_settings:
+    screen_orientation: "landscape" # Preferred screen orientation for Devin app
+    permissions:
+      - "android.permission.READ_EXTERNAL_STORAGE"
+      - "android.permission.WRITE_EXTERNAL_STORAGE"
+      - "android.permission.INTERNET"
+  scheduled_tasks:
+    enabled: true # Enable scheduled tasks for regular tasks
+    tasks:
+      - name: "Data Sync"
+        schedule: "Daily" # Daily data sync
+        trigger: "At 2 AM"
+        command: "adb shell sync --no-verify"
+      - name: "Clear Cache"
+        schedule: "Weekly" # Weekly cache clear
+        trigger: "At 3 AM on Sunday"
+        command: "adb shell rm -rf /data/cache/*"
+  app_updates:
+    enabled: true # Enable automatic app updates
+    update_frequency: "weekly" # Frequency of updates (hourly, daily, weekly)
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last Android-specific configuration update
+
+# Note:
+# - Adjust the ADB commands (`pm clear`, `pm uninstall`, etc.) according to your application's needs.
+# - Modify the storage paths (`data_storage`, `cache_dir`, `log_dir`) as per your project’s structure.
+# - Set the screen orientation to match your app's user interface preferences.

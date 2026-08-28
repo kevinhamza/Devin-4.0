@@ -1,0 +1,108 @@
+/* Dark Mode Styling for Devin Project */
+
+body {
+    background-color: #121212;
+    color: #ffffff;
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+a {
+    color: #bb86fc;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+    color: #ffffff;
+}
+
+header, footer {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    padding: 15px;
+}
+
+button {
+    background-color: #333333;
+    color: #ffffff;
+    border: 1px solid #444444;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: #444444;
+}
+
+input, textarea {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    border: 1px solid #444444;
+    padding: 8px;
+    border-radius: 5px;
+}
+
+input:focus, textarea:focus {
+    outline: none;
+    border-color: #bb86fc;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+.card {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    border: 1px solid #333333;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.7);
+}
+
+nav {
+    background-color: #1e1e1e;
+    border-bottom: 1px solid #333333;
+    padding: 10px;
+}
+
+nav a {
+    color: #bb86fc;
+    margin-right: 15px;
+}
+
+nav a:hover {
+    color: #ffffff;
+}
+
+.scrollbar {
+    scrollbar-color: #444444 #121212;
+    scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #121212;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: #444444;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: #bb86fc;
+}

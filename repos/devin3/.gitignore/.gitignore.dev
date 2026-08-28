@@ -1,0 +1,177 @@
+# Devin/.gitignore (Conceptual combined/development focused ignores)
+# Purpose: Specifies intentionally untracked files that Git should ignore.
+# This comprehensive list covers Python artifacts, virtual envs, OS files, editor configs, secrets, etc.
+
+# --- Byte-compiled / optimized / DLL files ---
+__pycache__/
+*.py[cod]
+*$py.class$
+
+# --- C extensions ---
+*.so
+
+# --- Distribution / packaging ---
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.manifest
+*.spec
+MANIFEST
+
+# --- PyInstaller ---
+# Usually these files are written by a python script from a template
+# before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# --- Installer logs ---
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Unit test / coverage reports ---
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# --- Translations ---
+*.mo
+*.pot
+*.po
+
+# --- Django Stuff ---
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+media/ # Typically user-uploaded files
+
+# --- Flask Stuff ---
+instance/
+.webassets-cache
+
+# --- Scrapy Stuff ---
+.scrapy
+
+# --- Sphinx documentation ---
+docs/_build/
+
+# --- PyBuilder ---
+target/
+
+# --- Jupyter Notebook ---
+.ipynb_checkpoints
+
+# --- Environments ---
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak
+venv.bak
+
+# --- Secrets / Sensitive Config (Ensure these are not committed!) ---
+*.env.*
+!.env.example # Allow example env files
+secrets.yaml
+secrets.yml
+config/api_keys.yaml # If storing keys here (better to use env vars/secrets manager)
+*.pem # Private keys
+*.key
+
+# --- Static Analysis / Type Checking ---
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# --- Linters ---
+.ruff_cache/
+.flake8
+.pylintrc
+
+# --- IDE / Editor Folders ---
+.idea/ # PyCharm
+.vscode/*
+# Keep shared VS Code settings under version control
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+nbproject/ # NetBeans
+.nbhistory
+
+# --- OS generated files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+Thumbs.db
+desktop.ini
+
+# --- Temporary files / Logs ---
+*.log # General logs (adjust if specific logs NEED to be versioned)
+*.log.*
+logs/ # Exclude entire log directory if appropriate
+*.tmp
+*.temp
+tmp/
+temp/
+*.bak
+*.swp
+*~
+
+# --- Databases ---
+*.sqlite3
+*.db # General DB file extension
+local.db # Common name for local dev DB
+
+# --- Terraform ---
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+
+# --- Data / Model Artifacts (Optional - use Git LFS or DVC for large files) ---
+# Consider if you want to exclude large data/model files entirely or track with LFS/DVC
+# data/ # Exclude if data isn't tracked or tracked elsewhere
+# ai_models/storage/ # Exclude generated model storage dir if using the MVC script's default
+# *.pkl
+# *.onnx
+# *.h5
+# *.pth
+# *.pt
+
+# --- Node Modules (if using JS tools) ---
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# --- Other ---
+/uploads/ # User uploaded content during dev/testing

@@ -1,0 +1,39 @@
+{# Devin/assets/templates/whatsapp_template.txt (Using .txt conceptually) #}
+{# Template for WhatsApp Messages #}
+
+*{{ title | default("Devin AI Notification") }}* 🤖 {# Bold Title with Emoji #}
+
+{{ message_body | default("No specific message content.") }} {# Main message body - can contain *bold*, _italic_, ~strikethrough~ #}
+
+{{#if details}} {{! Conceptual conditional block }}
+
+*Details:* {{! Bold section header }}
+{{#each details}} {{! Conceptual loop }}
+- *{{@key | replace '_' ' ' | capitalize }}:* ```{{this}}``` {{! Italic key, Monospace value }}
+{{/each}}
+{{/if}}
+
+{{#if code_snippet}} {{! Conceptual conditional block }}
+*Code Snippet:*
+```{# Optional: Specify language hint if supported by receiving end #}
+{{ code_snippet }}
+``` {{! Multi-line monospace block }}
+{{/if}}
+
+{{#if status_update}} {{! Conceptual conditional block }}
+_Status: {{ status_update }}_ {{! Italic status }}
+{{/if}}
+
+{{#if warning_message}} {{! Conceptual conditional block }}
+~Warning:~ {{ warning_message }} {{! Strikethrough label }}
+{{/if}}
+
+{{#if action_url}} {{! Conceptual conditional block }}
+More info: {{ action_url }} {{! Plain URL, WhatsApp usually makes it clickable }}
+{{/if}}
+
+---
+_Timestamp: {{ timestamp | default("Not specified") }}_
+
+{# --- End of Template --- #}
+{# Reminder: Escape *, _, ~, ``` within the data you inject into placeholders! #}

@@ -1,0 +1,120 @@
+# Devin/.github/workflows/devin-ci.yml # Main CI Pipeline
+# Purpose: Runs linting and tests on pushes and pull requests to ensure code quality.
+
+name: Devin Core CI
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "main", "develop" ] # Trigger on pushes to main and develop branches
+    paths-ignore: # Don't run for documentation-only changes
+      - 'docs/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+  pull_request:
+    branches: [ "main", "develop" ] # Trigger on PRs targeting main and develop
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+
+jobs:
+  # Job 1: Linting and Formatting Checks
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest # Use the latest Ubuntu runner
+
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v5 # Use latest checkout action
+
+      # Step 2: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11' # Specify Python version for linting
+          cache: 'pip' # Cache dependencies
+
+      # Step 3: Install system libraries required to build audio deps from source
+      # (PyAudio needs portaudio.h, simpleaudio needs alsa/asoundlib.h)
+      - name: Install system audio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+
+      # Step 4: Install dependencies (including linting tools)
+      # Assumes linting dependencies are in requirements-dev.txt or similar
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install -r requirements.txt # Install main dependencies too if needed for type checking
+
+      # Step 4: Run Ruff (Linter and Formatter - replaces flake8, isort, etc.)
+      # Configure Ruff via pyproject.toml in your repo
+      - name: Lint with Ruff
+        run: |
+          pip install ruff # Ensure ruff is installed
+          ruff check . --output-format=github
+          ruff format . --check --diff
+
+      # Step 5: Optional - Run MyPy (Static Type Checker)
+      - name: Check types with MyPy
+        run: |
+          pip install mypy # Ensure mypy is installed
+          mypy . --ignore-missing-imports # Adjust MyPy flags as needed
+
+  # Job 2: Run Tests (potentially across multiple Python versions)
+  test:
+    name: Run Tests (Python ${{ matrix.python-version }})
+    needs: lint # Optional: only run tests if linting passes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Allow other matrix jobs to continue if one fails
+      matrix:
+        python-version: ['3.10', '3.11', '3.12'] # Test on multiple Python versions
+
+    steps:
+      # Step 1: Check out code
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # Step 2: Set up specific Python version from matrix
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      # Step 3: Install system libraries required to build audio deps from source
+      # (PyAudio needs portaudio.h, simpleaudio needs alsa/asoundlib.h)
+      - name: Install system audio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+
+      # Step 4: Install dependencies (including test tools like pytest)
+      # Assumes testing dependencies are in requirements-dev.txt or similar
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+          pip install -r requirements.txt # Install main dependencies
+
+      # Step 4: Run Pytest
+      # Assumes tests are in a 'tests/' directory and configured for pytest
+      - name: Run tests with Pytest
+        run: |
+          pip install pytest pytest-cov # Ensure pytest and coverage tools are installed
+          pytest tests/ --cov=./ --cov-report=xml --cov-report=term-missing -v # Run tests, generate coverage report
+
+      # Step 5: Optional - Upload coverage report
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4 # Use latest codecov action
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }} # Store token in GitHub secrets
+          files: ./coverage.xml # Specify coverage file
+          # flags: unittests # Optional flags for Codecov
+          # name: codecov-umbrella # Optional name for the upload
+          fail_ci_if_error: true # Fail workflow if upload error occurs
+        # Only run this step if the token is available (e.g., not on forks)
+        if: secrets.CODECOV_TOKEN != null

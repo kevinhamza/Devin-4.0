@@ -1,0 +1,35 @@
+# Base image for all environments (development, production, and test)
+FROM python:3.8-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install development dependencies from requirements-dev.txt
+COPY requirements-dev.txt /app/
+RUN pip install --upgrade pip && pip install -r requirements-dev.txt
+
+# Install production dependencies from requirements-prod.txt
+COPY requirements-prod.txt /app/
+RUN pip install -r requirements-prod.txt
+
+# Install test dependencies from requirements-test.txt
+COPY requirements-test.txt /app/
+RUN pip install -r requirements-test.txt
+
+# Copy the project files into the container
+COPY . /app
+
+# Set environment variables
+ENV FLASK_APP=main.py
+ENV FLASK_ENV=development
+
+# Expose the necessary ports for development, production, and test
+EXPOSE 5000 8000 9000
+
+# Commands to run the Flask application for each environment
+CMD ["flask", "run"] # Default to development

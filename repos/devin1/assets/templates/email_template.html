@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Notification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f9f9f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .email-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border: 1px solid #dddddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background-color: #0078d7;
+            color: #ffffff;
+            text-align: center;
+            padding: 20px 10px;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .body {
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .body h2 {
+            color: #0078d7;
+        }
+        .footer {
+            background-color: #f1f1f1;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+            border-radius: 0 0 8px 8px;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 20px 0;
+            background-color: #0078d7;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #005bb5;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>{{project_name}} Notification</h1>
+        </div>
+        <div class="body">
+            <h2>Hello {{recipient_name}},</h2>
+            <p>
+                You have a new notification from {{project_name}}. Please review the details below:
+            </p>
+            <p><strong>Subject:</strong> {{notification_subject}}</p>
+            <p><strong>Message:</strong> {{notification_message}}</p>
+            <a href="{{action_url}}" class="button">Take Action</a>
+        </div>
+        <div class="footer">
+            <p>
+                &copy; {{year}} {{project_name}}. All rights reserved.
+                <br>
+                You received this email because you are subscribed to notifications from {{project_name}}.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

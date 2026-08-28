@@ -1,0 +1,54 @@
+# Exclude Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude virtual environment directories
+/.venv/
+/env/
+/enviroment/
+/.venv*
+/venv*
+
+# Exclude Docker-related files
+docker-compose.*
+Dockerfile*
+
+# Exclude compiled Python files
+*.pyc
+*.pyo
+
+# Exclude build artifacts
+build/
+dist/
+*.egg-info/
+
+# Exclude logs
+*.log
+/logs/
+
+# Exclude temporary files
+*.tmp
+/temp/
+
+# Exclude environment-specific files not needed in prod
+/.env.test
+/.env
+
+# Exclude sensitive data
+*.env*
+*.sql
+*.db
+*.bak
+
+# Exclude development-specific files
+/.env.prod
+/.env.dev
+
+# Exclude unnecessary artifacts for Docker
+Dockerfile.dev
+Dockerfile.prod
+
+# Exclude test-specific Docker files
+Dockerfile.test

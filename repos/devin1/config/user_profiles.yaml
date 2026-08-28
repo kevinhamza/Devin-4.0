@@ -1,0 +1,132 @@
+# User Profiles Configuration
+
+# Global User Settings
+global_settings:
+  default_language: "en-US"
+  timezone: "UTC"
+  date_format: "YYYY-MM-DD"
+  time_format: "HH:MM"
+
+# User Profiles
+user_profiles:
+  - user_id: 1
+    username: "john_doe"
+    role: "admin"
+    language: "en-US"
+    timezone: "PST"
+    preferred_theme: "dark"
+    notification_preferences:
+      email_notifications: true
+      sms_notifications: false
+      push_notifications: true
+    activity_history:
+      login_dates:
+        - "2024-12-01"
+        - "2024-12-05"
+        - "2024-12-10"
+      recent_activities:
+        - "logged in"
+        - "viewed profile"
+        - "updated settings"
+    favorites:
+      modules:
+        - "face_recognition"
+        - "social_media_management"
+        - "internet_task_automation"
+      bookmarks:
+        - "https://devin.ai/docs"
+        - "https://devin.ai/tutorials"
+      recent_tasks:
+        - "sent message on Twitter"
+        - "retrieved data from API"
+    preferences:
+      voice_commands_enabled: true
+      dark_mode: true
+      advanced_mode: false
+      email_alerts:
+        comments: true
+        likes: false
+        shares: true
+      accessibility_features:
+        text_to_speech: true
+        high_contrast: false
+
+  - user_id: 2
+    username: "jane_smith"
+    role: "user"
+    language: "en-GB"
+    timezone: "GMT"
+    preferred_theme: "light"
+    notification_preferences:
+      email_notifications: true
+      sms_notifications: true
+      push_notifications: false
+    activity_history:
+      login_dates:
+        - "2024-12-02"
+        - "2024-12-06"
+      recent_activities:
+        - "logged in"
+        - "viewed notifications"
+        - "updated profile picture"
+    favorites:
+      modules:
+        - "voice_recognition"
+        - "social_media_management"
+      bookmarks:
+        - "https://devin.ai/community"
+        - "https://devin.ai/support"
+      recent_tasks:
+        - "created new post on Instagram"
+        - "scheduled tweets"
+    preferences:
+      voice_commands_enabled: false
+      dark_mode: false
+      advanced_mode: true
+      email_alerts:
+        comments: false
+        likes: true
+        shares: false
+      accessibility_features:
+        text_to_speech: false
+        high_contrast: true
+
+  - user_id: 3
+    username: "admin_001"
+    role: "admin"
+    language: "es-ES"
+    timezone: "CET"
+    preferred_theme: "dark"
+    notification_preferences:
+      email_notifications: true
+      sms_notifications: false
+      push_notifications: true
+    activity_history:
+      login_dates:
+        - "2024-12-03"
+        - "2024-12-07"
+      recent_activities:
+        - "logged in"
+        - "reviewed admin tasks"
+        - "updated user profiles"
+    favorites:
+      modules:
+        - "device_control"
+        - "machine_learning"
+      bookmarks:
+        - "https://devin.ai/admin-guide"
+        - "https://devin.ai/settings"
+      recent_tasks:
+        - "controlled device remotely"
+        - "configured AI models"
+    preferences:
+      voice_commands_enabled: true
+      dark_mode: true
+      advanced_mode: true
+      email_alerts:
+        comments: true
+        likes: true
+        shares: true
+      accessibility_features:
+        text_to_speech: true
+        high_contrast: true

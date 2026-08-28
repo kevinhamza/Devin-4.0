@@ -1,0 +1,65 @@
+# Other Operating Systems Configurations for Devin Project
+
+# General Configurations for Other OS
+other_os:
+  system_name: "Other OS" # Name of the other operating system
+  supported_platforms: # List of supported platforms
+    - "Linux Mint"
+    - "Ubuntu"
+    - "Fedora"
+    - "Debian"
+    - "Arch Linux"
+  package_management:
+    default: "apt-get" # Default package manager for Linux distributions
+    optional: ["dnf", "pacman"] # Optional package managers for specific distributions
+  environment_variables: # Common environment variables for different platforms
+    - NAME: "DEVIN_HOME"
+      VALUE: "/opt/devin/"
+    - NAME: "DEVIN_CONFIG_PATH"
+      VALUE: "/etc/devin/"
+    - NAME: "DEVIN_LOG_PATH"
+      VALUE: "/var/log/devin/"
+  firewall: # Configuration related to firewalls
+    enabled: true # Enable firewall by default
+    default_policy: "ALLOW" # Default policy for incoming connections
+    rules:
+      - direction: "IN"
+        action: "ALLOW"
+        service: "ssh"
+      - direction: "OUT"
+        action: "ALLOW"
+        service: "http"
+      - direction: "OUT"
+        action: "ALLOW"
+        service: "https"
+  security_updates:
+    auto_install: true # Automatically install security updates
+    check_frequency: "daily" # Frequency to check for updates
+  scheduled_tasks:
+    enabled: true # Enable scheduled tasks for regular maintenance
+    tasks:
+      - name: "Clean Temp Files"
+        schedule: "Weekly" # Weekly cleanup of temporary files
+        trigger: "At 4 AM on Sunday"
+        command: "sudo apt-get clean"
+      - name: "Update Cache"
+        schedule: "Daily" # Daily update of package cache
+        trigger: "At 3 AM"
+        command: "sudo apt-get update -y"
+  backup_strategy:
+    enabled: true # Enable data backup strategy
+    schedule: "Weekly" # Weekly backup schedule
+    command: "rsync -a /data /backup"
+  log_rotation: # Configuration for log rotation
+    enabled: true # Enable log rotation
+    frequency: "daily" # Rotate logs daily
+    configuration_path: "/etc/logrotate.d/devin"
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last configuration update for other operating systems
+
+# Note:
+# - Customize the `system_name` to reflect the actual name of the other operating system.
+# - Adjust `package_management` as per the default package manager of the target distribution.
+# - Modify `environment_variables` to include any additional or specific environment variables required by your project.
+# - Update `firewall.rules` as needed to match your project’s firewall requirements.
+# - Set the `backup_strategy.command` to match the preferred method for data backups in your environment.
+# - Configure `log_rotation.configuration_path` to point to the location where the log rotation configuration is stored.

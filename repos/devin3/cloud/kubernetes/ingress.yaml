@@ -1,0 +1,74 @@
+# Devin/cloud/kubernetes/ingress.yaml
+# Purpose: Manages external access (HTTP/HTTPS) to services within the cluster, primarily routing to the API gateway.
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  # Name of the Ingress resource
+  name: devin-ingress
+  # Namespace should match the targeted Services
+  namespace: devin-prod # Example namespace
+  labels:
+    app.kubernetes.io/name: devin
+    app.kubernetes.io/component: ingress
+  annotations:
+    # --- Ingress Controller Specific Annotations ---
+    # Example annotations for Nginx Ingress Controller:
+    kubernetes.io/ingress.class: "nginx" # Specify Nginx Ingress controller
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m" # Allow larger request bodies if needed
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "180" # Increase read timeout for long requests
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    # Force HTTPS redirect (assuming TLS is configured below and cert-manager handles certs)
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false" # Nginx terminates SSL
+
+    # Example annotations for Cert-Manager (if using it for automatic TLS certs via Let's Encrypt)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod" # Name of your ClusterIssuer
+    # Or use cert-manager.io/issuer: "letsencrypt-staging" for testing
+
+    # Add other annotations as needed for CORS, rate limiting (at ingress level), etc.
+    # nginx.ingress.kubernetes.io/enable-cors: "true"
+    # nginx.ingress.kubernetes.io/cors-allow-origin: "https://devin-ui.example.com"
+
+metadata: # Metadata ends here
+
+spec:
+  # Specify the Ingress Class resource name (recommended for K8s 1.19+)
+  ingressClassName: nginx # Should match the name of your IngressClass resource
+
+  # --- TLS Configuration (for HTTPS) ---
+  tls:
+  - hosts:
+      # *** REPLACE with your actual external DNS hostname ***
+      - devin-api.example.com
+    # Name of the Kubernetes Secret containing the TLS certificate and key.
+    # If using cert-manager with a ClusterIssuer, cert-manager will create this secret automatically.
+    secretName: devin-api-tls-secret # Example secret name
+
+  # --- Routing Rules ---
+  rules:
+  - host: devin-api.example.com # *** REPLACE with your actual external DNS hostname ***
+    http:
+      paths:
+      # Route traffic for the root path and subpaths to the API gateway service
+      - path: / # Match all paths by default
+        pathType: Prefix # Or ImplementationSpecific
+        backend:
+          service:
+            # Name of the Service object created previously (service.yaml)
+            name: devin-api-gateway-service
+            port:
+              # Name of the port defined in the Service object
+              name: http # Or use number: 80
+
+      # Add other path-based rules if needed to route to different backend services
+      # Example: Route UI traffic if served via K8s
+      # - path: /ui
+      #   pathType: Prefix
+      #   backend:
+      #     service:
+      #       name: devin-frontend-service # Hypothetical UI service
+      #       port:
+      #         name: http
+
+# --- End of Ingress Definition ---

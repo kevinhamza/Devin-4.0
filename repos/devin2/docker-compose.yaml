@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Base service that builds the Docker image with all dependencies
+  devin-base:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    volumes:
+      - .:/app
+    tty: true # Keep container running
+
+  cloud-server:
+    depends_on:
+      - devin-base
+    image: devin-agi:latest # Use the image built by devin-base
+    command: python servers/cloud_integration_server.py
+    ports:
+      - "5002:5002"
+    env_file: .env
+    volumes:
+      - .:/app
+
+  analytics-server:
+    depends_on:
+      - devin-base
+    image: devin-agi:latest
+    command: python servers/analytics_server.py
+    ports:
+      - "5004:5004"
+    volumes:
+      - .:/app
+
+  mobile-server:
+    depends_on:
+      - devin-base
+    image: devin-agi:latest
+    command: python servers/mobile_integration_server.py
+    ports:
+      - "5006:5006"
+    volumes:
+      # This is tricky in Docker; would require mounting the USB bus
+      # For now, this service will be limited in a container
+      - .:/app
+
+  ai-learning-server:
+    depends_on:
+      - devin-base
+    image: devin-agi:latest
+    command: python servers/ai_learning_server.py
+    ports:
+      - "5007:5007"
+    volumes:
+      - .:/app

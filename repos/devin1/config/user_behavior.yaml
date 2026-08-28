@@ -1,0 +1,55 @@
+# User-Specific Behavior Configuration for Devin Project
+
+# User Behavior Configuration
+user_behavior:
+  login_attempts:
+    max_attempts: 5 # Maximum number of login attempts before locking the account
+    lockout_duration: 30 # Duration in minutes to lock the account after reaching max attempts
+  session_timeout: 15 # Session timeout duration in minutes (default inactivity duration)
+  inactivity_warning:
+    enabled: true # Enable inactivity warning before session timeout
+    warning_threshold: 5 # Duration in minutes before inactivity warning
+  two_factor_auth:
+    enabled: true # Enable two-factor authentication for extra security
+    methods:
+      - "email" # Available methods for two-factor authentication
+      - "sms"
+      - "app_authenticator"
+  behavior_tracking:
+    enabled: true # Enable user behavior tracking (for analytics and recommendation systems)
+    data_points:
+      - "page_views" # Track user page views
+      - "button_clicks" # Track user button clicks
+      - "form_submissions" # Track form submissions
+      - "scrolling_behavior" # Track scrolling behavior
+  access_logs:
+    enabled: true # Enable access logging
+    log_retention_days: 30 # Number of days to retain access logs
+    log_level: "INFO" # Log level (DEBUG, INFO, WARN, ERROR)
+  content_preference:
+    recommended_content: true # Recommend content based on user preferences
+    content_type:
+      - "news"
+      - "entertainment"
+      - "technology"
+    personalized_ad_preferences:
+      - "tech_reviews"
+      - "lifestyle_articles"
+  privacy_impact:
+    data_sharing:
+      enabled: false # Disable data sharing with third parties by default
+    tracking_cookies:
+      enabled: true # Enable tracking cookies for analytics
+      policy_link: "https://example.com/cookie-policy"
+  error_reporting:
+    enabled: true # Enable error reporting for user behavior
+    report_frequency: "hourly" # Frequency of error reporting (hourly, daily)
+    reporting_methods:
+      - "email"
+      - "webhook" # Send error reports via email or webhook
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last behavior configuration update
+
+# Note:
+# - User behavior tracking should be implemented with privacy considerations.
+# - Settings should be flexible to accommodate various user preferences.
+# - Consult with a professional for detailed implementation.

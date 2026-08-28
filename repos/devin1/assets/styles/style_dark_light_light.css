@@ -1,0 +1,156 @@
+/* Unified Styling for Dark Mode, Light Mode, and Ultra-Light Mode */
+
+/* CSS Variables for all modes */
+:root {
+    /* Light Mode Colors */
+    --background-light: #ffffff;
+    --text-light: #000000;
+    --link-light: #1a73e8;
+    --button-light: #f5f5f5;
+    --card-light: #ffffff;
+    --border-light: #dddddd;
+
+    /* Dark Mode Colors */
+    --background-dark: #121212;
+    --text-dark: #e0e0e0;
+    --link-dark: #8ab4f8;
+    --button-dark: #333333;
+    --card-dark: #1e1e1e;
+    --border-dark: #444444;
+
+    /* Ultra-Light Mode Colors */
+    --background-ultra-light: #f8f9fa;
+    --text-ultra-light: #202124;
+    --link-ultra-light: #1c7ed6;
+    --button-ultra-light: #e9ecef;
+    --card-ultra-light: #ffffff;
+    --border-ultra-light: #ced4da;
+}
+
+/* Base Styles (Light Mode Default) */
+body {
+    background-color: var(--background-light);
+    color: var(--text-light);
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+a {
+    color: var(--link-light);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+header, footer {
+    background-color: var(--card-light);
+    color: var(--text-light);
+    padding: 15px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+button {
+    background-color: var(--button-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-light);
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: var(--border-light);
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* Card Component */
+.card {
+    background-color: var(--card-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Scrollbars */
+.scrollbar {
+    scrollbar-color: var(--border-light) var(--background-light);
+    scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background-light);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--border-light);
+    border-radius: 10px;
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: var(--background-dark);
+    color: var(--text-dark);
+}
+
+a.dark-mode {
+    color: var(--link-dark);
+}
+
+header.dark-mode, footer.dark-mode {
+    background-color: var(--card-dark);
+    color: var(--text-dark);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+button.dark-mode {
+    background-color: var(--button-dark);
+    color: var(--text-dark);
+    border: 1px solid var(--border-dark);
+}
+
+/* Ultra-Light Mode Styles */
+body.ultra-light-mode {
+    background-color: var(--background-ultra-light);
+    color: var(--text-ultra-light);
+}
+
+a.ultra-light-mode {
+    color: var(--link-ultra-light);
+}
+
+header.ultra-light-mode, footer.ultra-light-mode {
+    background-color: var(--card-ultra-light);
+    color: var(--text-ultra-light);
+    border-bottom: 1px solid var(--border-ultra-light);
+}
+
+button.ultra-light-mode {
+    background-color: var(--button-ultra-light);
+    color: var(--text-ultra-light);
+    border: 1px solid var(--border-ultra-light);
+}
+
+.card.ultra-light-mode {
+    background-color: var(--card-ultra-light);
+    color: var(--text-ultra-light);
+    border: 1px solid var(--border-ultra-light);
+}

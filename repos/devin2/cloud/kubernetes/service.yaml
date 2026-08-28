@@ -1,0 +1,51 @@
+# Devin/cloud/kubernetes/service.yaml
+# Purpose: Exposes the Pods managed by the devin-api-gateway-deployment
+#          as a network service within the Kubernetes cluster.
+
+apiVersion: v1
+kind: Service
+metadata:
+  # Name of the Service object
+  name: devin-api-gateway-service
+  # Namespace should match the Deployment's namespace
+  namespace: devin-prod # Example namespace
+  labels:
+    # Labels for the Service object itself (optional, but good practice)
+    app.kubernetes.io/name: devin
+    app.kubernetes.io/component: api-gateway
+metadata: # Metadata ends here
+
+spec:
+  # Selector to find the Pods this Service should route traffic to.
+  # *** CRITICAL: These labels MUST EXACTLY MATCH the labels in the
+  # *** Deployment's spec.template.metadata.labels section.
+  selector:
+    app.kubernetes.io/name: devin
+    app.kubernetes.io/component: api-gateway
+
+  # Define how the service is exposed
+  # Options: ClusterIP, NodePort, LoadBalancer, ExternalName
+  type: ClusterIP
+  # - ClusterIP (Default): Exposes the service on an internal cluster IP. Only reachable within the cluster.
+  #                      Good for internal services called by other components in the cluster.
+  # - NodePort: Exposes the service on each Node's IP at a static port. Good for testing/dev.
+  # - LoadBalancer: Creates an external load balancer (requires cloud provider integration - AWS ELB, GCP LB, etc.)
+  #                 Standard way to expose services externally in production on cloud platforms.
+  # - ExternalName: Maps the service to a DNS name (less common).
+  # For external access in production, you would typically use LoadBalancer (on cloud)
+  # or configure an Ingress controller pointing to this ClusterIP service.
+
+  # Define the ports the Service exposes and maps to Pod ports
+  ports:
+    - name: http # Optional name for the port
+      protocol: TCP
+      port: 80 # Port the Service listens on WITHIN the cluster
+      targetPort: 8000 # Port the container inside the Pod is listening on (must match containerPort in Deployment)
+      # Alternatively, if the Deployment's containerPort was named 'http', you could use:
+      # targetPort: http
+
+    # Add other ports if your application exposes more (e.g., HTTPS on 443 mapped to container's 8443)
+    # - name: https
+    #   protocol: TCP
+    #   port: 443
+    #   targetPort: 8443 # Assuming container listens on 8443 for HTTPS

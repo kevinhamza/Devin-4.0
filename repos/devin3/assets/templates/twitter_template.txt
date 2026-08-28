@@ -1,0 +1,22 @@
+{# Devin/assets/templates/twitter_template.txt (Using .txt conceptually) #}
+{# Template for Twitter Status Updates (Tweets) #}
+{# --- Character Limit Warning: Final output MUST be truncated to fit Twitter limits (e.g., 280 chars) by the calling code --- #}
+
+{{ status_prefix | default("[Devin Alert]") }} {{ message_body | default("No specific message.") }} {# Core message #}
+
+{# --- Optional Details (keep concise) --- #}
+{% if task_id %}Task ID: {{ task_id }}{% endif %}
+{% if target %} Target: {{ target }}{% endif %}
+{% if key_finding %} Finding: {{ key_finding | truncate(50) }}{% endif %} {# Example: Truncate long findings #}
+
+{# --- Optional Link (Twitter shortens automatically) --- #}
+{% if details_url %} Details: {{ details_url }}{% endif %}
+
+{# --- Optional Hashtags & Mentions --- #}
+#DevinAI {% if task_type_hashtag %}#{{ task_type_hashtag }}{% endif %} {% if user_mention %}@{{ user_mention }}{% endif %}
+
+{# --- Timestamp (optional, concise) --- #}
+{{ timestamp | default("") }}
+
+{# --- End of Template --- #}
+{# Remember: Calling Python code MUST calculate final length and truncate if necessary before posting! #}

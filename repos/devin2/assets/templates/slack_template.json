@@ -1,0 +1,100 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": ":robot_face: {{ title | default('Devin AI Notification') }}", // Placeholder title
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "{{ message_body | default('No message content provided.') }}" // Placeholder message body (supports mrkdwn)
+      }
+    },
+    // Optional: Divider for visual separation
+    {
+      "type": "divider"
+    },
+    // Optional: Section with specific fields for structured data
+    {
+      "type": "section",
+      "fields": [
+        // Conditionally include fields based on available data
+        {% if task_id %}
+        {
+          "type": "mrkdwn",
+          "text": "*Task ID:*\n`{{ task_id }}`"
+        },
+        {% endif %}
+        {% if status %}
+        {
+          "type": "mrkdwn",
+          "text": "*Status:*\n{{ status | upper }}" // Example: Make status uppercase
+        },
+        {% endif %}
+        {% if target %}
+        {
+          "type": "mrkdwn",
+          "text": "*Target:*\n{{ target }}"
+        },
+        {% endif %}
+        {% if severity %}
+        {
+            "type": "mrkdwn",
+            "text": "*Severity:*\n:{{ severity | lower }}_circle: {{ severity | capitalize }}" // Example: Use emoji based on severity
+        },
+        {% endif %}
+        // Add more optional fields as needed
+        {% for key, value in additional_info.items() %}
+        {
+            "type": "mrkdwn",
+            "text": "*{{ key | replace('_', ' ') | capitalize }}:*\n{{ value }}"
+        },
+        {% endfor %}
+      ]
+    },
+    // Optional: Divider
+    {
+        "type": "divider"
+    },
+    // Optional: Context block for less important info like timestamps
+    {
+        "type": "context",
+        "elements": [
+            {
+                "type": "mrkdwn",
+                "text": "Triggered by: *{{ triggered_by | default('System') }}* | Timestamp: `{{ timestamp | default('N/A') }}`" // Placeholders
+            }
+            // Add more context elements if needed
+        ]
+    },
+    // Optional: Action block with buttons
+    {% if actions and actions|length > 0 %}
+    {
+        "type": "actions",
+        "elements": [
+            // Loop through defined actions (e.g., buttons)
+            {% for action in actions %}
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": "{{ action.text }}",
+                    "emoji": true
+                },
+                "style": "{{ action.style | default('primary') }}", // 'primary' or 'danger'
+                "url": "{{ action.url }}", // Include URL if it's a link button
+                "action_id": "{{ action.action_id }}", // ID for interactivity handling
+                "value": "{{ action.value }}" // Value passed when button clicked
+            }
+            {% if not loop.last %},{% endif %} {# Add comma between elements if not last #}
+            {% endfor %}
+        ]
+    }
+    {% endif %}
+  ]
+}

@@ -1,0 +1,46 @@
+# iOS-Specific Configurations for Devin Project
+
+# iOS Specific Configurations
+ios:
+  preferred_xcode_version: "14.2" # Preferred Xcode version for development
+  app_bundle_id: "com.devinai.app" # Application bundle identifier
+  device_management: # iOS device management settings
+    automatic_profile_installation: true # Enable automatic profile installation
+    push_notifications: true # Enable push notifications
+    auto_update_enabled: true # Enable automatic app updates
+  build_settings:
+    deployment_target: "14.0" # Minimum iOS deployment target
+    provisioning_profile_name: "DevinProvisioningProfile" # Name of the provisioning profile
+    signing_identity: "iPhone Distribution: Devin AI Inc." # Signing identity for app distribution
+  device_permissions:
+    location_services: true # Enable location services
+    camera_access: true # Enable camera access
+    microphone_access: true # Enable microphone access
+    contacts_access: true # Enable contacts access
+  firewall: # iOS firewall settings (if applicable)
+    enabled: false # iOS devices do not generally use firewalls in the same way as PCs
+  app_settings:
+    data_storage_path: "/private/var/mobile/Containers/Data/Application/" # Path for data storage
+    cache_path: "/private/var/mobile/Containers/Shared/AppGroup/com.devinai.app/cache/" # Path for cached data
+    log_path: "/private/var/mobile/Containers/Shared/AppGroup/com.devinai.app/logs/" # Path for log files
+  scheduled_tasks:
+    enabled: true # Enable scheduled tasks for regular tasks
+    tasks:
+      - name: "Sync Data"
+        schedule: "Daily" # Daily data sync
+        trigger: "At 2 AM"
+        command: "ios sync --no-verify"
+      - name: "Clear Cache"
+        schedule: "Weekly" # Weekly cache clear
+        trigger: "At 3 AM on Sunday"
+        command: "ios cache clear"
+  app_updates:
+    enabled: true # Enable automatic app updates
+    update_frequency: "weekly" # Frequency of updates (hourly, daily, weekly)
+  last_updated: "2024-12-20T12:00:00Z" # Timestamp of the last iOS-specific configuration update
+
+# Note:
+# - Adjust the device management settings according to the specific needs of your iOS deployment.
+# - Modify paths for data storage (`data_storage_path`, `cache_path`, `log_path`) as per your project’s structure.
+# - Set the scheduling tasks (`Sync Data`, `Clear Cache`) to match your app’s maintenance schedule.
+# - Update the `provisioning_profile_name` and `signing_identity` to match your provisioning profile details.

@@ -1,0 +1,39 @@
+# Ignore Python bytecode files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore virtual environment directories
+venv/
+*.venv/
+*.env/
+.env/
+
+# Ignore Docker-related files
+docker-compose.*
+Dockerfile*
+
+# Ignore compiled Python files
+*.pyc
+*.pyo
+
+# Ignore build artifacts
+build/
+dist/
+*.egg-info/
+
+# Ignore .pytest_cache directory
+.cache
+
+# Ignore production-specific files
+.env.production
+*Debug*
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore temporary files
+*.tmp
+temp/

@@ -1,0 +1,84 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // Configuration to run the main entry point script (e.g., main.py or bootstrap.py)
+            "name": "Python: Run Devin Main Script",
+            "type": "python", // Specifies the Python debugger
+            "request": "launch", // Launch a new process
+            // *** ADJUST this path to your main script ***
+            "program": "${workspaceFolder}/main.py", // Assumes main.py in root
+            // "program": "${workspaceFolder}/bootstrap.py", // Or maybe bootstrap?
+            "console": "integratedTerminal", // Show output in VS Code's integrated terminal
+            "justMyCode": true, // Debug only user code by default
+            "env": {
+                // Environment variables needed by the script
+                "PYTHONPATH": "${workspaceFolder}", // Add project root to Python path
+                // "EXAMPLE_VAR": "example_value",
+                // Load sensitive keys from .env file usually (handled by python-dotenv in code or terminal)
+            },
+            "cwd": "${workspaceFolder}" // Set working directory to project root
+        },
+        {
+            // Configuration to run the FastAPI API Gateway using Uvicorn
+            // Assumes your FastAPI app instance is named 'app' inside 'api_gateway/main.py'
+            "name": "Python: FastAPI (API Gateway)",
+            "type": "python",
+            "request": "launch",
+            "module": "uvicorn", // Run uvicorn as a module
+            "args": [
+                // *** ADJUST module:app path as needed ***
+                "api_gateway.main:app", // Path to the file and app instance (e.g., folder.subfolder.filename:app_variable)
+                "--host", "127.0.0.1",
+                "--port", "8000", // Match the port your gateway runs on
+                "--reload" // Enable auto-reload during development (remove for production)
+                // Add other uvicorn args if needed: --workers 4, --ssl-keyfile ...
+            ],
+            "jinja": true, // Enable Jinja template debugging if using FastAPI templates
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                // Add any env vars needed specifically for the API gateway
+                // "JWT_SECRET_KEY": "load_from_env_or_secrets",
+                // "DATABASE_URL": "..."
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            // Configuration to run all Pytest tests
+            "name": "Python: Pytest All Tests",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest", // Run pytest as a module
+            "args": [
+                "tests/" // Path to your tests directory
+                // Add other pytest args: "-v", "-s", "-k test_specific"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                // Add env vars needed specifically for testing
+                // "TESTING_MODE": "true"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            // Configuration to run a specific Python file
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}", // Debug the currently open Python file
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "cwd": "${workspaceFolder}"
+        }
+        // Add more configurations as needed (e.g., attaching to a running process, specific test files)
+    ]
+}

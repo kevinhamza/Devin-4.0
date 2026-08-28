@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linter:
+    name: linter
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create builder image
+        run: docker build . -t airgorah_builder
+
+      - name: Clippy
+        run: >
+          docker run --rm
+          -v ${{ github.workspace }}:/workspace
+          airgorah_builder
+          cargo clippy --all --all-features -- -D warnings
+
+      - name: Format
+        run: >
+          docker run --rm
+          -v ${{ github.workspace }}:/workspace
+          airgorah_builder
+          cargo fmt --all -- --check
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x86_64, aarch64]
+        include:
+        - arch: x86_64
+          runner: ubuntu-24.04
+        - arch: aarch64
+          runner: ubuntu-24.04-arm
+
+    name: build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    needs: linter
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create builder image
+        run: >
+          docker build .
+          -t airgorah_builder
+
+      - name: Build project
+        run: >
+          docker run --rm
+          -v ${{ github.workspace }}:/workspace
+          airgorah_builder
+
+      - name: Save debian artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: airgorah_${{ matrix.arch }}.deb
+          path: ./airgorah_${{ matrix.arch }}.deb
+          if-no-files-found: error
+
+      - name: Save redhat artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: airgorah_${{ matrix.arch }}.rpm
+          path: ./airgorah_${{ matrix.arch }}.rpm
+          if-no-files-found: error
+
+      - name: Save archlinux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: airgorah_${{ matrix.arch }}.pkg.tar.zst
+          path: ./airgorah_${{ matrix.arch }}.pkg.tar.zst
+          if-no-files-found: error
+
+  release:
+    name: release
+    runs-on: ubuntu-24.04
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+          merge-multiple: true
+
+      - name: Get release version
+        id: 'tag'
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Rename packages
+        env:
+          VERSION: ${{ steps.tag.outputs.tag }}
+        run: |
+          cd ./artifacts
+          for arch in x86_64 aarch64; do
+            for ext in deb rpm pkg.tar.zst; do
+              mv "airgorah_${arch}.${ext}" "airgorah_${VERSION}_${arch}.${ext}"
+            done
+          done
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_x86_64.deb
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_x86_64.rpm
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_x86_64.pkg.tar.zst
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_aarch64.deb
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_aarch64.rpm
+            ./artifacts/airgorah_${{ steps.tag.outputs.tag }}_aarch64.pkg.tar.zst

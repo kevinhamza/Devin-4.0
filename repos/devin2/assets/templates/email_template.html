@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ email_subject }}</title> <style>
+        /* Basic Styling for Compatibility */
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333333;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border: 1px solid #dddddd;
+            border-radius: 5px;
+        }
+        .email-header {
+            background-color: #007bff; /* Example blue header */
+            color: #ffffff;
+            padding: 10px 20px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }
+        .email-header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .email-body {
+            padding: 20px;
+        }
+        .email-body p {
+            margin-bottom: 15px;
+        }
+        .email-footer {
+            margin-top: 20px;
+            padding: 10px;
+            text-align: center;
+            font-size: 12px;
+            color: #777777;
+            border-top: 1px solid #eeeeee;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 10px 0;
+            background-color: #28a745; /* Example green button */
+            color: #ffffff !important; /* Important to override link styles */
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-header">
+            <h1>{{ email_title | default("Devin AI Notification") }}</h1> </div>
+        <div class="email-body">
+            <p>Hello {{ recipient_name | default("User") }},</p> {{ message_body | safe }}
+
+            {% if action_url and action_text %}
+            <p style="text-align: center;">
+                <a href="{{ action_url }}" class="button">{{ action_text }}</a>
+            </p>
+            {% endif %}
+
+            <p>If you have any questions, please don't hesitate to contact support (or reply to this email if applicable).</p>
+
+            <p>Best regards,<br>The Devin AI Team</p>
+        </div>
+        <div class="email-footer">
+            <p>&copy; {{ current_year }} Devin Project. All rights reserved.</p>
+            {% if unsubscribe_url %}
+            <p><a href="{{ unsubscribe_url }}">Manage notification preferences</a></p>
+            {% endif %}
+            <p>Devin Corp | 123 AI Lane | Innovation City, CA 94000</p> </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Devin/.dockerignore/.dockerignore.prod (Conceptual - LIKELY REDUNDANT)
+# Purpose: Specifies files/folders to exclude from Docker build context for production images.
+
+# =========================================================================
+# IMPORTANT NOTE ON STANDARD PRACTICE:
+# =========================================================================
+# Docker uses a single `.dockerignore` file in the build context root to
+# determine which files/directories to exclude when sending the context
+# to the Docker daemon. This file should comprehensively list things
+# never needed inside the image or during the build process itself, such as:
+#   - .git directory
+#   - Python virtual environments (.venv, venv, etc.)
+#   - Python caches (__pycache__, *.pyc)
+#   - Local secrets or environment files (.env, secrets.*)
+#   - IDE configuration (.vscode, .idea)
+#   - OS-specific files (.DS_Store, Thumbs.db)
+#   - Logs, temporary files, unnecessary build artifacts from other processes.
+#
+# These exclusions generally apply regardless of whether you are building
+# a development or production image. Differences between image types are
+# typically managed using multi-stage builds within a single Dockerfile
+# (e.g., copying only necessary artifacts from a builder stage) or using
+# different Dockerfiles entirely (e.g., Dockerfile.dev, Dockerfile.prod).
+#
+# Therefore, a separate `.dockerignore.prod` file is usually unnecessary and redundant
+# if the main `.dockerignore` file is correctly configured. This file is included
+# conceptually based on the provided tree structure but should likely be removed.
+# =========================================================================
+
+# No specific production-only ignore patterns are typically needed here if the main
+# .dockerignore includes standard patterns for .git, .env, venv, __pycache__, etc.

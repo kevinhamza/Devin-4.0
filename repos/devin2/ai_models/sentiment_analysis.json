@@ -1,0 +1,28 @@
+{
+  "//": "Conceptual content for ai_models/sentiment_analysis.json",
+  "//": "This file typically stores configuration or metadata for the sentiment analysis model.",
+
+  "model_name": "sentiment-analyzer-bert-base",
+  "version": "1.1.0",
+  "description": "BERT-based model fine-tuned for sentiment analysis on product reviews.",
+  "model_format": "h5", // Or pkl, onnx, etc. - indicates which artifact file to load
+  "model_path_ref": "ai_models/sentiment_analysis_v1.1.h5", // Relative path or reference to the actual model artifact
+  "tokenizer_path_ref": "ai_models/sentiment_tokenizer_v1.pkl", // Reference to the associated tokenizer artifact
+  "label_map": {
+    "0": "negative",
+    "1": "neutral",
+    "2": "positive"
+  },
+  "hyperparameters_used": {
+    "learning_rate": 2e-5,
+    "batch_size": 16,
+    "epochs": 3,
+    "base_model": "bert-base-uncased"
+  },
+  "performance_metrics": { // Metrics on a validation set
+    "accuracy": 0.925,
+    "f1_macro": 0.918,
+    "validation_dataset_ref": "datasets/sentiment_reviews_v2_val.csv"
+  },
+  "creation_date_utc": "2025-04-10T12:00:00Z" // Example timestamp
+}

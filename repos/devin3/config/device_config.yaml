@@ -1,0 +1,128 @@
+# Devin/config/device_config.yaml
+# Purpose: Configuration specific to the host system and managed external devices (PC, mobile, IoT).
+
+# --- Configuration for the Host PC Running Devin ---
+host_pc:
+  # Basic identification and OS information
+  hostname: "devin-core-host" # Automatically detected ideally, but can be set
+  os_type: "Linux" # e.g., "Linux", "Windows", "macOS" - important for path separators, commands etc.
+  os_version: "Ubuntu 22.04 LTS" # Specific version if relevant
+
+  # Hardware info (conceptual - might be detected dynamically)
+  cpu_architecture: "x86_64"
+  cpu_cores: 16
+  memory_gb: 64
+  gpu_info:
+    model: "NVIDIA GeForce RTX 4090" # Or AMD equivalent
+    driver_version: "535.104.05" # Important for CUDA/ML tasks
+    cuda_available: true
+
+  # Display info (relevant for UI automation)
+  primary_screen_resolution: "2560x1440"
+
+  # APIs enabled for Devin to control THIS host machine
+  # Requires user consent and careful security implementation
+  enabled_host_control_apis:
+    - "filesystem_read"
+    - "filesystem_write" # Requires higher trust/permission
+    - "process_execute" # Requires higher trust/permission
+    - "mouse_control" # Requires user confirmation likely
+    - "keyboard_control" # Requires user confirmation likely
+    - "screenshot"
+
+# --- Configuration for External Devices Managed by Devin ---
+# List of devices Devin can potentially connect to and control.
+managed_devices:
+
+  # --- Example: Android Phone ---
+  - device_id: "pixel_7_lab" # Unique identifier for this device configuration
+    device_type: "android"
+    display_name: "Lab Google Pixel 7" # User-friendly name
+    connection_method: "adb" # Android Debug Bridge
+    # Connection details specific to the method
+    adb_config:
+      # Serial number is often needed if multiple devices connected via USB/Network ADB
+      adb_serial: "emulator-5554" # Example for emulator, use actual device serial
+      # Network ADB example:
+      # adb_host: "192.168.1.150"
+      # adb_port: 5555
+    # Reference to credentials if needed (e.g., ADB key authentication)
+    credentials_ref: "adb_key_default" # Conceptual reference name
+    # Specific configurations for this device type
+    os_specific_config:
+      android_version: "14"
+      screen_capture_tool: "scrcpy" # Or use ADB directly 'screencap'
+      input_method: "adb_shell_input" # 'adb shell input text/keyevent' or via tool like scrcpy
+    # APIs enabled for Devin to control THIS specific external device
+    enabled_control_apis:
+      - "screen_capture"
+      - "app_management" # Install/uninstall/list apps
+      - "filesystem_read:limited" # Limited scope, e.g., Downloads folder
+      - "send_intent"
+      - "shell_command:limited" # Limited ADB shell access
+
+  # --- Example: Remote Linux PC ---
+  - device_id: "dev_server_linux"
+    device_type: "pc"
+    display_name: "Development Server (Ubuntu)"
+    connection_method: "ssh"
+    # Connection details
+    ssh_config:
+      host: "dev-server.corp.local" # Or IP address
+      port: 22
+      username: "devin_agent" # User Devin connects as
+    # Reference to credentials (e.g., path to SSH private key)
+    # Store path in env var or secure config, not directly here.
+    credentials_ref: "env:DEV_SERVER_SSH_KEY_PATH"
+    # Specific configurations
+    os_specific_config:
+      os_type: "linux"
+      distribution: "Ubuntu 20.04"
+    # Enabled APIs
+    enabled_control_apis:
+      - "shell_command" # Full shell via SSH
+      - "filesystem_read"
+      - "filesystem_write" # Requires appropriate SSH user permissions
+      - "process_monitor"
+
+  # --- Example: Remote Windows PC ---
+  - device_id: "test_vm_windows"
+    device_type: "pc"
+    display_name: "Windows 11 Test VM"
+    connection_method: "winrm" # Or "ssh" if OpenSSH server installed
+    # Connection details
+    winrm_config:
+       endpoint: "https://win11-vm.corp.local:5986/wsman"
+       # Authentication typically handled by credential object, e.g., Kerberos or User/Pass
+    # Reference to credentials (e.g., username/password stored securely)
+    credentials_ref: "winrm_test_vm_creds" # Conceptual reference name
+    # Specific configurations
+    os_specific_config:
+       os_type: "windows"
+       os_version: "11 Pro"
+       powershell_enabled: true
+    # Enabled APIs
+    enabled_control_apis:
+       - "shell_command:powershell"
+       - "filesystem_read"
+       - "gui_automation" # Requires specific libraries/agents on target
+
+  # --- Example: Simple IoT Sensor ---
+  - device_id: "temp_sensor_lab"
+    device_type: "iot_sensor"
+    display_name: "Lab Temperature Sensor"
+    connection_method: "mqtt" # Message Queuing Telemetry Transport
+    # Connection details
+    mqtt_config:
+       broker_address: "mqtt.corp.local"
+       broker_port: 1883
+       topic: "sensors/lab/temperature"
+       data_format: "json" # e.g., json, plain_text
+    # Reference to credentials (if MQTT broker requires auth)
+    credentials_ref: "mqtt_broker_creds" # Conceptual reference name
+    # Enabled APIs (likely limited for sensors)
+    enabled_control_apis:
+      - "read_data" # Ability to subscribe to the sensor topic
+
+
+# Add more managed devices as needed...

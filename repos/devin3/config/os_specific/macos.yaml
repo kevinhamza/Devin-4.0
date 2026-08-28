@@ -1,0 +1,99 @@
+# Devin/config/os_specific/macos.yaml
+# Purpose: macOS-specific configuration settings, paths, command equivalents, and tool locations.
+
+# --- Default Paths ---
+# Common filesystem locations on macOS systems.
+paths:
+  # Temporary directory location
+  temp_dir: "/private/tmp" # Or often accessed via /tmp symlink or $TMPDIR
+  # User home directory prefix
+  user_home_prefix: "/Users"
+  # User-specific Library directory (hidden by default in Finder)
+  user_library_dir: "~/Library"
+  # User-specific Preferences directory
+  user_preferences_dir: "~/Library/Preferences"
+  # User-specific Application Support directory
+  user_app_support_dir: "~/Library/Application Support"
+  # User LaunchAgents directory (for user-specific services/daemons)
+  user_launch_agents_dir: "~/Library/LaunchAgents"
+  # System-wide Applications directory
+  applications_dir: "/Applications"
+  # System Library directory
+  system_library_dir: "/System/Library"
+  # System LaunchDaemons/LaunchAgents directories (require root)
+  system_launch_daemons_dir: "/Library/LaunchDaemons"
+  system_launch_agents_dir: "/Library/LaunchAgents"
+  # Default shell (zsh is the default in modern macOS)
+  default_shell: "/bin/zsh"
+  # Common shell profile files
+  default_shell_profiles:
+    - ".profile"
+    - ".zprofile" # zsh login shell
+    - ".zshrc" # zsh interactive shell
+    - ".bash_profile" # If bash is used
+    - ".bashrc" # If bash is used
+
+# --- Common Command Names/Paths ---
+# Names or full paths of standard macOS commands and common third-party tools.
+commands:
+  # Package management (Homebrew is the de facto standard, not built-in)
+  package_manager: "brew" # Assumes Homebrew is installed
+  package_search: "brew search"
+  package_install: "brew install"
+  package_update_index: "brew update"
+  package_upgrade_all: "brew upgrade"
+  package_uninstall: "brew uninstall"
+
+  # Service management (launchd controlled via launchctl)
+  service_load: "launchctl load -w" # Load and enable persistent service (plist file path follows)
+  service_unload: "launchctl unload -w" # Unload and disable persistent service (plist file path follows)
+  service_start: "launchctl start" # Start a loaded service (label follows)
+  service_stop: "launchctl stop" # Stop a loaded service (label follows)
+  service_list: "launchctl list" # List loaded services/agents
+  # Note: Requires knowledge of service labels or plist paths.
+
+  # Firewall management (pfctl or interacting with System Preferences GUI via AppleScript)
+  firewall_query_status: "/sbin/pfctl -s info" # Check basic Packet Filter status
+  firewall_list_rules: "/sbin/pfctl -s rules" # List Packet Filter rules
+  # Enabling/disabling often uses: /usr/libexec/ApplicationFirewall/socketfilterfw
+  # socketfilterfw --getglobalstate / --setglobalstate on/off
+
+  # User and group management (dscl is the primary tool)
+  user_list: "dscl . list /Users"
+  user_query_detail: "dscl . read /Users/" # Followed by username
+  group_list: "dscl . list /Groups"
+  group_query_detail: "dscl . read /Groups/" # Followed by group name
+  # Simpler commands for current user info:
+  current_user: "whoami"
+  current_groups: "id -G -n"
+
+  # Process management (BSD style commands)
+  process_list_bsd: "ps aux"
+  process_kill: "kill" # Followed by PID
+  process_force_kill: "kill -9" # Followed by PID
+
+  # Common command-line text editor (nano/vim usually pre-installed)
+  default_text_editor_cli: "nano"
+
+# --- Common Tool Paths ---
+# Explicit paths to macOS specific tools or ensuring they are found.
+tools:
+  homebrew_path: "/opt/homebrew/bin/brew" # Apple Silicon default path
+  # homebrew_path: "/usr/local/bin/brew" # Intel default path
+  plutil_path: "/usr/bin/plutil" # Property list utility
+  defaults_path: "/usr/bin/defaults" # Read/write preferences domains
+  osascript_path: "/usr/bin/osascript" # Execute AppleScript/JavaScript for Automation
+  security_path: "/usr/bin/security" # Manage keychains, certificates
+  launchctl_path: "/bin/launchctl" # Manage launchd services/daemons
+  dscl_path: "/usr/bin/dscl" # Directory Service command line utility
+
+# --- Common macOS Defaults Domains (Informational) ---
+# Examples of preference domains used with the 'defaults read/write' command.
+macos_defaults_examples:
+  global_preferences: "-g" # Or NSGlobalDomain
+  finder_preferences: "com.apple.finder"
+  dock_preferences: "com.apple.dock"
+  system_preferences_network: "/Library/Preferences/SystemConfiguration/preferences.plist" # Requires plutil
+  login_items: "com.apple.loginitems" # More complex, often managed via AppleScript
+
+# Add other macOS-specific settings as needed...

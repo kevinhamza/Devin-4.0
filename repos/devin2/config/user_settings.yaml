@@ -1,0 +1,42 @@
+# Devin/config/user_settings.yaml
+# Purpose: Stores user-specific settings.
+#
+# !!! WARNING: LIKELY REDUNDANT WITH user_profiles.yaml !!!
+# It is strongly recommended to consolidate all user-specific settings, preferences,
+# permissions, etc., into a single user profile structure (e.g., user_profiles.yaml,
+# or preferably a database like databases/user_profiles.db) to avoid confusion
+# and ensure data consistency.
+
+# Using a dictionary keyed by user ID (mirroring user_profiles.yaml structure)
+
+user_admin_01:
+  # Example setting likely duplicated from user_profiles.yaml
+  display_name_setting: "Devin Administrator" # Naming slightly different to avoid pure duplication if loaded together (bad practice)
+
+  preferences:
+    # Example preference duplicated from user_profiles.yaml
+    theme_setting: "dark"
+    # Example preference duplicated from user_profiles.yaml
+    preferred_llm_setting: "openai"
+
+  # Example setting duplicated from user_profiles.yaml
+  skill_level_setting: "expert"
+
+user_pentester_alice:
+  display_name_setting: "Alice (Pentester)"
+  preferences:
+    theme_setting: "dark"
+    preferred_llm_setting: "pentestgpt"
+  skill_level_setting: "intermediate"
+
+user_normal_bob:
+  display_name_setting: "Bob (General User)"
+  preferences:
+    theme_setting: "light"
+    preferred_llm_setting: "gemini"
+  skill_level_setting: "beginner"
+
+# --- End of Redundant Settings ---
+# Recommendation: Remove this file and ensure all necessary user-specific
+# configurations are present and organized within the user profile structure
+# (ideally managed via a database).

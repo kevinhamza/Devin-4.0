@@ -1,0 +1,77 @@
+# Devin/config/os_specific/ios.yaml
+# Purpose: iOS-specific configurations, primarily focused on UI automation frameworks.
+# WARNING: Programmatic control of iOS is heavily restricted. This config is conceptual
+#          and likely depends on tools like Appium/XCUITest running on a macOS host.
+
+# --- Primary Interaction Method ---
+# Defines the assumed method for interacting with the iOS device.
+primary_interaction_method: "appium" # Options: "appium", "xcuitest", "manual", "none"
+
+# Flag indicating if a macOS host is generally required for the connection/tooling.
+requires_macos_host: true
+
+# --- Host Machine Tool Paths (Assumed macOS Host) ---
+# Paths to necessary tools on the machine facilitating the connection. Null assumes in PATH.
+host_tools:
+  xcode_path: "/Applications/Xcode.app/Contents/Developer" # Path to Xcode Developer directory
+  idevice_tools_path: null # Path for tools like ideviceinstaller, idevicesyslog (often via brew)
+  appium_server_path: null # Path to Appium executable if run locally
+
+# --- Target iOS Device Information ---
+# Details of the specific iOS device to be targeted.
+target_device:
+  device_name: "Devin Test iPhone 14" # As recognized by Xcode/Appium
+  udid: "YOUR_DEVICE_UDID_HERE" # Unique Device Identifier (get from Xcode or Finder)
+  ios_version: "17.4" # Target OS version
+
+# --- Automation Framework Configuration ---
+# Settings specific to the chosen interaction method.
+automation_framework_config:
+
+  # Configuration if primary_interaction_method is 'appium'
+  appium:
+    server_url: "http://localhost:4723/wd/hub" # Default Appium server URL
+    # Default Appium capabilities for connecting to the device.
+    # See Appium documentation for iOS capabilities.
+    default_capabilities:
+      platformName: "iOS"
+      # platformVersion should ideally match target_device.ios_version
+      platformVersion: "{{ target_device.ios_version }}" # Reference other config value
+      deviceName: "{{ target_device.device_name }}" # Reference other config value
+      udid: "{{ target_device.udid }}" # Reference other config value
+      automationName: "XCUITest" # Standard automation backend for iOS
+      # bundleId is REQUIRED if interacting with a specific app.
+      # bundleId: "com.example.myapp" # Bundle ID of the app to automate
+      # app: "/path/to/YourApp.ipa" # Path to the .ipa file if installing/launching directly
+
+  # Configuration if primary_interaction_method is 'xcuitest'
+  xcuitest:
+    # Path to the .xcodeproj or .xcworkspace file on the macOS host
+    xcode_project_path: "/path/to/DevinControlApp/DevinControlApp.xcodeproj" # Conceptual
+    # Xcode scheme to build/test
+    scheme_name: "DevinControlAppUITests"
+    # Optional: Specify a test plan
+    test_plan: "Default"
+
+# --- Credential References ---
+# References to sensitive information needed, e.g., Apple Developer credentials.
+# Store actual credentials securely (env vars, keychain), not here.
+credential_references:
+  # Environment variable name holding the Apple Developer account username/email
+  apple_developer_account_env: "APPLE_DEV_ACCOUNT"
+  # Name of the provisioning profile needed (often depends on bundle ID and device UDID)
+  provisioning_profile_name: "Devin Test Profile" # Conceptual name
+  # Reference to where Appium API keys/secrets might be stored if using cloud service
+  appium_cloud_secret_ref: "env:APPIUM_CLOUD_API_KEY"
+
+# --- Conceptual Task Mappings ---
+# High-level mapping of actions to potential automation commands (pseudo-code).
+# Actual implementation is in the control scripts using the chosen framework's API.
+conceptual_task_mappings:
+  take_screenshot: "appium_client.save_screenshot(path)" # Assumes Appium
+  tap_element_by_id: "appium_client.find_element(by='id', value=element_id).click()"
+  input_text_by_id: "appium_client.find_element(by='id', value=element_id).send_keys(text)"
+  launch_app: "appium_client.activate_app(bundle_id)"
+  run_xcuitest: "xcodebuild test -project {project} -scheme {scheme} -destination 'id={udid}'"
+
+# Add other iOS-specific settings as needed, acknowledging limitations.

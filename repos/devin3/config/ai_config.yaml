@@ -1,0 +1,104 @@
+# Devin/config/ai_config.yaml
+# Purpose: Configuration specific to Devin's AI core, models, integrations, and algorithms.
+
+# --- Core LLM Configuration ---
+# Settings for the primary Large Language Models used for general chat, reasoning, etc.
+core_llm:
+  # Default provider to use if multiple are available/configured
+  default_provider: "openai" # Options: "openai", "gemini", "perplexity", "local", etc.
+
+  # Provider-specific model defaults (can be overridden by user profile or request)
+  openai_default_model: "gpt-4-turbo"
+  gemini_default_model: "gemini-1.5-pro-latest"
+  perplexity_default_model: "llama-3-sonar-large-32k-online"
+  local_llm_default_model: "local-code-llama-7b" # Name depends on local server setup
+
+  # Default generation parameters (can be overridden)
+  default_temperature: 0.7
+  default_max_tokens: 2048
+  default_top_p: 1.0
+
+  # Specific settings for providers (example for Gemini safety)
+  gemini_safety_settings:
+    # See Google AI documentation for categories and thresholds
+    # Example: Block most harmful content
+    - category: HARM_CATEGORY_HARASSMENT
+      threshold: BLOCK_MEDIUM_AND_ABOVE
+    - category: HARM_CATEGORY_HATE_SPEECH
+      threshold: BLOCK_MEDIUM_AND_ABOVE
+    - category: HARM_CATEGORY_SEXUALLY_EXPLICIT
+      threshold: BLOCK_MEDIUM_AND_ABOVE
+    - category: HARM_CATEGORY_DANGEROUS_CONTENT
+      threshold: BLOCK_MEDIUM_AND_ABOVE
+
+# --- Specialized AI Configuration ---
+code_generation:
+  # Which connector/provider to use for code tasks (likely OpenAI for GPT-4/Codex)
+  provider: "openai" # Assumes CopilotConnector uses OpenAI backend
+  default_model: "gpt-4-turbo" # Or specific fine-tuned code model if available
+  default_temperature: 0.2 # Lower temp generally better for code
+  default_max_tokens: 1024
+  # Default stop sequences relevant for code generation
+  default_stop_sequences: ["\nclass ", "\ndef ", "\n```", "\n#"]
+
+pentesting_ai:
+  # Configuration for the hypothetical PentestGPT connector
+  provider: "pentestgpt"
+  # URL for the PentestGPT service (if external)
+  api_url: "[http://pentestgpt-service.devin-internal:8080/api](http://pentestgpt-service.devin-internal:8080/api)" # Example internal URL
+  # Environment variable holding the API key for this service
+  api_key_env_var: "PENTESTGPT_API_KEY"
+  # Default model if the service supports multiple models
+  default_model: "pentest-analyzer-v3" # Hypothetical model name
+
+# --- Cognitive Architecture Settings ---
+cognitive_architecture:
+  reasoning_engine:
+    max_steps: 25 # Default max steps for a single reasoning process
+    default_persona: "Helpful AI assistant capable of complex tasks"
+    # Enable/disable specific reasoning strategies
+    chain_of_thought_enabled: true
+    react_prompting_enabled: false # Example: ReAct prompting disabled by default
+  working_memory:
+    max_size: 150 # Max items/tokens in short-term memory
+    retention_strategy: "fifo" # First-In, First-Out
+  long_term_memory:
+    vector_db_type: "chromadb" # Options: "chromadb", "pinecone", "weaviate", "faiss"
+    # Path for local DB like ChromaDB/FAISS, or URL/config for cloud DBs
+    vector_db_path_or_url: "/opt/devin/data/ltm_vector_db"
+    # Model used to create embeddings for LTM storage/retrieval
+    embedding_model_name: "all-MiniLM-L6-v2" # From Hugging Face Sentence Transformers, example
+    # embedding_model_name: "openai:text-embedding-ada-002" # Or use API-based embeddings
+    default_retrieval_k: 5 # Default number of relevant memories to retrieve
+
+# --- Self-Improvement Settings ---
+self_improvement:
+  curriculum_learning:
+    enabled: true
+    # Thresholds for moving between difficulty stages
+    stage_mastery_thresholds:
+      easy: 0.90
+      medium: 0.80
+      hard: 0.75 # Adjusted example
+  reward_modeling:
+    # Weights for different components in the reward calculation
+    weights:
+      completion_reward: 100.0
+      failure_penalty: -100.0
+      step_penalty_factor: -0.05 # Lower penalty per step
+      time_penalty_factor: -0.02
+      constraint_violation_penalty: -250.0 # Higher penalty
+      user_positive_feedback_bonus: 50.0
+      user_negative_feedback_penalty: -75.0
+
+# --- API Key Management (References Only!) ---
+# Defines environment variable names where actual keys should be stored.
+# The connectors will read these environment variables. DO NOT store keys here.
+external_api_keys:
+  openai: "OPENAI_API_KEY"
+  google_gemini: "GOOGLE_API_KEY"
+  perplexity: "PERPLEXITY_API_KEY"
+  # Add other keys as needed, e.g., for specialized services integrated via GenericAIConnector
+  # hypothetical_weather_api: "WEATHER_API_KEY"
+
+# Add other AI-specific configurations as needed...

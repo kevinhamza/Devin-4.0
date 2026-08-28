@@ -1,0 +1,79 @@
+# User-Specific Settings Configuration for Devin Project
+
+# User Settings Configuration
+user_settings:
+  default_language: "en" # Default language for the user interface
+  theme: "dark" # Preferred theme for the user interface (light, dark, custom)
+  notifications:
+    email: true # Enable email notifications
+    sms: false # Disable SMS notifications
+    push: true # Enable push notifications
+  privacy:
+    profile_visibility: "friends_only" # Profile visibility setting
+    activity_status: "offline" # Activity status (online, offline, busy, invisible)
+    ad_preferences:
+      personalized_ads: false # Disable personalized ads
+      show_ads_from: "selected_brands" # Show ads from selected brands only
+
+# Account Settings
+account:
+  username: "user123" # Username of the account
+  password:
+    hashed: "hashed_password_here" # Securely hashed password
+    reset_token: "reset_token_here" # Token for password reset
+  email: "user@example.com" # User's email address
+  two_factor_authentication: true # Enable two-factor authentication
+
+# Preferences
+preferences:
+  default_timezone: "UTC" # Default timezone for the user
+  language: "en" # Preferred language for the user interface
+  date_format: "YYYY-MM-DD" # Date format
+  time_format: "24-hour" # Time format (24-hour, 12-hour)
+
+# Social Media Integration
+social_media:
+  facebook:
+    enabled: true # Enable Facebook integration
+    profile_id: "user_facebook_id" # User's Facebook profile ID
+  twitter:
+    enabled: true # Enable Twitter integration
+    handle: "@user_twitter_handle" # User's Twitter handle
+  linkedin:
+    enabled: false # Disable LinkedIn integration
+
+# Privacy Settings
+privacy_settings:
+  profile_visibility:
+    public: false # Make profile public
+    friends_only: true # Make profile visible to friends only
+    private: false # Make profile private
+  data_sharing:
+    allow_data_sharing: false # Allow data sharing with third parties
+    targeted_ads: false # Enable or disable targeted ads
+  activity_log:
+    enabled: false # Disable activity log tracking
+
+# Notifications Preferences
+notification_preferences:
+  email_frequency: "immediate" # Email notification frequency (immediate, daily, weekly)
+  sms_frequency: "never" # SMS notification frequency (immediate, daily, weekly, never)
+  push_frequency: "instant" # Push notification frequency (instant, hourly, daily)
+
+# Advanced Settings
+advanced:
+  dark_mode:
+    enabled: true # Enable dark mode for the user interface
+  custom_theme:
+    colors: # Custom color palette for the user interface
+      primary: "#1a1a1a"
+      secondary: "#4d4d4d"
+      accent: "#00aaff"
+  account_activity_log:
+    enabled: true # Enable logging of account activity
+    retention_period: "60 days" # Keep activity logs for 60 days
+
+# Notes:
+# - Modify settings as needed for specific user requirements.
+# - Sensitive information should be handled securely.
+# - Consult with a professional for detailed implementation.

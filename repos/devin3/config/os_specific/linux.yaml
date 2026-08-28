@@ -1,0 +1,87 @@
+# Devin/config/os_specific/linux.yaml
+# Purpose: Linux-specific configuration settings, such as default paths, command names, and tool locations.
+
+# --- Default Paths ---
+# Common filesystem locations on Linux systems. Adapt based on specific distribution conventions if needed.
+paths:
+  # Temporary directory location
+  temp_dir: "/tmp"
+  # Standard location for system-wide logs
+  system_log_dir: "/var/log"
+  # Standard location for system-wide configuration files
+  system_config_dir: "/etc"
+  # Typical location for user-specific configuration (relative to user home)
+  user_config_dir: ".config"
+  # Common user home directory prefix
+  user_home_prefix: "/home"
+  # Default shell for execution
+  default_shell: "/bin/bash"
+  # Common shell profile files loaded on login
+  default_shell_profiles:
+    - ".profile"
+    - ".bash_profile"
+    - ".bashrc"
+    - ".zshrc" # If zsh is common target
+
+# --- Common Command Names/Paths ---
+# Names or full paths of standard system administration commands. Varies slightly by distribution.
+commands:
+  # Package management tools (Adapt based on target distro family)
+  package_manager_install: "apt-get install -y" # Debian/Ubuntu example
+  package_manager_update: "apt-get update"     # Debian/Ubuntu example
+  package_manager_remove: "apt-get remove -y"  # Debian/Ubuntu example
+  # package_manager_install: "yum install -y" # RHEL/CentOS/Fedora example
+  # package_manager_update: "yum check-update" # RHEL/CentOS/Fedora example
+  # package_manager_remove: "yum remove -y" # RHEL/CentOS/Fedora example
+
+  # Service management tools
+  service_manager: "systemctl" # For systemd-based systems
+  # service_manager: "service" # For older SysVinit/Upstart systems
+  service_start: "systemctl start"
+  service_stop: "systemctl stop"
+  service_restart: "systemctl restart"
+  service_status: "systemctl status"
+  service_enable: "systemctl enable"
+  service_disable: "systemctl disable"
+
+  # Firewall management tools
+  firewall_manager: "ufw" # Ubuntu Firewall example
+  # firewall_manager: "firewalld" # Fedora/CentOS/RHEL example
+  # firewall_manager: "iptables" # Lower-level tool
+
+  # User and group management
+  user_add: "useradd"
+  user_delete: "userdel"
+  user_modify: "usermod"
+  group_add: "groupadd"
+  group_delete: "groupdel"
+
+  # Common command-line text editor
+  text_editor_cli: "nano" # Or "vim", "emacs"
+
+# --- Common Tool Paths ---
+# Explicit paths to tools if they aren't guaranteed to be in the default PATH.
+# Set to null if expected to be in PATH.
+tools:
+  sysstat_binary_path: null # Utilities like mpstat, iostat (usually in PATH if installed)
+  perf_binary_path: null # Linux performance analysis tool (usually in PATH)
+  nmap_binary_path: null # Network scanner (usually in PATH if installed)
+  tcpdump_binary_path: "/usr/sbin/tcpdump" # Often needs root or specific group
+  iptables_binary_path: "/usr/sbin/iptables" # Usually needs root
+
+# --- Filesystem Defaults ---
+filesystem:
+  # Default filesystem type expected or used for new volumes
+  default_fs_type: "ext4" # Common Linux default
+  # Common mount options used (example)
+  common_mount_options: "defaults,noatime"
+
+# --- Kernel Tuning Examples (Informational Only) ---
+# Examples of sysctl parameters Devin might monitor or suggest changes for (requires expert review!).
+# Devin should NOT blindly apply these changes.
+kernel_tuning_examples:
+  net.core.somaxconn: 1024 # Max backlog of connections
+  vm.swappiness: 10 # How aggressively to use swap (lower = less)
+  net.ipv4.tcp_fin_timeout: 30 # Time to hold sockets in FIN-WAIT-2
+
+# Add other Linux-specific settings as needed...

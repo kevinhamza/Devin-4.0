@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Notification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .telegram-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border: 1px solid #dddddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background-color: #0088cc;
+            color: #ffffff;
+            text-align: center;
+            padding: 20px 10px;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .body {
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .body h2 {
+            color: #0088cc;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+            border-radius: 0 0 8px 8px;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 20px 0;
+            background-color: #0088cc;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #006699;
+        }
+    </style>
+</head>
+<body>
+    <div class="telegram-container">
+        <div class="header">
+            <h1>{{project_name}} Telegram Notification</h1>
+        </div>
+        <div class="body">
+            <h2>Hi, {{user_name}}!</h2>
+            <p>
+                A new update from {{project_name}} has been sent to you. Here are the details:
+            </p>
+            <p><strong>Title:</strong> {{notification_title}}</p>
+            <p><strong>Message:</strong> {{notification_message}}</p>
+            <p><strong>Time:</strong> {{timestamp}}</p>
+            <a href="{{action_url}}" class="button">View More</a>
+        </div>
+        <div class="footer">
+            <p>
+                &copy; {{year}} {{project_name}}. All rights reserved.
+                <br>
+                This message was sent via Telegram to <strong>{{user_name}}</strong>.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

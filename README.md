@@ -1,363 +1,195 @@
-# Devin AGI v4.0.0
+# Devin AGI 4.0
 
-Advanced AI software engineer with a **Claude Code-style interface**, full OS control (mouse, keyboard, screenshots, windows), voice I/O, and **24+ integrated external repos** — all powered by Gemini. Runs autonomously on Linux, macOS, and Windows.
+An advanced AI assistant with **real OS control** — it moves the mouse, types, takes screenshots, runs commands, and operates software exactly like a human user. Powered by Gemini with a Claude Code-style terminal interface.
 
 ```
 ╭──────────────────────────────────────────────────────────────────╮
-│   Devin AGI  v4.0.0
-│   cwd: /home/kevin/DEVIN2/Devin-4.0
-│   model: gemini-3.5-flash   provider: gemini   mode: auto_approve
+│  Devin AGI  v4.0.0  ·  24 repos integrated  ·  Linux
+│  model: gemini-2.5-flash  ·  tools: 37  ·  voice: off
 ╰──────────────────────────────────────────────────────────────────╯
 
-✓ Connected to Gemini (gemini-3.5-flash)
-✓ Integration hub loaded — 24 repos active
+10:42 You
+> open firefox and search for python tutorials
 
-Talk to Devin — ask a question, give a task, or type /help.
+  ● take_screenshot()
+    ↳ /tmp/devin_1234.png
+  ● open_application(name='firefox')
+    ↳ OK
+  ● mouse_click(x=680, y=45)
+    ↳ OK
+  ● keyboard_type(text='https://google.com/search?q=python+tutorials')
+    ↳ OK
+  ● keyboard_press(key='Return')
+    ↳ OK
+  ● task_complete(reason='Opened Firefox and searched for python tutorials')
+    ↳ ✓ Done
 
-❯ open firefox and search for python tutorials
-
-  ● open_application(name="firefox")
-  ↳ Launched firefox
-
-  ● analyze_screenshot_gemini(prompt="Where is the address bar?")
-  ↳ Address bar is at the top center (x=683, y=50)
-
-  ● mouse_click(x=683, y=50)
-  ↳ Clicked at (683, 50)
-
-  ● keyboard_type(text="python tutorials")
-  ↳ Typed text
-
-  ● keyboard_press(key="Return")
-  ↳ Pressed Return
-
-Searched for "python tutorials" in Firefox.
+10:42 Devin
+Done. Firefox is open with python tutorial results.
 ```
 
-## Features
-
-- **Claude Code-style interface** — streaming `● tool()` / `↳ result` display, ANSI colors, slash commands
-- **Full OS control** — autonomous mouse, keyboard, screenshots, window management (xdotool + pyautogui)
-- **90+ tools** — file I/O, shell, web search, AI vision, security, cloud, voice, Telegram
-- **Autonomous mode** — `auto_approve` by default, executes all tools without prompting
-- **Multi-provider AI** — Gemini (free default), Anthropic, OpenAI, DeepSeek, Groq, Ollama
-- **24 integrated repos** — live callable modules via integration hub
-- **Wayland compatible** — GNOME 49 Wayland screenshot via native PrintScreen shortcut
-- **Temporary screenshots** — captures deleted automatically after AI analysis
-- **Voice control** — text-to-speech (pyttsx3) + speech-to-text (SpeechRecognition)
-- **Persistent memory** — long-term memory across sessions
+---
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/kevinhamza/Devin-4.0 && cd Devin-4.0
+# Clone
+git clone https://github.com/kevinhamza/Devin-4.0
+cd Devin-4.0
 
-# Python environment
-python3 -m venv venv && source venv/bin/activate   # Linux/macOS
-# or: python -m venv venv && venv\Scripts\activate  # Windows
-pip install -r requirements.txt
+# Set your API key
+echo "GEMINI_API_KEY=your_key_here" > .env
 
-# Set your Gemini API key (free at aistudio.google.com)
-echo 'GEMINI_API_KEY="your-key-here"' > .env
+# Activate venv
+source venv/bin/activate
 
-# Launch (choose one)
-python main.py              # Python TUI (recommended — full OS control)
-./devin                     # Bash wrapper (Linux/macOS)
-node dist/cli.js            # TypeScript CLI
-```
-
-## Usage
-
-```
-python main.py [options]
-
-Options:
-  --voice             Enable voice mode (wake word "devin")
-  --auto              Auto-approve all actions
-  --model MODEL       Gemini model name override
-  --verbose           Show debug output
-  prompt              One-shot mode: python main.py "do something"
-```
-
-### Examples
-
-```bash
-# Interactive REPL
+# Run
 python main.py
-
-# One-shot tasks
-python main.py "take a screenshot and describe the screen"
-python main.py "open firefox and search for python tutorials"
-python main.py "list all python files here and count lines"
-python main.py "what's my CPU and RAM usage?"
-
-# Voice mode
-python main.py --voice
-
-# TypeScript CLI (alternative)
-node dist/cli.js --print "run nmap on 192.168.1.1"
-node dist/cli.js --provider anthropic --model claude-sonnet-4-6
 ```
 
-### Slash commands
-
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/clear` | Clear history |
-| `/status` | System + session info |
-| `/tools` | List all 90+ tools |
-| `/memory` | Recent memories |
-| `/repos` | Integrated repos |
-| `/plan` | Switch to plan mode |
-| `/auto` | Auto-approve mode |
-| `/default` | Default (confirm) mode |
-| `/model <name>` | Change model |
-| `/verbose` | Toggle verbose |
-| `exit` | Quit |
-
-## OS Automation
-
-Devin controls the computer autonomously using xdotool + pyautogui:
-
-```
-❯ click the address bar and search for python docs
-
-  ● take_screenshot(path="/tmp/devin_screen_1234.png")
-  ↳ Screenshot saved (deleted after analysis)
-
-  ● analyze_screenshot_gemini(prompt="Where is the address bar?")
-  ↳ Address bar at top center, approximately x=683, y=50
-
-  ● mouse_click(x=683, y=50)
-  ↳ Clicked
-
-  ● keyboard_type(text="docs.python.org")
-  ↳ Typed: docs.python.org
-```
-
-**Screenshots are temporary** — captured to `/tmp/`, analyzed by Gemini Vision, deleted immediately.
-
-### Mouse
-- `mouse_click(x, y, button, double_click)` — left/right/middle, single/double
-- `mouse_right_click(x, y)` — context menu
-- `mouse_drag(x1, y1, x2, y2)` — drag and drop
-- `mouse_scroll(x, y, direction, amount)` — scroll in any direction
-- `mouse_move(x, y)` — move without clicking
-
-### Keyboard
-- `keyboard_type(text)` — type with realistic timing
-- `keyboard_hotkey(keys)` — Ctrl+C, Alt+Tab, Super+D, etc.
-- `keyboard_press(key)` — Return, Tab, Escape, F5, Delete, etc.
-
-### Applications & Windows
-- `open_application(name)` — launch firefox, terminal, gedit, vlc, etc.
-- `run_command_in_terminal(command)` — run and capture output
-- `execute_shell(command)` — run shell command (faster, returns output)
-- `list_windows()` — all open windows
-- `focus_window(name)` — bring window to front
-
-### Screen
-- `take_screenshot(path, region)` — capture screen (GNOME Wayland compatible)
-- `analyze_screenshot_gemini(prompt)` — capture + analyze with Gemini Vision
-- `find_on_screen(image_path)` — template match an image on screen
-- `click_image(image_path)` — find and click an image on screen
-
-## Tool Reference
-
-### File & Code
-| Tool | Description |
-|------|-------------|
-| `read_file(path)` | Read with line numbers |
-| `write_file(path, content)` | Write/create file |
-| `edit_file(path, old, new)` | Replace text in file |
-| `delete_file(path)` | Delete file or directory |
-| `list_files(path, recursive)` | Directory listing |
-| `search_files(pattern, path)` | Grep across files |
-| `execute_shell(command)` | Run shell command, get output |
-| `execute_python(code)` | Run Python inline |
-| `git_command(args)` | Git operations |
-
-### AI & Vision
-| Tool | Description |
-|------|-------------|
-| `analyze_screenshot_gemini(prompt)` | Capture screen + AI analysis (temp file) |
-| `analyze_image_gemini(path, prompt)` | Analyze image file with Gemini Vision |
-| `gemini_generate(prompt, model)` | Direct Gemini call |
-
-### Voice
-| Tool | Description |
-|------|-------------|
-| `speak(text)` | Text-to-speech (pyttsx3 / espeak) |
-| `listen_voice()` | Speech-to-text (mic → text) |
-
-### Web
-| Tool | Description |
-|------|-------------|
-| `web_search(query)` | DuckDuckGo search |
-| `web_fetch(url)` | HTTP GET/POST |
-| `open_browser(url)` | Open URL in default browser |
-| `research(topic)` | Deep multi-source research |
-
-### Integration Hub
-| Tool | Description |
-|------|-------------|
-| `hub_status()` | Status of all 24 integrated repos |
-| `hub_dispatch(tool, args)` | Route to any hub module |
-| `ai_operate(objective)` | Self-operating-computer (vision automation) |
-| `soc_click(description)` | AI vision click by element description |
-| `system_metrics_hub()` | CPU/RAM/disk/network/processes |
-
-### Security (authorized use only)
-| Tool | Description |
-|------|-------------|
-| `run_nmap_scan(target)` | Network scan |
-| `vulnerability_scan(target)` | CVE analysis |
-| `wifi_audit(interface, action)` | WiFi security |
-| `osint_lookup(target, type)` | OSINT |
-| `xss_test(url, payload)` | XSS testing |
-
-### System
-| Tool | Description |
-|------|-------------|
-| `get_system_info()` | CPU, RAM, disk |
-| `list_processes(filter)` | Running processes |
-| `kill_process(pid)` | Kill process |
-| `volume_control(action, level)` | Audio control |
-| `send_telegram(token, chat_id, text)` | Telegram message |
-
-## Integration Hub (24 repos)
-
-All repos are live-callable via `hub_dispatch()` or dedicated tools. No files copied — repos loaded from `external/` via Python path injection.
-
+**One-shot mode:**
 ```bash
-node dist/cli.js --print "hub_status"
+python main.py "open a terminal and run ls -la"
 ```
 
-| Repo | Status | Purpose |
-|------|--------|---------|
-| AIA | ✓ | Voice, automation, ML |
-| cheetahclaws | ✓ | Multi-provider streaming |
-| Jarvis | ✓ | Voice skills |
-| OpenDevin | ✓ | Sandboxed agent |
-| self-operating-computer | ✓ | Vision-based automation |
-| shannon | ✓ | OSINT, threat intel |
-| hexstrike-ai | ✓ | AI pentesting |
-| vulnerability-analysis | ✓ | CVE scanning |
-| airgorah | ✓ | WiFi audit |
-| Responder | ✓ | Network MITM |
-| nishang | ✓ | PowerShell toolkit |
-| Holomat | ✓ | Spatial computing |
-| gemini-cli | ✓ | Gemini CLI patterns |
-| Devin v1/v2/v3 | ✓ | Prior versions |
-| Telegram | ✓ (needs token) | Bot integration |
+**Voice mode:**
+```bash
+python main.py --voice
+```
+
+**Smoke test:**
+```bash
+python main.py --test
+```
+
+---
+
+## Features
+
+| Feature | Status |
+|---------|--------|
+| Full mouse control — click, drag, scroll, right-click | ✓ |
+| Full keyboard control — type, hotkeys, special keys | ✓ |
+| Screenshot + vision — see the screen, analyze with AI | ✓ |
+| Window management — list, focus, maximize windows | ✓ |
+| Shell execution — run any command, capture output | ✓ |
+| File operations — read, write, list, search files | ✓ |
+| Web search + fetch — search web and read pages | ✓ |
+| Voice I/O — TTS + STT voice control | ✓ |
+| Long-term memory — remember facts across sessions | ✓ |
+| Security tools — nmap, vulnerability scanning | ✓ |
+| Clipboard — get/set clipboard contents | ✓ |
+| Cross-platform — Linux, macOS, Windows | ✓ |
+| Claude Code-style TUI — Rich markdown, spinners, color | ✓ |
+| Multi-model fallback — Gemini 2.5 → 2.0 → 1.5 | ✓ |
+
+---
 
 ## Architecture
 
 ```
 Devin-4.0/
-├── main.py                   Python TUI entry point (Claude Code-style)
+├── main.py                  # Entry point — Claude Code TUI + agentic loop
 ├── modules/
-│   ├── os_automation.py      Cross-platform OS control (xdotool/pyautogui/mss)
-│   ├── engine.py             DevinEngine — Gemini API + tool dispatch + memory
-│   ├── browser.py            Selenium → Playwright → webbrowser fallback chain
-│   ├── voice.py              pyttsx3 TTS + SpeechRecognition STT + Whisper fallback
-│   ├── repo_tools.py         Direct wrappers for all external repo classes
-│   └── integration_hub.py    24-repo live integration hub
-├── src/                      TypeScript CLI (alternative)
-│   ├── cli.ts                REPL with streaming + retry logic
-│   ├── conversation.ts       System prompt + tool rules
-│   ├── providers/
-│   │   ├── gemini.ts         Gemini provider
-│   │   ├── anthropic.ts      Claude provider
-│   │   └── multi.ts          11-provider router
-│   └── tools/
-│       ├── executor.ts       90+ tool implementations
-│       └── definitions.ts    JSON Schema specs
-├── external/                 24 cloned repos (loaded via sys.path injection)
-├── dist/                     Compiled TypeScript (npm run build)
-├── devin                     Bash launcher (Linux/macOS)
-├── devin.bat                 Windows launcher
-└── .env                      API keys (never committed)
+│   ├── integrations.py      # Unified API for all 24 repos (60+ tools)
+│   ├── os_automation.py     # Cross-platform mouse/keyboard/screenshot
+│   ├── engine.py            # DevinEngine class
+│   ├── browser.py           # Selenium → Playwright → webbrowser
+│   ├── voice.py             # TTS + STT voice thread
+│   └── repo_tools.py        # TOOL_REGISTRY for all repos
+├── repos/                   # Full source of all integrated repos
+│   ├── aia/                 # AIA — automation, voice, ML, social (Python)
+│   ├── devin1/              # Original Devin (Python)
+│   ├── devin2/              # Devin-2.0 (Python)
+│   ├── devin3/              # Devin-3.0 (Python)
+│   ├── soc/                 # self-operating-computer (Python)
+│   ├── opendevin/           # OpenDevin agent (Python)
+│   ├── jarvis/              # Jarvis Concept-Bytes (Python)
+│   ├── jarvis_ms/           # Microsoft JARVIS / HuggingGPT (Python)
+│   ├── cheetah/             # cheetahclaws multi-agent RL (Python)
+│   ├── gemini_cli/          # gemini-cli (TypeScript)
+│   ├── claude_code/         # claude-code source (TypeScript)
+│   ├── openclaw/            # openclaw agent framework
+│   ├── holomat/             # Holomat XR (Python)
+│   ├── shannon/             # Shannon network AI (TypeScript)
+│   ├── security/            # airgorah, hexstrike, hackability,
+│   │                        #   vuln-analysis, Responder, nishang
+│   └── tools/               # PowerTools, moltbots
+├── external/                # Original git clones (reference)
+├── src/                     # TypeScript CLI (npm run dev)
+└── venv/                    # Python virtual environment
 ```
+
+---
+
+## Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show all commands |
+| `/clear` | Clear conversation history |
+| `/status` | CPU, RAM, active model, capabilities |
+| `/tools` | List all available tools |
+| `/repos` | List all integrated repositories |
+| `/voice` | Toggle voice mode |
+| `/screenshot` | Take a screenshot |
+| `/memory` | Show long-term memories |
+| `/remember <fact>` | Save a fact to memory |
+| `/shell <cmd>` | Run a shell command |
+| `/model` | Show active AI model |
+| `/exit` | Quit |
+
+---
+
+## Integrated Repositories (24)
+
+| Repo | Language | What it adds |
+|------|----------|--------------|
+| AIA | Python | Voice assistant, automation, social media, ML, face detection |
+| self-operating-computer | Python | Vision-based OS control, OCR |
+| Devin / Devin-2.0 / Devin-3.0 | Python | Plugins, analytics, privacy, enterprise |
+| OpenDevin | Python | Canvas UI tool, agent scaffolding |
+| Jarvis (Concept-Bytes) | Python | Voice assistant tools |
+| JARVIS (Microsoft) | Python | HuggingGPT multi-model task planning |
+| cheetahclaws | Python | Safe multi-agent reasoning framework |
+| gemini-cli | TypeScript | Gemini CLI, tools, memory, IDE integration |
+| claude-code | TypeScript | Claude Code CLI source patterns |
+| openclaw | TS/Python | Agent framework, computer-use scripts |
+| Holomat | Python | XR/holographic hand-tracking interface |
+| shannon | TypeScript | Session management, worker AI |
+| airgorah | Python/Rust | WiFi security auditing |
+| hexstrike-ai | Python | Offensive security MCP server |
+| hackability | JavaScript | Security inspector tools |
+| vulnerability-analysis | Python | CVE analysis, document RAG |
+| Responder | Python | LLMNR/NBT-NS network responder |
+| nishang | PowerShell | PowerShell pentest scripts |
+| PowerTools | Python | PowerBreach, power user utilities |
+| metasploit-framework | Ruby | Exploit framework (subprocess wrapper) |
+| moltbots.github.io | HTML/JS | Bot control interface |
+
+---
 
 ## Configuration
 
-`.env`:
+`.env` (never commit):
 ```env
-GEMINI_API_KEY="your-key"       # Required (free tier available)
-ANTHROPIC_API_KEY="sk-ant-..."  # Optional
-OPENAI_API_KEY="sk-..."         # Optional
-TELEGRAM_BOT_TOKEN="..."        # Optional (for Telegram bot)
-VIRUSTOTAL_API_KEY="..."        # Optional
+GEMINI_API_KEY=your_gemini_key
+ANTHROPIC_API_KEY=your_anthropic_key   # optional
+OPENAI_API_KEY=your_openai_key         # optional
+TELEGRAM_BOT_TOKEN=your_bot_token      # optional
 ```
 
-### Providers
+---
 
-| Provider | Free | Recommended models |
-|----------|------|--------------------|
-| Gemini | Yes | gemini-3.5-flash (default), gemini-3.1-flash-lite |
-| Anthropic | No | claude-sonnet-4-6, claude-opus-4-8 |
-| OpenAI | No | gpt-4o, gpt-4o-mini |
-| DeepSeek | Low cost | deepseek-chat |
-| Groq | Free tier | llama-3.1-70b |
-| Ollama | Free (local) | llama3, mistral |
-
-## Requirements
+## TypeScript CLI
 
 ```bash
-# Python 3.10+ (use venv)
-source venv/bin/activate
-pip install -r requirements.txt
-
-# System tools — Linux (Debian/Kali)
-sudo apt install xdotool scrot xclip
-
-# System tools — macOS (Homebrew)
-brew install python-tk
-
-# System tools — Windows
-# Install Python from python.org — all deps in requirements.txt
-
-# Node.js 18+ (optional — for TypeScript CLI)
 npm install && npm run build
+./devin "your task here"
 ```
 
-### Key Python dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `google-genai` | Gemini API (primary LLM) |
-| `pyautogui` | Mouse & keyboard automation |
-| `mss` | Fast cross-platform screenshots |
-| `pygetwindow` | Window management (non-Linux) |
-| `pyttsx3` | Text-to-speech |
-| `SpeechRecognition` | Speech-to-text |
-| `selenium` | Browser automation |
-| `playwright` | Browser automation fallback |
-| `psutil` | System info & process list |
-| `python-dotenv` | `.env` loading |
-| `pycaw` | Windows volume control |
-
-## Troubleshooting
-
-**No response / API error** — Check `.env` has `GEMINI_API_KEY` set.
-
-**Screenshot empty/black** — This is a Wayland issue with mss/X11. Devin uses GNOME's native PrintScreen shortcut (xdotool key Print) which works correctly. Make sure `DISPLAY=:0` is set.
-
-**Screenshot requires click** — Should be fully automatic. The automation presses Print → Return → clicks "Save" button at (683, 710). If screen layout differs, the button position may need updating in `modules/os_automation.py`.
-
-**Mouse/keyboard not working**:
-```bash
-DISPLAY=:0 xdotool getactivewindow getwindowname
-```
-
-**Build errors** — `rm -rf dist && npm run build`
-
-**Voice not working** — `pip install pyttsx3 SpeechRecognition pyaudio`
-
-**Hub tool errors** — Check `node dist/cli.js --print "hub_status"` to see which repos are active.
+---
 
 ## License
 
-MIT — Kevin Hamza (kevinhamza) · [GitHub](https://github.com/kevinhamza/Devin-4.0)
+MIT — [@kevinhamza](https://github.com/kevinhamza)

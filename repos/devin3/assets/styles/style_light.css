@@ -1,0 +1,33 @@
+/* Devin/assets/styles/style_light.css */
+/* Light Theme Styles - LIKELY REDUNDANT */
+
+/*
+ * =========================================================================
+ * IMPORTANT NOTE ON REDUNDANCY:
+ * =========================================================================
+ * This file is generally NOT needed if the main 'style.css' file defines
+ * the default appearance of the application, which typically serves as the
+ * light theme.
+ *
+ * The recommended approach is:
+ * 1. Define all base styles (layout, typography, components) in 'style.css'.
+ * 2. Define light theme colors, fonts, etc., using CSS Custom Properties
+ * (variables) within the ':root' selector in 'style.css'.
+ * 3. Define dark theme overrides for those variables within a '.dark-mode'
+ * class selector, either at the end of 'style.css' or in a separate
+ * 'style_dark.css' file (as generated previously).
+ *
+ * Following that pattern, this 'style_light.css' file would contain no rules,
+ * as the light theme styles are already the default in 'style.css'.
+ *
+ * This file is included conceptually based on the provided tree structure,
+ * but should likely be removed or left empty in a refactored project structure.
+ * =========================================================================
+ */
+
+/* No CSS rules are typically needed here if style.css defines the light theme as default. */
+
+/* If style.css ONLY contained layout and NO theming, then this file *would*
+   define the light theme variables, like this (but this contradicts our style.css):
+   body { --bg-color: #ffffff; --text-color: #333333; ...etc }
+*/

@@ -1,0 +1,171 @@
+/* Unified Dark Mode and Light Mode Styling for Devin Project */
+
+:root {
+    /* Light Mode Colors */
+    --background-light: #ffffff;
+    --text-light: #000000;
+    --link-light: #1a73e8;
+    --button-light: #e8e8e8;
+    --card-light: #ffffff;
+    --border-light: #cccccc;
+
+    /* Dark Mode Colors */
+    --background-dark: #121212;
+    --text-dark: #e0e0e0;
+    --link-dark: #8ab4f8;
+    --button-dark: #333333;
+    --card-dark: #1e1e1e;
+    --border-dark: #444444;
+}
+
+/* Default to light mode */
+body {
+    background-color: var(--background-light);
+    color: var(--text-light);
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+a {
+    color: var(--link-light);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+    color: var(--text-light);
+}
+
+header, footer {
+    background-color: var(--card-light);
+    color: var(--text-light);
+    padding: 15px;
+    border-bottom: 1px solid var(--border-light);
+}
+
+button {
+    background-color: var(--button-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-light);
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: var(--border-light);
+}
+
+input, textarea {
+    background-color: var(--background-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-light);
+    padding: 8px;
+    border-radius: 5px;
+}
+
+input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--link-light);
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+.card {
+    background-color: var(--card-light);
+    color: var(--text-light);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.scrollbar {
+    scrollbar-color: var(--border-light) var(--background-light);
+    scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--background-light);
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--border-light);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--link-light);
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: var(--background-dark);
+    color: var(--text-dark);
+}
+
+a.dark-mode {
+    color: var(--link-dark);
+}
+
+header.dark-mode, footer.dark-mode {
+    background-color: var(--card-dark);
+    color: var(--text-dark);
+    border-bottom: 1px solid var(--border-dark);
+}
+
+button.dark-mode {
+    background-color: var(--button-dark);
+    color: var(--text-dark);
+    border: 1px solid var(--border-dark);
+}
+
+button.dark-mode:hover {
+    background-color: var(--border-dark);
+}
+
+input.dark-mode, textarea.dark-mode {
+    background-color: var(--background-dark);
+    color: var(--text-dark);
+    border: 1px solid var(--border-dark);
+}
+
+input.dark-mode:focus, textarea.dark-mode:focus {
+    border-color: var(--link-dark);
+}
+
+.card.dark-mode {
+    background-color: var(--card-dark);
+    color: var(--text-dark);
+    border: 1px solid var(--border-dark);
+}
+
+.scrollbar.dark-mode {
+    scrollbar-color: var(--border-dark) var(--background-dark);
+}
+
+::-webkit-scrollbar-track.dark-mode {
+    background: var(--background-dark);
+}
+
+::-webkit-scrollbar-thumb.dark-mode {
+    background-color: var(--border-dark);
+}
+
+::-webkit-scrollbar-thumb:hover.dark-mode {
+    background-color: var(--link-dark);
+}

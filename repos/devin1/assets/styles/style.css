@@ -1,0 +1,155 @@
+/* assets/styles/style.css */
+/* Main stylesheet for the project */
+
+/* General Styles */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    background-color: #ffffff;
+    color: #000000;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+header, footer {
+    background-color: #f4f4f4;
+    padding: 10px 20px;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin: 10px 0;
+}
+
+p {
+    line-height: 1.6;
+    margin: 10px 0;
+}
+
+/* Buttons */
+button {
+    padding: 10px 15px;
+    margin: 5px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+button:hover {
+    opacity: 0.9;
+}
+
+#themeToggle {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background-color: #007BFF;
+    color: #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Themes */
+body.dark-theme {
+    background-color: #121212;
+    color: #ffffff;
+}
+
+body.dark-theme header, body.dark-theme footer {
+    background-color: #1e1e1e;
+    color: #ffffff;
+}
+
+body.light-enhanced-theme {
+    background-color: #f0f8ff;
+    color: #002244;
+}
+
+body.light-enhanced-theme header, body.light-enhanced-theme footer {
+    background-color: #dceefb;
+    color: #003366;
+}
+
+/* Cards */
+.card {
+    background-color: #ffffff;
+    padding: 20px;
+    margin: 10px;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+body.dark-theme .card {
+    background-color: #1e1e1e;
+    box-shadow: 0 2px 5px rgba(255, 255, 255, 0.1);
+}
+
+body.light-enhanced-theme .card {
+    background-color: #e6f7ff;
+    box-shadow: 0 4px 10px rgba(0, 150, 200, 0.2);
+}
+
+/* Links */
+a {
+    color: #007BFF;
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+body.dark-theme a {
+    color: #66B2FF;
+}
+
+body.light-enhanced-theme a {
+    color: #004D99;
+}
+
+/* Forms */
+input, textarea {
+    width: 100%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    transition: border-color 0.3s ease;
+}
+
+input:focus, textarea:focus {
+    border-color: #007BFF;
+    outline: none;
+}
+
+body.dark-theme input, body.dark-theme textarea {
+    background-color: #1e1e1e;
+    color: #ffffff;
+    border-color: #444;
+}
+
+body.light-enhanced-theme input, body.light-enhanced-theme textarea {
+    background-color: #e6f7ff;
+    color: #002244;
+    border-color: #88c0d0;
+}
+
+/* Dynamic Elements */
+.dynamic-content {
+    padding: 10px;
+    border-radius: 5px;
+    margin: 10px 0;
+    transition: box-shadow 0.3s ease;
+}
+
+body.dark-theme .dynamic-content {
+    box-shadow: 0 0 10px #333;
+}
+
+body.light-enhanced-theme .dynamic-content {
+    box-shadow: 0 0 10px #88c0d0;
+}

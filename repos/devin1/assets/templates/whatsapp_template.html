@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Notification</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #e9ecef;
+            color: #333333;
+            margin: 0;
+            padding: 0;
+        }
+        .whatsapp-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            border: 1px solid #dddddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #25d366;
+            color: #ffffff;
+            text-align: center;
+            padding: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .body {
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .body h2 {
+            color: #25d366;
+        }
+        .footer {
+            background-color: #f9f9f9;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #999999;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 20px 0;
+            background-color: #25d366;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #1aa555;
+        }
+    </style>
+</head>
+<body>
+    <div class="whatsapp-container">
+        <div class="header">
+            <h1>{{project_name}} WhatsApp Notification</h1>
+        </div>
+        <div class="body">
+            <h2>Hello, {{user_name}}!</h2>
+            <p>
+                You have received a new notification from {{project_name}} via WhatsApp. Here are the details:
+            </p>
+            <p><strong>Title:</strong> {{notification_title}}</p>
+            <p><strong>Message:</strong> {{notification_message}}</p>
+            <p><strong>Time:</strong> {{timestamp}}</p>
+            <a href="{{action_url}}" class="button">View on WhatsApp</a>
+        </div>
+        <div class="footer">
+            <p>
+                &copy; {{year}} {{project_name}}. All rights reserved.
+                <br>
+                Sent to <strong>{{user_name}}</strong> via WhatsApp.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

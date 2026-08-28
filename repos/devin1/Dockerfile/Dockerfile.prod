@@ -1,0 +1,28 @@
+# Base image for production environment
+FROM python:3.8-slim
+
+# Set the working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libmariadb-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install production dependencies from requirements-prod.txt
+COPY requirements-prod.txt /app/
+RUN pip install --upgrade pip && pip install -r requirements-prod.txt
+
+# Copy the project files into the container
+COPY . /app
+
+# Set environment variables
+ENV FLASK_APP=main.py
+ENV FLASK_ENV=production
+
+# Expose the necessary ports
+EXPOSE 80
+
+# Command to run the production server
+CMD ["gunicorn", "--bind", "0.0.0.0:80", "--workers", "3", "main:app"]

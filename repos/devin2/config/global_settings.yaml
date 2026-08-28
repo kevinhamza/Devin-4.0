@@ -1,0 +1,77 @@
+# Devin/config/global_settings.yaml
+# Purpose: Universal system settings applicable across Devin components.
+
+# --- System Wide Behavior ---
+system:
+  # Current deployment environment (e.g., development, staging, production)
+  # Used for conditional logic, loading appropriate settings, etc.
+  environment: "development"
+
+  # Maximum number of concurrent long-running tasks the orchestrator should handle globally.
+  # Specific workers or services might have their own limits.
+  max_concurrent_tasks: 50
+
+  # Interval in seconds for system components to report health/heartbeat (if applicable).
+  heartbeat_interval_sec: 60
+
+  # Default language for UI and potentially AI responses if not user-specified.
+  default_language: "en-US"
+
+# --- Logging Configuration ---
+logging:
+  # Default logging level for application logs. Can be overridden by env vars.
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  default_log_level: "INFO"
+
+  # Base path for log files (if file logging is enabled). Specific services might use subdirs.
+  log_file_path: "/var/log/devin/app.log" # Requires appropriate permissions
+
+  # Max size in MB before rotating log files.
+  log_rotation_size_mb: 100
+
+  # Number of backup log files to keep.
+  log_backup_count: 5
+
+  # Log format string (example)
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# --- Default Settings ---
+defaults:
+  # Default set of permissions assigned to new users (if applicable).
+  # Specific roles/permissions system would interpret these.
+  user_permissions:
+    - "read_status"
+    - "submit_task"
+    - "view_results"
+
+  # Default cloud provider region if not specified elsewhere (e.g., for resource creation).
+  cloud_region: "us-east-1" # Example: AWS region
+
+  # Default channel/method for sending system notifications/alerts.
+  notification_service: "slack" # Options: "slack", "email", "webhook"
+
+  # Default base path for storing persistent data (models, logs, LTM db, etc.) if using local storage.
+  data_storage_base_path: "/opt/devin/data" # Requires appropriate permissions
+
+# --- Global Feature Flags ---
+# Used to enable/disable major features or experimental modules system-wide.
+features:
+  # Enable/disable the entire robotics subsystem interaction.
+  robotics_enabled: false
+
+  # Enable/disable interaction with highly experimental quantum modules.
+  quantum_features_enabled: false
+
+  # Enable/disable the use of the neurosymbolic reasoning components.
+  neurosymbolic_enabled: true
+
+  # Enable/disable the community plugin marketplace features.
+  plugin_marketplace_enabled: true
+
+  # Enable/disable advanced cyber range features.
+  cyber_range_enabled: true
+
+  # Enable/disable connection to potentially uncensored local LLMs (use with extreme caution).
+  allow_local_uncensored_llms: false
+
+# Add other global settings as needed...

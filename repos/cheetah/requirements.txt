@@ -1,0 +1,27 @@
+# Core dependencies (must match pyproject.toml [project.dependencies])
+anthropic>=0.40.0
+openai>=1.30.0
+httpx>=0.27.0
+rich>=13.0.0
+pyte>=0.8.0            # terminal emulator for !claude / !python bridge rendering
+prompt_toolkit>=3.0.43 # interactive REPL: typing-time completion (/model picker, slash menu)
+
+# ── Optional dependencies ────────────────────────────────────────────────
+# Voice input:  pip install cheetahclaws[voice]
+#   sounddevice
+
+# Vision input: pip install cheetahclaws[vision]
+#   Pillow
+
+# Multi-provider LLM routing: pip install cheetahclaws[litellm]
+#   litellm>=1.60.0,<2.0.0
+
+# ── Voice STT backends (choose one) ─────────────────────────────────────
+#   pip install faster-whisper     # local Whisper, fastest  (recommended)
+#   pip install openai-whisper     # local Whisper, original
+#   # or set OPENAI_API_KEY to use the OpenAI Whisper cloud API
+#
+# numpy is needed by the local Whisper backends and the arecord RMS detector:
+#   pip install numpy
+#
+# Model size can be overridden: export NANO_CLAUDE_WHISPER_MODEL=small

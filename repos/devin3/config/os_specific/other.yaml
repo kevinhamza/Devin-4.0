@@ -1,0 +1,110 @@
+# Devin/config/os_specific/other.yaml
+# Purpose: Configurations for less common operating systems or default fallbacks.
+#          Interaction with these systems often requires custom implementation logic.
+
+# --- Default Fallback Assumptions ---
+# Generic settings used when the specific OS type is unknown or not explicitly profiled below.
+# Assumes a POSIX-like environment.
+default_fallback_assumptions:
+  # Expected path separator
+  path_separator: "/"
+  # Preferred shell order for generic command execution
+  shell_preference:
+    - "/bin/sh"
+    - "/bin/bash"
+    - "/system/bin/sh" # Android-like fallback
+  # List of common POSIX tools assumed to be available in PATH
+  common_posix_tools:
+    - "ls"
+    - "cd"
+    - "pwd"
+    - "cat"
+    - "echo"
+    - "grep"
+    - "find"
+    - "ps"
+    - "kill"
+    - "rm"
+    - "mkdir"
+    - "mv"
+    - "cp"
+    - "chmod"
+    - "id"
+  # Potential locations for temporary directories
+  temp_dir_candidates:
+    - "/tmp"
+    - "/var/tmp"
+    - "/data/local/tmp" # Android-like fallback
+  # Assume no specific package manager by default for unknown OS
+  package_manager: null
+  # Assume no specific service manager by default
+  service_manager: null
+
+# --- Profiles for Known "Other" Operating Systems ---
+# List of specific configurations for non-standard OS types Devin might interact with.
+known_other_os_profiles:
+
+  # --- Example: FreeBSD ---
+  - os_tag: "freebsd" # Identifier used to select this profile
+    description: "Configuration for FreeBSD systems"
+    paths:
+      temp_dir: "/tmp"
+      user_home_prefix: "/usr/home"
+      system_config_dir: "/etc"
+      system_rc_conf: "/etc/rc.conf" # Key config file
+      ports_tree: "/usr/ports" # Source-based package system
+      default_shell: "/bin/csh" # Common default shell
+    commands:
+      package_manager: "pkg" # Standard binary package manager
+      package_install: "pkg install -y"
+      package_update_index: "pkg update"
+      package_remove: "pkg delete -y"
+      service_manager: "service" # Uses rc.d scripts
+      service_start: "service {service_name} start"
+      service_stop: "service {service_name} stop"
+      service_status: "service {service_name} status"
+      service_enable_cmd: "sysrc {service_name}_enable=YES" # Using sysrc to edit rc.conf
+      service_disable_cmd: "sysrc {service_name}_enable=NO"
+      firewall_manager: "pfctl" # Packet Filter
+      process_list_bsd: "ps aux"
+    tools:
+      pkg_path: "/usr/sbin/pkg"
+      service_path: "/usr/sbin/service"
+      pfctl_path: "/sbin/pfctl"
+      sysrc_path: "/usr/sbin/sysrc"
+
+  # --- Example: Generic Embedded Linux (Minimal BusyBox) ---
+  - os_tag: "embedded_linux_minimal"
+    description: "Configuration for minimal embedded Linux systems (e.g., BusyBox based)"
+    connection_method: "ssh" # Or potentially 'serial'
+    credentials_ref: "embedded_ssh_creds" # Conceptual credential reference
+    paths:
+      temp_dir: "/mnt/ramdisk" # Example volatile temp location
+      writable_data_dir: "/mnt/data" # Example persistent location
+      default_shell: "/bin/ash" # Common minimal shell
+    commands:
+      # May only have BusyBox applets, not full commands
+      shell_applets: ["busybox", "ash", "ls", "cat", "echo", "ifconfig", "mount", "reboot"]
+      package_manager: null # Often no package manager
+      service_manager: null # Often custom init scripts or simple daemons
+      # Commands might need to be prefixed with busybox, e.g., "busybox ls"
+      command_prefix: "busybox" # Optional prefix if needed
+    tools:
+      busybox_path: "/bin/busybox"
+
+  # --- Example: Fuchsia OS (Highly Conceptual) ---
+  # Interaction would require specific Fuchsia SDKs/Tools (e.g., 'ffx')
+  - os_tag: "fuchsia"
+    description: "Conceptual configuration for Google Fuchsia OS"
+    connection_method: "ffx" # Fuchsia's primary host-target interaction tool
+    host_tools:
+      ffx_path: "/path/to/fuchsia/sdk/tools/x64/ffx" # Path on HOST machine
+    commands:
+      list_targets: "ffx target list"
+      run_component: "ffx component run"
+      get_logs: "ffx log"
+      # ... other ffx commands ...
+    # Specific paths/concepts within Fuchsia (would need research)
+    paths: {}
+
+  # Add profiles for other specific OS variants as needed (e.g., OpenWRT, QNX, specific RTOS)

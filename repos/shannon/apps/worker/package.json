@@ -1,0 +1,40 @@
+{
+  "name": "@shannon/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./interfaces": "./dist/interfaces/index.js",
+    "./types": "./dist/types/index.js",
+    "./types/config": "./dist/types/config.js",
+    "./types/agents": "./dist/types/agents.js",
+    "./pipeline": "./dist/temporal/pipeline.js",
+    "./activities": "./dist/temporal/activities.js",
+    "./services": "./dist/services/index.js",
+    "./config": "./dist/config-parser.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.82.1",
+    "@earendil-works/pi-ai": "^0.82.1",
+    "@earendil-works/pi-coding-agent": "^0.82.1",
+    "@gotgenes/pi-permission-system": "^10.9.0",
+    "@temporalio/activity": "^1.11.0",
+    "@temporalio/client": "^1.11.0",
+    "@temporalio/worker": "^1.11.0",
+    "@temporalio/workflow": "^1.11.0",
+    "ajv": "^8.12.0",
+    "ajv-formats": "^2.1.1",
+    "dotenv": "^16.4.5",
+    "js-yaml": "^4.1.0",
+    "typebox": "1.1.38",
+    "zx": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9"
+  }
+}

@@ -1,0 +1,84 @@
+# Devin/config/user_profiles.yaml
+# Purpose: Stores user-specific preferences, settings, and potentially behavior models.
+# WARNING: Contains PII examples. Not suitable for production storage in this format. Use a database.
+
+# Using a dictionary keyed by user ID
+user_admin_01:
+  display_name: "Devin Administrator"
+  email: "admin@devin.example.com" # PII - Handle with care
+  roles: # Role-based access control is common
+    - "admin"
+    - "user"
+  permissions: # Specific permissions override/augment roles
+    - "manage_users"
+    - "view_all_tasks"
+    - "configure_system"
+    - "*" # Example: Admin wildcard permission
+  preferences:
+    theme: "dark" # 'light', 'dark', 'system'
+    default_llm: "openai" # User's preferred default AI service
+    default_code_model: "gpt-4-turbo"
+    notifications:
+      email_address: "admin-alerts@devin.example.com" # Separate alert email
+      slack_userid: "U123ADMIN" # User's Slack ID for DMs
+      alert_level: "INFO" # Minimum severity level for alerts (DEBUG, INFO, WARNING, ERROR)
+    dashboard_layout: "advanced"
+  skill_level: "expert"
+  # Reference to a model potentially used by digital_twins/user_twin.py
+  # The actual model would be stored elsewhere.
+  behavior_model_ref: "/models/behavior/admin_01_profile.pkl" # Conceptual path
+
+user_pentester_alice:
+  display_name: "Alice (Pentester)"
+  email: "alice.p@example-security.com" # PII
+  roles:
+    - "pentester"
+    - "user"
+  permissions:
+    - "start_scan"
+    - "analyze_results"
+    - "suggest_exploit"
+    - "generate_report"
+    # Note: Explicitly does NOT have 'run_exploit' unless granted
+  preferences:
+    theme: "dark"
+    default_llm: "pentestgpt" # Prefers specialized model
+    notifications:
+      email_address: "alice.p@example-security.com"
+      alert_level: "WARNING" # Only wants important alerts
+    favorite_tools:
+      - "nmap"
+      - "burpsuite_scan"
+      - "metasploit_suggest"
+    # Default settings when starting pentest tasks
+    pentest_defaults:
+      default_scan_profile: "full"
+      reporting_template: "standard_technical_v2.md"
+  skill_level: "intermediate"
+  behavior_model_ref: null # No specific behavior model tracked
+
+user_normal_bob:
+  display_name: "Bob (General User)"
+  email: "bob.d@example.com" # PII
+  roles:
+    - "user"
+  permissions: # Limited permissions compared to pentester/admin
+    - "read_status"
+    - "submit_task:general_automation" # Example: Scoped task submission
+    - "submit_task:information_retrieval"
+    - "view_own_results"
+  preferences:
+    theme: "light"
+    default_llm: "gemini"
+    notifications:
+      # No specific notification settings, might use system defaults or have none
+      alert_level: "ERROR" # Only wants critical errors
+    shortcuts: # Example custom commands/aliases
+      - name: "daily_briefing"
+        prompt: "Summarize my unread important emails and top 3 calendar events for today."
+      - name: "cleanup_downloads"
+        prompt: "Archive files older than 30 days in my Downloads folder."
+  skill_level: "beginner"
+  behavior_model_ref: null
+
+# Add more user profiles as needed...

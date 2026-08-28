@@ -1,0 +1,26 @@
+/* Devin/assets/styles/style_dark_light.css */
+/* Purpose Unknown - Assumed Redundant */
+
+/*
+ * =========================================================================
+ * IMPORTANT NOTE ON REDUNDANCY:
+ * =========================================================================
+ * The existence and purpose of this file ('style_dark_light.css') are unclear
+ * within standard web theming practices.
+ *
+ * Theme logic (switching between light and dark modes) should be handled by:
+ * 1. Defining base styles and CSS variables (light theme) in `style.css`.
+ * 2. Defining dark theme overrides (either by overriding variables within
+ * a `.dark-mode` class selector in `style.css`, or within a separate
+ * `style_dark.css` file).
+ * 3. Using JavaScript to toggle the `.dark-mode` class on the <html> or <body> tag.
+ *
+ * There is no standard scenario requiring a 'dark_light' combination CSS file.
+ * This file is almost certainly redundant if the recommended approach is followed.
+ * It is strongly recommended to remove this file and consolidate all theme
+ * styling into `style.css` (using variables and a `.dark-mode` class)
+ * or potentially `style.css` + `style_dark.css`.
+ * =========================================================================
+ */
+
+/* No CSS rules provided as this file is considered redundant. */

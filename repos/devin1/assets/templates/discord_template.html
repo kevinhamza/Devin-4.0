@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discord Notification</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #36393f;
+            color: #ffffff;
+            margin: 0;
+            padding: 0;
+        }
+        .discord-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #2f3136;
+            border: 1px solid #23272a;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+        .header {
+            background-color: #7289da;
+            color: #ffffff;
+            text-align: center;
+            padding: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .body {
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .body h2 {
+            color: #7289da;
+        }
+        .footer {
+            background-color: #23272a;
+            text-align: center;
+            padding: 10px;
+            font-size: 12px;
+            color: #99aab5;
+        }
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            margin: 20px 0;
+            background-color: #7289da;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #5a6db5;
+        }
+    </style>
+</head>
+<body>
+    <div class="discord-container">
+        <div class="header">
+            <h1>{{project_name}} Discord Notification</h1>
+        </div>
+        <div class="body">
+            <h2>Hi, {{user_name}}!</h2>
+            <p>
+                You have a new notification from {{project_name}}. Here are the details:
+            </p>
+            <p><strong>Title:</strong> {{notification_title}}</p>
+            <p><strong>Message:</strong> {{notification_message}}</p>
+            <p><strong>Time:</strong> {{timestamp}}</p>
+            <a href="{{action_url}}" class="button">View Details</a>
+        </div>
+        <div class="footer">
+            <p>
+                &copy; {{year}} {{project_name}}. All rights reserved.
+                <br>
+                This notification was delivered to <strong>{{user_name}}</strong> via Discord.
+            </p>
+        </div>
+    </div>
+</body>
+</html>

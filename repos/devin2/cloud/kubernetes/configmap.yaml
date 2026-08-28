@@ -1,0 +1,50 @@
+# Devin/cloud/kubernetes/configmap.yaml
+# Purpose: Stores non-sensitive configuration settings for Devin components deployed in Kubernetes.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # Name of the ConfigMap - should match the name referenced in Deployment env vars (e.g., configMapKeyRef.name)
+  name: devin-global-config # Example name referenced in previous deployment.yaml
+  # Namespace where this ConfigMap should reside
+  namespace: devin-prod # Example namespace, should match Deployment/Service namespace
+  labels:
+    # Optional labels for the ConfigMap itself
+    app.kubernetes.io/name: devin
+    app.kubernetes.io/component: global-config
+metadata: # Metadata ends here
+
+data:
+  # --- General Settings ---
+  # Values here are stored as strings
+  ENVIRONMENT: "production" # e.g., "production", "staging", "development"
+  LOG_LEVEL: "INFO" # e.g., "DEBUG", "INFO", "WARNING", "ERROR"
+  MAX_CONCURRENT_TASKS: "50" # Example concurrency limit
+
+  # --- API Gateway Settings ---
+  API_GATEWAY_PORT: "8000" # Port the gateway listens on internally
+  API_CORS_ORIGINS: "https://devin-ui.example.com,http://localhost:3000" # Comma-separated list
+
+  # --- AI Core Settings ---
+  DEFAULT_LLM_SERVICE: "openai" # Default service if multiple are configured
+  DEFAULT_CHAT_MODEL: "gpt-4-turbo"
+  DEFAULT_CODE_MODEL: "gpt-4-turbo" # Or specific code model
+  REASONING_MAX_STEPS: "15"
+  LTM_DB_TYPE: "chromadb" # Type of long-term memory backend
+  LTM_DB_PATH: "/data/devin_ltm_db" # Path within persistent volume, or connection string
+
+  # --- Feature Flags ---
+  # Use strings "true" or "false" for easy parsing in various languages
+  FEATURE_ADVANCED_REPORTING_ENABLED: "true"
+  FEATURE_ROBOTICS_MODULE_ENABLED: "false" # Example: disable robotics
+  FEATURE_NEUROSYMBOLIC_REASONING: "true"
+
+  # --- Internal Service URLs ---
+  # Use Kubernetes internal service DNS names
+  # Format: <service-name>.<namespace>.svc.cluster.local:<port>
+  TASK_ORCHESTRATOR_URL: "http://devin-task-orchestrator-service.devin-prod.svc.cluster.local:8080"
+  # Add other internal service URLs as needed...
+
+  # Add other non-sensitive configuration parameters required by Devin components...
+
+# --- End of ConfigMap Definition ---

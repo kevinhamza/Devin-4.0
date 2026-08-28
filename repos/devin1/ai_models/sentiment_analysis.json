@@ -1,0 +1,58 @@
+{
+  "model_name": "Sentiment Analysis Model",
+  "version": "1.0.0",
+  "description": "Sentiment Analysis model for classifying text into positive, negative, or neutral sentiments. Provides probabilities for each sentiment class.",
+  "architecture": "Transformer-based model (BERT fine-tuned)",
+  "input_format": {
+    "type": "text",
+    "language": "English",
+    "max_length": 512
+  },
+  "output_format": {
+    "type": "classification",
+    "labels": ["positive", "neutral", "negative"],
+    "probabilities": {
+      "positive": "0.0 - 1.0",
+      "neutral": "0.0 - 1.0",
+      "negative": "0.0 - 1.0"
+    }
+  },
+  "training_details": {
+    "dataset": "IMDB Reviews Dataset",
+    "training_framework": "TensorFlow",
+    "preprocessing": [
+      "Lowercasing text",
+      "Removing special characters",
+      "Tokenization",
+      "Padding"
+    ],
+    "fine_tuning": {
+      "base_model": "BERT-base-uncased",
+      "epochs": 3,
+      "learning_rate": 2e-5,
+      "batch_size": 32
+    }
+  },
+  "deployment_details": {
+    "supported_libraries": ["TensorFlow", "Hugging Face Transformers", "ONNX Runtime"],
+    "runtime_requirements": {
+      "python_version": ">=3.8",
+      "required_packages": [
+        "transformers>=4.0.0",
+        "tensorflow>=2.4.0",
+        "onnxruntime>=1.8.0"
+      ]
+    }
+  },
+  "use_cases": [
+    "Sentiment analysis for social media posts",
+    "Customer feedback analysis",
+    "Product reviews categorization",
+    "Emotion detection in textual data"
+  ],
+  "metadata": {
+    "author": "Devin Project AI Team",
+    "creation_date": "2024-12-30",
+    "checksum": "3e1b7e8943d4537e6d451f65efba8c9e"
+  }
+}

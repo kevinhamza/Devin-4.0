@@ -1,0 +1,137 @@
+/* Custom Theme Stylesheet */
+
+/* Root Variables for Custom Theme */
+:root {
+    --primary-color: #3498db; /* Default Blue */
+    --secondary-color: #2ecc71; /* Default Green */
+    --background-color: #f5f5f5; /* Default Light Background */
+    --text-color: #2c3e50; /* Default Dark Text */
+    --accent-color: #e74c3c; /* Default Red */
+    --font-family: 'Arial', sans-serif; /* Default Font */
+    --border-radius: 8px; /* Default Border Radius */
+    --box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2); /* Default Shadow */
+}
+
+/* Background and Text */
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-family: var(--font-family);
+    margin: 0;
+    padding: 0;
+    transition: all 0.3s ease;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6 {
+    color: var(--primary-color);
+    font-weight: 700;
+    margin: 1rem 0;
+}
+
+/* Links */
+a {
+    color: var(--accent-color);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    color: var(--secondary-color);
+}
+
+/* Buttons */
+button {
+    background-color: var(--primary-color);
+    color: #ffffff;
+    padding: 0.8rem 1.5rem;
+    border: none;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+button:hover {
+    background-color: var(--secondary-color);
+    transform: scale(1.05);
+}
+
+/* Cards */
+.card {
+    background-color: #ffffff;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    padding: 1rem;
+    margin: 1rem 0;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Form Elements */
+input, textarea, select {
+    width: 100%;
+    padding: 0.8rem;
+    margin: 0.5rem 0;
+    border: 1px solid #cccccc;
+    border-radius: var(--border-radius);
+    box-shadow: inset var(--box-shadow);
+    font-size: 1rem;
+}
+
+input:focus, textarea:focus, select:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 8px var(--primary-color);
+}
+
+/* Tables */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 1rem;
+}
+
+table th, table td {
+    border: 1px solid #dddddd;
+    text-align: left;
+    padding: 0.8rem;
+}
+
+table th {
+    background-color: var(--primary-color);
+    color: #ffffff;
+}
+
+table tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+/* Footer */
+footer {
+    background-color: var(--primary-color);
+    color: #ffffff;
+    text-align: center;
+    padding: 1rem 0;
+}
+
+/* Media Queries */
+@media (max-width: 768px) {
+    body {
+        font-size: 90%;
+    }
+
+    button {
+        padding: 0.6rem 1rem;
+    }
+
+    .card {
+        padding: 0.8rem;
+    }
+}
