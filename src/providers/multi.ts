@@ -42,7 +42,7 @@ export const PROVIDER_REGISTRY: Record<string, {
     base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
     context_limit: 1000000,
     models: [
-      'gemini-3.6-flash', 'gemini-2.5-pro', 'gemini-2.5-flash',
+      'gemini-2.5-flash', 'gemini-2.5-pro',
       'gemini-2.0-flash', 'gemini-2.0-flash-lite',
       'gemini-1.5-pro', 'gemini-1.5-flash',
     ],
