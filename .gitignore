@@ -167,3 +167,10 @@ yarn-error.log
 
 # Runtime caches auto-downloaded by threat_intel/ clients (MITRE ATT&CK data, IOC feeds)
 /intel_cache/
+
+# --- Integrated repo copies (too large for git, use external/ submodules instead) ---
+integrated/
+modules/integrated/
+
+# --- Junk files ---
+hhh

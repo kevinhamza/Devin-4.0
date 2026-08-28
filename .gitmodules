@@ -46,3 +46,27 @@
 [submodule "external/Devin-3.0"]
 	path = external/Devin-3.0
 	url = https://github.com/kevinhamza/Devin-3.0
+[submodule "external/Holomat"]
+	path = external/Holomat
+	url = https://github.com/Concept-Bytes/Holomat.git
+[submodule "external/JARVIS-microsoft"]
+	path = external/JARVIS-microsoft
+	url = https://github.com/microsoft/JARVIS.git
+[submodule "external/Jarvis"]
+	path = external/Jarvis
+	url = https://github.com/Concept-Bytes/Jarvis.git
+[submodule "external/OpenDevin"]
+	path = external/OpenDevin
+	url = https://github.com/All-Hands-AI/OpenHands.git
+[submodule "external/cheetahclaws"]
+	path = external/cheetahclaws
+	url = https://github.com/SafeRL-Lab/cheetahclaws.git
+[submodule "external/hexstrike-ai"]
+	path = external/hexstrike-ai
+	url = https://github.com/0x4m4/hexstrike-ai.git
+[submodule "external/self-operating-computer"]
+	path = external/self-operating-computer
+	url = https://github.com/OthersideAI/self-operating-computer.git
+[submodule "external/claude-code-source"]
+	path = external/claude-code-source
+	url = https://github.com/chauncygu/collection-claude-code-source-code.git

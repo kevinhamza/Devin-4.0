@@ -385,15 +385,18 @@ class GeminiModule:
     # confirmed via a live 404 against the real API). "-latest" aliases track
     # whatever Google currently serves instead of going stale again. Flash is
     # also the tier with the most generous free-tier quota.
-    DEFAULT_MODEL = "gemini-flash-latest"
+    DEFAULT_MODEL = "gemini-3.6-flash"
 
-    # DEFAULT_MODEL is itself a heavily-used alias and, confirmed live against
-    # the real API, can return `503 UNAVAILABLE` / "high demand" for minutes
-    # at a time even though the key and account are fine. Rather than surface
-    # that as a hard failure, fall back through these once DEFAULT_MODEL
-    # errors transiently -- "gemini-flash-lite-latest" in particular was
-    # confirmed live to keep working during a DEFAULT_MODEL outage.
-    _FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-2.0-flash"]
+    # Fallback chain: try these in order if DEFAULT_MODEL returns a transient
+    # or 404 error. The "-latest" aliases track Google's current serving model;
+    # numbered versions are pinned fallbacks for when aliases break.
+    _FALLBACK_MODELS = [
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-flash-latest",
+        "gemini-flash-lite-latest",
+        "gemini-1.5-flash",
+    ]
 
     @staticmethod
     def _is_transient_error(e: Exception) -> bool:

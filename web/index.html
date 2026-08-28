@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Devin 4.0 — AGI Control Interface</title>
+  <meta name="description" content="Devin 4.0: Your personal AGI with OS control, voice, security tools, and multi-model AI." />
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --surface: #12141a;
+      --border: #1e2130;
+      --accent: #00f0ff;
+      --accent2: #7c3aed;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --orange: #f97316;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      min-height: 100vh;
+    }
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: var(--surface);
+    }
+    header .logo {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.5px;
+    }
+    header .version {
+      background: var(--accent2);
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+    header .status {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* Layout */
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr 280px;
+      height: calc(100vh - 49px);
+    }
+
+    /* Sidebar */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      padding: 16px 0;
+    }
+    .sidebar-section { padding: 0 16px 8px; }
+    .sidebar-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+    .sidebar-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 12px; border-radius: 6px;
+      font-size: 0.8rem; cursor: pointer; color: var(--muted);
+      transition: all 0.15s;
+    }
+    .sidebar-item:hover, .sidebar-item.active { background: rgba(0,240,255,0.08); color: var(--text); }
+    .sidebar-item.active { color: var(--accent); }
+    .sidebar-icon { width: 16px; text-align: center; }
+
+    /* Main chat area */
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .message {
+      max-width: 85%;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+    .message.user { align-self: flex-end; }
+    .message.assistant { align-self: flex-start; }
+    .message-bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .message.user .message-bubble {
+      background: var(--accent2);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+    .message.assistant .message-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+    .message-meta {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+
+    /* Tool execution display */
+    .tool-call {
+      background: rgba(0, 240, 255, 0.05);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      margin: 8px 0;
+    }
+    .tool-call .tool-name { color: var(--accent); font-weight: 600; }
+    .tool-call .tool-result { color: var(--muted); margin-top: 4px; font-size: 0.75rem; }
+
+    /* Input */
+    .input-area {
+      border-top: 1px solid var(--border);
+      padding: 16px 24px;
+      background: var(--surface);
+    }
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: flex-end;
+    }
+    textarea {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.875rem;
+      padding: 12px 16px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s;
+      min-height: 44px;
+      max-height: 200px;
+    }
+    textarea:focus { border-color: var(--accent); }
+    .send-btn {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 0.875rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .send-btn:hover { background: #00d4e6; }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Right panel */
+    .right-panel {
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .panel-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-tab {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.75rem;
+      text-align: center;
+      cursor: pointer;
+      color: var(--muted);
+      transition: all 0.15s;
+    }
+    .panel-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+    .panel-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+    }
+    .stat-label { color: var(--muted); }
+    .stat-value { color: var(--text); font-weight: 600; }
+    .stat-value.good { color: var(--green); }
+    .stat-value.warn { color: var(--orange); }
+    .stat-value.bad { color: var(--red); }
+
+    /* Quick actions */
+    .quick-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .quick-btn {
+      background: rgba(0,240,255,0.06);
+      border: 1px solid rgba(0,240,255,0.15);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 0.72rem;
+      color: var(--accent);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .quick-btn:hover { background: rgba(0,240,255,0.12); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+<header>
+  <span class="logo">Devin 4.0</span>
+  <span class="version">AGI</span>
+  <div class="status">
+    <div class="dot"></div>
+    <span id="status-text">Ready</span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+      <div class="sidebar-item active" onclick="setSection('chat')">
+        <span class="sidebar-icon">💬</span> Chat
+      </div>
+      <div class="sidebar-item" onclick="setSection('os')">
+        <span class="sidebar-icon">🖥️</span> OS Control
+      </div>
+      <div class="sidebar-item" onclick="setSection('security')">
+        <span class="sidebar-icon">🔒</span> Security
+      </div>
+      <div class="sidebar-item" onclick="setSection('voice')">
+        <span class="sidebar-icon">🎤</span> Voice
+      </div>
+      <div class="sidebar-item" onclick="setSection('research')">
+        <span class="sidebar-icon">🔍</span> Research
+      </div>
+    </div>
+    <div class="sidebar-section" style="margin-top:16px">
+      <div class="sidebar-label">Integrations</div>
+      <div class="sidebar-item" onclick="quickMsg('Take a screenshot')">
+        <span class="sidebar-icon">📸</span> Screenshot
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Open firefox browser')">
+        <span class="sidebar-icon">🌐</span> Browser
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Open terminal')">
+        <span class="sidebar-icon">⌨️</span> Terminal
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('List running processes')">
+        <span class="sidebar-icon">📊</span> Processes
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Check system metrics CPU memory disk')">
+        <span class="sidebar-icon">📈</span> System Info
+      </div>
+    </div>
+    <div class="sidebar-section" style="margin-top:16px">
+      <div class="sidebar-label">Repos</div>
+      <div class="sidebar-item" onclick="quickMsg('Use AIA automation to click coordinates 500 400')">
+        <span class="sidebar-icon">🤖</span> AIA
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Run Jarvis voice command: what is the time')">
+        <span class="sidebar-icon">🎯</span> Jarvis
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Search web for latest AI news')">
+        <span class="sidebar-icon">🔬</span> Research
+      </div>
+      <div class="sidebar-item" onclick="quickMsg('Scan web application security headers for localhost')">
+        <span class="sidebar-icon">🛡️</span> Scanner
+      </div>
+    </div>
+  </aside>
+
+  <!-- Chat -->
+  <main class="main">
+    <div class="chat-area" id="chat-area">
+      <div class="message assistant">
+        <div class="message-bubble">
+Devin 4.0 online. I am your AGI with full OS control.
+
+Capabilities:
+● Real mouse/keyboard automation (pyautogui + xdotool)
+● 60+ tools: file ops, web search, shell, security scanning
+● Voice control (wake word "hey devin")
+● Multi-model AI: Gemini, Claude, GPT, Ollama, DeepSeek
+● Telegram bot integration
+● Security: nmap, CVE lookup, web scanner, WiFi analysis
+● Computer vision: face detection, hand tracking (Holomat)
+● All 22 repos integrated: AIA, Jarvis, OpenDevin, cheetahclaws...
+
+What shall I do?</div>
+        <div class="message-meta">Devin · Just now</div>
+      </div>
+    </div>
+    <div class="input-area">
+      <div class="input-row">
+        <textarea
+          id="user-input"
+          placeholder="Ask Devin anything... (Enter to send, Shift+Enter for newline)"
+          rows="1"
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"
+        ></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()">Send ↵</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Right panel -->
+  <aside class="right-panel">
+    <div class="panel-tabs">
+      <div class="panel-tab active" onclick="setTab('info', this)">Info</div>
+      <div class="panel-tab" onclick="setTab('tools', this)">Tools</div>
+      <div class="panel-tab" onclick="setTab('log', this)">Log</div>
+    </div>
+    <div class="panel-content" id="panel-content">
+      <div class="stat-row"><span class="stat-label">Model</span><span class="stat-value">Gemini 2.5</span></div>
+      <div class="stat-row"><span class="stat-label">Display</span><span class="stat-value good">:0 (1366×768)</span></div>
+      <div class="stat-row"><span class="stat-label">OS</span><span class="stat-value">Kali Linux</span></div>
+      <div class="stat-row"><span class="stat-label">Python</span><span class="stat-value good">pyautogui ✓</span></div>
+      <div class="stat-row"><span class="stat-label">Tools</span><span class="stat-value good">60+</span></div>
+      <div class="stat-row"><span class="stat-label">Voice</span><span class="stat-value">pyttsx3</span></div>
+      <div class="stat-row"><span class="stat-label">Repos</span><span class="stat-value good">22 integrated</span></div>
+      <div class="stat-row"><span class="stat-label">Session</span><span class="stat-value" id="session-id">—</span></div>
+    </div>
+    <div class="quick-actions">
+      <div class="quick-btn" onclick="quickMsg('take a screenshot of the screen')">📸 Screenshot</div>
+      <div class="quick-btn" onclick="quickMsg('open firefox')">🌐 Firefox</div>
+      <div class="quick-btn" onclick="quickMsg('type hello world')">⌨️ Type</div>
+      <div class="quick-btn" onclick="quickMsg('press escape key')">⎋ Escape</div>
+      <div class="quick-btn" onclick="quickMsg('click at center of screen')">🖱️ Click</div>
+      <div class="quick-btn" onclick="quickMsg('list all windows')">🪟 Windows</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+// Generate session ID
+document.getElementById('session-id').textContent = Math.random().toString(36).slice(2, 10).toUpperCase();
+
+let currentTab = 'info';
+const toolLog = [];
+
+function setSection(section) {
+  document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+  event.currentTarget.classList.add('active');
+}
+
+function setTab(tab, el) {
+  currentTab = tab;
+  document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderPanel();
+}
+
+function renderPanel() {
+  const content = document.getElementById('panel-content');
+  if (currentTab === 'tools') {
+    content.innerHTML = toolLog.slice(-20).map(t =>
+      `<div class="tool-call"><span class="tool-name">● ${t.name}</span><div class="tool-result">${String(t.result || '').slice(0, 100)}</div></div>`
+    ).join('') || '<div style="color:var(--muted);font-size:.8rem;padding:8px">No tools called yet.</div>';
+  } else if (currentTab === 'log') {
+    content.innerHTML = '<div style="color:var(--muted);font-size:.75rem">Console log appears here during execution.</div>';
+  } else {
+    content.innerHTML = `
+      <div class="stat-row"><span class="stat-label">Model</span><span class="stat-value">Gemini 2.5 Flash</span></div>
+      <div class="stat-row"><span class="stat-label">Display</span><span class="stat-value good">:0 (1366×768)</span></div>
+      <div class="stat-row"><span class="stat-label">OS</span><span class="stat-value">Kali Linux</span></div>
+      <div class="stat-row"><span class="stat-label">Python</span><span class="stat-value good">pyautogui ✓</span></div>
+      <div class="stat-row"><span class="stat-label">Tools</span><span class="stat-value good">60+</span></div>
+      <div class="stat-row"><span class="stat-label">Voice</span><span class="stat-value">pyttsx3 + STT</span></div>
+      <div class="stat-row"><span class="stat-label">Repos</span><span class="stat-value good">22 integrated</span></div>
+      <div class="stat-row"><span class="stat-label">Session</span><span class="stat-value" id="session-id">${document.getElementById('session-id').textContent}</span></div>
+    `;
+  }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function quickMsg(text) {
+  document.getElementById('user-input').value = text;
+  sendMessage();
+}
+
+function addMessage(role, text) {
+  const area = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = `message ${role}`;
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  div.innerHTML = `<div class="message-bubble">${escapeHtml(text)}</div><div class="message-meta">${role === 'user' ? 'You' : 'Devin'} · ${time}</div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+  return div;
+}
+
+function addToolCall(name, result) {
+  toolLog.push({ name, result, ts: Date.now() });
+  if (currentTab === 'tools') renderPanel();
+  const area = document.getElementById('chat-area');
+  const div = document.createElement('div');
+  div.className = 'tool-call';
+  div.innerHTML = `<span class="tool-name">● ${escapeHtml(name)}</span><div class="tool-result">↳ ${escapeHtml(String(result || '').slice(0, 300))}</div>`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function sendMessage() {
+  const input = document.getElementById('user-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.style.height = 'auto';
+
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.disabled = true;
+  document.getElementById('status-text').textContent = 'Processing...';
+
+  addMessage('user', text);
+
+  // Show thinking indicator
+  const thinkingDiv = addMessage('assistant', '...');
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const data = await resp.json();
+
+    thinkingDiv.querySelector('.message-bubble').textContent = data.response || data.error || 'No response';
+
+    if (data.toolCalls) {
+      for (const tc of data.toolCalls) {
+        addToolCall(tc.name, tc.result);
+      }
+    }
+  } catch (e) {
+    thinkingDiv.querySelector('.message-bubble').textContent = `Web UI mode — start Devin CLI for full AI capabilities.\n\nYour message: "${text}"`;
+  }
+
+  sendBtn.disabled = false;
+  document.getElementById('status-text').textContent = 'Ready';
+  document.getElementById('chat-area').scrollTop = document.getElementById('chat-area').scrollHeight;
+}
+</script>
+</body>
+</html>

@@ -169,3 +169,162 @@ class UserInteractionManager:
         """
         with console.status(f"[cyan]{message}[/cyan]", spinner="dots"):
             yield
+
+    def handle_slash_command(self, command: str, agi_instance) -> bool:
+        """
+        Handle Claude Code-style slash commands (/help, /clear, /status, etc.)
+        Returns True if the command was handled, False otherwise.
+        """
+        parts = command.strip().split(None, 1)
+        cmd = parts[0].lower()
+        args = parts[1] if len(parts) > 1 else ""
+
+        if cmd == "/help":
+            help_text = """
+[bold cyan]Devin AGI — Slash Commands[/bold cyan]
+
+[bold]Conversation[/bold]
+  /help           Show this help
+  /clear          Clear conversation history
+  /compact        Summarize old history to save context
+  /history [n]    Show last n messages (default: 10)
+
+[bold]Status & Config[/bold]
+  /status         Show session and system status
+  /tools          List all available tools
+  /repos          List integrated external repositories
+  /config         Show configuration
+  /cost           Show token usage for this session
+
+[bold]Modes[/bold]
+  /plan           Describe actions without executing (safe review)
+  /auto           Auto-approve all tools (no confirmation)
+  /default        Back to default mode (confirm dangerous tools)
+  /voice          Toggle voice input
+
+[bold]Navigation[/bold]
+  /cd <path>      Change working directory
+  /screenshot     Take a screenshot
+
+[bold]Memory[/bold]
+  /memory [query] Show or search memories
+
+[bold]Other[/bold]
+  exit / quit     Exit Devin
+"""
+            console.print(help_text)
+            return True
+
+        elif cmd == "/clear":
+            if hasattr(agi_instance, 'conversation_history'):
+                agi_instance.conversation_history.clear()
+            console.print("[green]✓ Conversation history cleared.[/green]")
+            return True
+
+        elif cmd == "/status":
+            import psutil, platform
+            cpu = psutil.cpu_percent(interval=0.1)
+            mem = psutil.virtual_memory()
+            from rich.table import Table
+            t = Table(show_header=False, box=None, padding=(0, 1))
+            t.add_column(style="dim")
+            t.add_column()
+            t.add_row("OS", platform.platform())
+            t.add_row("CPU", f"{cpu:.1f}%")
+            t.add_row("Memory", f"{mem.percent:.1f}% ({mem.used // 1024**2}MB / {mem.total // 1024**2}MB)")
+            t.add_row("Provider", str(getattr(agi_instance, 'agent', {.__class__.__name__ if hasattr(getattr(agi_instance, 'agent', None), '__class__') else 'N/A'})))
+            if hasattr(agi_instance, 'conversation_history'):
+                t.add_row("Messages", str(len(agi_instance.conversation_history)))
+            t.add_row("Permission", str(getattr(agi_instance, 'permission_mode', 'default')))
+            console.print(Panel(t, title="[bold cyan]Devin Status[/bold cyan]", border_style="cyan"))
+            return True
+
+        elif cmd == "/tools":
+            if hasattr(agi_instance, 'tool_executor'):
+                tools = agi_instance.tool_executor.get_available_tools()
+                console.print(f"[bold]Available tools ({len(tools)}):[/bold]")
+                for tool in tools:
+                    name = tool.get('name', '')
+                    desc = tool.get('description', '')[:60]
+                    console.print(f"  [cyan]{name:<30}[/cyan] [dim]{desc}[/dim]")
+            return True
+
+        elif cmd == "/repos":
+            import os as _os
+            ext_dir = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "external")
+            if _os.path.isdir(ext_dir):
+                repos = [d for d in _os.listdir(ext_dir) if _os.path.isdir(_os.path.join(ext_dir, d))]
+                console.print(f"[bold]Integrated repos ({len(repos)}):[/bold]")
+                for r in sorted(repos):
+                    contents = _os.listdir(_os.path.join(ext_dir, r))
+                    status = "[green]ready[/green]" if len(contents) > 1 else "[yellow]empty[/yellow]"
+                    console.print(f"  [cyan]{r:<30}[/cyan] {status}")
+            return True
+
+        elif cmd == "/compact":
+            if hasattr(agi_instance, '_compact_conversation_history'):
+                agi_instance._compact_conversation_history(keep_tail=40)
+                console.print("[green]✓ History compacted.[/green]")
+            return True
+
+        elif cmd == "/plan":
+            if hasattr(agi_instance, 'permission_mode'):
+                agi_instance.permission_mode = 'plan'
+            console.print("[green]✓ Plan mode: actions will be described, not executed.[/green]")
+            return True
+
+        elif cmd == "/auto":
+            if hasattr(agi_instance, 'permission_mode'):
+                agi_instance.permission_mode = 'auto_approve'
+            console.print("[yellow]⚠ Auto-approve mode: dangerous tools run without confirmation.[/yellow]")
+            return True
+
+        elif cmd == "/default":
+            if hasattr(agi_instance, 'permission_mode'):
+                agi_instance.permission_mode = 'default'
+            console.print("[green]✓ Default mode restored.[/green]")
+            return True
+
+        elif cmd == "/memory":
+            if hasattr(agi_instance, 'long_term_memory') and agi_instance.long_term_memory:
+                ltm = agi_instance.long_term_memory
+                if args.strip():
+                    results = ltm.retrieve_relevant_memories(args.strip(), top_k=10)
+                    console.print(f"[bold]Memory search results for '{args.strip()}':[/bold]")
+                    for r in results:
+                        preview = r.get('metadata', {}).get('content_preview', str(r))[:100]
+                        console.print(f"  [dim]•[/dim] {preview}")
+                else:
+                    console.print("[bold]Recent memories:[/bold]")
+                    recent = ltm.retrieve_relevant_memories("", top_k=10)
+                    for r in (recent or []):
+                        preview = r.get('metadata', {}).get('content_preview', str(r))[:100]
+                        console.print(f"  [dim]•[/dim] {preview}")
+            return True
+
+        elif cmd == "/cd":
+            try:
+                import os as _os
+                _os.chdir(args.strip() or _os.path.expanduser("~"))
+                console.print(f"[green]✓ Changed to {_os.getcwd()}[/green]")
+            except Exception as e:
+                console.print(f"[red]✗ {e}[/red]")
+            return True
+
+        elif cmd == "/screenshot":
+            import os as _os, tempfile
+            outpath = _os.path.join(tempfile.gettempdir(), f"devin_ss_{int(__import__('time').time())}.png")
+            import subprocess
+            try:
+                subprocess.run(["python3", "-c", f"import pyautogui; pyautogui.screenshot('{outpath}')"], timeout=10)
+                console.print(f"[green]✓ Screenshot: {outpath}[/green]")
+            except Exception as e:
+                console.print(f"[red]✗ Screenshot failed: {e}[/red]")
+            return True
+
+        elif cmd == "/voice":
+            self.use_voice = not self.use_voice
+            console.print(f"[green]✓ Voice input {'enabled' if self.use_voice else 'disabled'}.[/green]")
+            return True
+
+        return False
