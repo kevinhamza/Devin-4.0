@@ -141,34 +141,6 @@ Devin-4.0/
 
 ---
 
-## Integrated Repositories (24)
-
-| Repo | Language | What it adds |
-|------|----------|--------------|
-| AIA | Python | Voice assistant, automation, social media, ML, face detection |
-| self-operating-computer | Python | Vision-based OS control, OCR |
-| Devin / Devin-2.0 / Devin-3.0 | Python | Plugins, analytics, privacy, enterprise |
-| OpenDevin | Python | Canvas UI tool, agent scaffolding |
-| Jarvis (Concept-Bytes) | Python | Voice assistant tools |
-| JARVIS (Microsoft) | Python | HuggingGPT multi-model task planning |
-| cheetahclaws | Python | Safe multi-agent reasoning framework |
-| gemini-cli | TypeScript | Gemini CLI, tools, memory, IDE integration |
-| claude-code | TypeScript | Claude Code CLI source patterns |
-| openclaw | TS/Python | Agent framework, computer-use scripts |
-| Holomat | Python | XR/holographic hand-tracking interface |
-| shannon | TypeScript | Session management, worker AI |
-| airgorah | Python/Rust | WiFi security auditing |
-| hexstrike-ai | Python | Offensive security MCP server |
-| hackability | JavaScript | Security inspector tools |
-| vulnerability-analysis | Python | CVE analysis, document RAG |
-| Responder | Python | LLMNR/NBT-NS network responder |
-| nishang | PowerShell | PowerShell pentest scripts |
-| PowerTools | Python | PowerBreach, power user utilities |
-| metasploit-framework | Ruby | Exploit framework (subprocess wrapper) |
-| moltbots.github.io | HTML/JS | Bot control interface |
-
----
-
 ## Configuration
 
 `.env` (never commit):
