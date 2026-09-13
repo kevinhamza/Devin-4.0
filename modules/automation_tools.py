@@ -30,6 +30,7 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class KeyboardMouseController:
@@ -192,6 +193,18 @@ class WebAutomator:
         except Exception as e:
             logger.error(f"Failed to scrape visible text: {e}")
             return f"Error: Could not scrape page. Reason: {e}"
+
+    def scrape_text_from_elements(self, locator: Tuple[str, str]) -> List[str]:
+        """Returns the text of every element matching a locator, e.g. ('tag name', 'h1')."""
+        try:
+            driver = self.browser.get_driver()
+            if not driver: return []
+            by = getattr(By, locator[0].upper().replace(" ", "_"))
+            elements = driver.find_elements(by, locator[1])
+            return [element.text for element in elements]
+        except Exception as e:
+            logger.error(f"Could not scrape elements {locator}: {e}")
+            return []
 
     def find_and_click(self, locator: Tuple[str, str], timeout: int = 10) -> bool:
         """Waits for an element to be clickable and then clicks it."""

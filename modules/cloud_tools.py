@@ -448,6 +448,7 @@
 #          direct interaction with cloud resources (AWS, GCP, Azure).
 
 import logging
+import os
 from typing import List, Dict, Any, Optional
 
 # --- Provider-specific SDKs ---
@@ -480,6 +481,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class AWSTools:
@@ -488,6 +490,7 @@ class AWSTools:
         if not AWS_SDK_AVAILABLE:
             raise ImportError("AWS SDK (boto3) is required. 'pip install boto3'")
         try:
+            self.region_name = region_name
             self.session = boto3.Session(region_name=region_name)
             self.ec2 = self.session.client('ec2')
             self.s3 = self.session.client('s3')
@@ -499,12 +502,21 @@ class AWSTools:
         except ClientError as e:
             raise ConnectionError(f"AWS client error on initialization: {e}")
 
-    def ec2_describe_instances(self) -> Dict[str, Any]:
-        """Describes all EC2 instances in the configured region."""
+    def ec2_describe_instances(self, region: Optional[str] = None) -> Dict[str, Any]:
+        """Describes all EC2 instances, optionally in a different region than this client's default."""
         try:
-            return self.ec2.describe_instances()
+            client = self.session.client('ec2', region_name=region) if region and region != self.region_name else self.ec2
+            return client.describe_instances()
         except ClientError as e:
             logger.error(f"Failed to describe EC2 instances: {e}")
+            return {"Error": str(e)}
+
+    def ec2_stop_instances(self, InstanceIds: List[str]) -> Dict[str, Any]:
+        """Stops one or more EC2 instances by ID."""
+        try:
+            return self.ec2.stop_instances(InstanceIds=InstanceIds)
+        except ClientError as e:
+            logger.error(f"Failed to stop EC2 instances {InstanceIds}: {e}")
             return {"Error": str(e)}
 
     def s3_list_buckets(self) -> Dict[str, Any]:

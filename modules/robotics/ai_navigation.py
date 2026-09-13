@@ -236,7 +236,7 @@ import threading
 import time
 import math
 from enum import Enum, auto
-from typing import Optional, Any, Tuple, Dict
+from typing import Optional, Any, Tuple, Dict, Callable
 
 try:
     import numpy as np
@@ -255,6 +255,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class NavigationStatus(Enum):
     IDLE = auto()

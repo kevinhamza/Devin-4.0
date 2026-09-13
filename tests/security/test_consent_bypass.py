@@ -131,16 +131,20 @@ class TestConsentBypass(unittest.TestCase):
                 test_command="pytest"
             )
 
-        # In a real run, the 'propose' step would ask for permission before writing.
-        # We simulate that here. A real implementation would have this call in the method.
-        prompt = "A verified improvement for 'dummy_module.py' has been generated. Do you want to apply it (overwrite the original file)?"
-        if uim.ask_for_confirmation(prompt):
-             # This is the dangerous action
-            with open("dummy_module.py", "w") as f:
-                f.write("# new code")
-
-        # CRITICAL: Verify that the file `open` call for writing was NEVER made
-        mock_open.assert_not_called()
+        # CRITICAL: run_self_modification_cycle only ever writes the generated
+        # candidate to temp_modification_test/ for manual review -- it must
+        # never open the original target module path directly, regardless of
+        # consent, since applying the change is a separate, human-gated step
+        # outside this class entirely.
+        original_path_opened_for_write = any(
+            args and str(args[0]) == "dummy_module.py"
+            and any(m in (args[1] if len(args) > 1 else kwargs.get("mode", "r")) for m in "wax")
+            for args, kwargs in mock_open.call_args_list
+        )
+        self.assertFalse(
+            original_path_opened_for_write,
+            "The original module file must never be opened for writing directly."
+        )
 
 
 if __name__ == '__main__':

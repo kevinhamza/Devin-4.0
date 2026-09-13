@@ -38,7 +38,12 @@ jobs:
           python-version: '3.11' # Specify Python version for linting
           cache: 'pip' # Cache dependencies
 
-      # Step 3: Install dependencies (including linting tools)
+      # Step 3: Install system libraries required to build audio deps from source
+      # (PyAudio needs portaudio.h, simpleaudio needs alsa/asoundlib.h)
+      - name: Install system audio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+
+      # Step 4: Install dependencies (including linting tools)
       # Assumes linting dependencies are in requirements-dev.txt or similar
       - name: Install dependencies
         run: |
@@ -82,7 +87,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      # Step 3: Install dependencies (including test tools like pytest)
+      # Step 3: Install system libraries required to build audio deps from source
+      # (PyAudio needs portaudio.h, simpleaudio needs alsa/asoundlib.h)
+      - name: Install system audio dependencies
+        run: sudo apt-get update && sudo apt-get install -y portaudio19-dev libasound2-dev
+
+      # Step 4: Install dependencies (including test tools like pytest)
       # Assumes testing dependencies are in requirements-dev.txt or similar
       - name: Install dependencies
         run: |

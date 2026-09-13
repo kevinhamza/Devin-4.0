@@ -247,6 +247,7 @@
 
 import logging
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -266,6 +267,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class CloudServicesManager:

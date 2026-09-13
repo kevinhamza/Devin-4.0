@@ -14,6 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
+_import_error = None
+
 try:
     from servers.analytics_server import AnalyticsServer
     from modules.analytics_module import AnalyticsFacade
@@ -60,7 +62,7 @@ class TestAnalyticsPipeline(unittest.TestCase):
 
     def setUp(self):
         """Create a new facade and reset the server's state before each test."""
-        self.facade = AnalyticsFacade(base_url=self.server_url)
+        self.facade = AnalyticsFacade(server_url=self.server_url)
         # Reset the server's in-memory DataFrame for test isolation
         requests.post(f"{self.server_url}/reset")
 

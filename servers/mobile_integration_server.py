@@ -192,6 +192,7 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class MobileIntegrationServer:
     """A server that exposes ADB functionality over an API."""

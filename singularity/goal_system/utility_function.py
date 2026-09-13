@@ -28,6 +28,7 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 @dataclass
 class EvaluationResult:
@@ -61,6 +62,10 @@ class TaskCompletionComponent(UtilityComponent):
         self.ai_agent = ai_agent
 
     def evaluate(self, plan: Plan, user_goal: str, constraints: List[str]) -> float:
+        if self.ai_agent.mode == 'mock':
+            logger.info("TaskCompletionComponent: Running in mock mode. Returning default score.")
+            return 1.0 # Return a default high score in mock mode; no real LLM to ask.
+
         plan_steps_str = "\n".join([f"- {step['tool']}: {step.get('command') or step.get('parameters')}" for step in plan.steps])
         prompt = (
             "You are a meticulous AI project manager. Evaluate the following plan based on how effectively it achieves the user's goal. "
@@ -70,17 +75,16 @@ class TaskCompletionComponent(UtilityComponent):
             "and 1.0 (a perfect plan to achieve the goal). Your response must be ONLY the number."
         )
         try:
-            response = self.ai_agent.get_general_chat_response([{"role": "user", "content": prompt}], provider=AIProvider.OPENAI)
+            # Hardcoding OPENAI here meant this always failed (and silently
+            # scored every plan 0.0) whenever only another provider, e.g.
+            # Claude, was configured. Use whichever tool-calling provider is
+            # actually available, same preference as AIAgent's tool selection.
+            provider = AIProvider.ANTHROPIC if self.ai_agent.claude_module else AIProvider.OPENAI
+            response = self.ai_agent.get_general_chat_response([{"role": "user", "content": prompt}], provider=provider)
             return float(response.strip())
         except (ValueError, TypeError):
             logger.error("Could not parse LLM response for Task Completion evaluation.")
             return 0.0 # Neutral score on failure
-       
-    def calculate_utility(self, plan: Plan, goal: str, context: List[Dict]) -> float:
-        # --- ADDED MOCK MODE CHECK ---
-        if self.ai_agent.mode == 'mock':
-            logger.info("TaskCompletionComponent: Running in mock mode. Returning default score.")
-            return 1.0 # Return a default high score in mock mode
 
 class SafetyComponent(UtilityComponent):
     """Evaluates the safety of a plan, integrating with the Security Dashboard."""

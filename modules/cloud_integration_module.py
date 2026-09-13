@@ -565,7 +565,7 @@
 #          resources across multiple cloud providers (AWS, GCP, Azure).
 
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 
 try:
     # --- Import the low-level toolsets and high-level utilities ---
@@ -583,6 +583,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class CloudFacade:
@@ -632,6 +633,22 @@ class CloudFacade:
         # Add elif for Azure here...
 
         return normalized_vms
+
+    def stop_vm(self, provider: CloudProvider, instance_id: str) -> Dict[str, Any]:
+        """Stops a single virtual machine for a given provider."""
+        logger.info(f"Stopping VM '{instance_id}' for provider '{provider.value}'...")
+        tools = self.provider_map.get(provider)
+        if not tools:
+            return {"success": False, "message": f"Provider '{provider.value}' not configured."}
+
+        if provider == CloudProvider.AWS:
+            response = tools.ec2_stop_instances(InstanceIds=[instance_id])
+            if "Error" in response:
+                return {"success": False, "message": response["Error"]}
+            return {"success": True, "response": response}
+
+        # GCP/Azure stop-instance support is not yet implemented.
+        return {"success": False, "message": f"stop_vm is not yet implemented for provider '{provider.value}'."}
 
     def list_storage_buckets(self, provider: CloudProvider) -> List[NormalizedCloudResource]:
         """

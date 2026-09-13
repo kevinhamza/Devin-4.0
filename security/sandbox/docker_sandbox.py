@@ -7,7 +7,7 @@ import docker
 import tempfile
 import shutil
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 # Configure basic logging
 logger = logging.getLogger("DockerSandbox")
@@ -16,6 +16,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class DockerSandbox:

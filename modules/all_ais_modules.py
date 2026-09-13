@@ -236,6 +236,7 @@ try:
     from modules.Gemini_module import GeminiModule
     from modules.perplexity_module import PerplexityModule
     from modules.pentestgpt_ai_module import PentestGPTAIModule
+    from modules.claude_module import ClaudeModule
     DEVIN_CORE_AVAILABLE = True
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
@@ -249,6 +250,7 @@ class AIProvider(Enum):
     GOOGLE = auto()
     PERPLEXITY = auto()
     PENTEST_GPT = auto()
+    ANTHROPIC = auto()
 
 # --- ADDED FEATURE: Mock AI Modules for Offline/Free Use ---
 
@@ -268,12 +270,21 @@ class MockChatGPTModule:
     #         return {"content": "I'm not sure which tool to use. Can you be more specific?"}
     def get_tool_calling_response(self, messages: List[Dict], tools: List[Dict]) -> Dict:
         logger.info("MOCK ChatGPTModule is selecting a tool...")
+
+        # A real LLM would recognize a tool result already answers the goal
+        # and stop; this canned mock has no such judgment, so without this
+        # check it re-selects the same tool every turn until main.py's
+        # 20-message safety cap ends the session. Once any tool has run,
+        # consider the (single-step) mock goal satisfied.
+        if any(msg['role'] == 'tool' for msg in messages):
+            return {"content": "Mock goal satisfied after one tool call."}
+
         user_prompt = ""
         for msg in reversed(messages):
             if msg['role'] == 'user':
                 user_prompt = msg['content'].lower()
                 break
-        
+
         # --- UPGRADED MOCK LOGIC ---
         if "list" in user_prompt and "file" in user_prompt:
             return {"tool_calls": [{"function": {"name": "list_files", "arguments": '{"path": "."}'}}]}
@@ -317,12 +328,14 @@ class AIAgent:
             self.openai_module = ChatGPTModule(api_key=kwargs.get("openai_api_key")) if kwargs.get("openai_api_key") else None
             self.gemini_module = GeminiModule(api_key=kwargs.get("gemini_api_key")) if kwargs.get("gemini_api_key") else None
             self.perplexity_module = PerplexityModule(api_key=kwargs.get("perplexity_api_key")) if kwargs.get("perplexity_api_key") else None
+            self.claude_module = ClaudeModule(api_key=kwargs.get("anthropic_api_key")) if kwargs.get("anthropic_api_key") else None
             self.pentest_gpt_module = PentestGPTAIModule(llm_interface=self.openai_module) if self.openai_module else None
         else:
             # --- MOCK MODE: Initialize mock clients ---
             self.openai_module = MockChatGPTModule()
             self.gemini_module = MockGeminiModule()
             self.perplexity_module = MockPerplexityModule()
+            self.claude_module = None
             self.pentest_gpt_module = MockPentestGPTModule()
 
         self.provider_map = {
@@ -330,24 +343,26 @@ class AIAgent:
             AIProvider.GOOGLE: self.gemini_module,
             AIProvider.PERPLEXITY: self.perplexity_module,
             AIProvider.PENTEST_GPT: self.pentest_gpt_module,
+            AIProvider.ANTHROPIC: self.claude_module,
         }
         logger.info("AIAgent initialization complete.")
-        
+
     def get_tool_selection_response(self, messages: List[Dict], tools: List[Dict]) -> Optional[Dict]:
         """
         The core thinking process for tool use. Asks the LLM to choose the next best action
         using the provider's native tool-calling feature for improved reliability.
+        Prefers Claude when configured, falling back to OpenAI.
         """
-        # logger.info("AIAgent is selecting a tool to achieve the goal using native tool calling...")
         logger.info("AIAgent is selecting a tool to achieve the goal...")
-        if not self.openai_module:
-            logger.error("OpenAI module is required for tool selection but is not configured.")
+        tool_selection_module = self.claude_module or self.openai_module
+        if not tool_selection_module:
+            logger.error("No tool-calling-capable module (Claude or OpenAI) is configured.")
             return None
-        
+
         try:
             # Use the most powerful model for this critical reasoning step
             openai_tools = [{"type": "function", "function": tool} for tool in tools]
-            response_message = self.openai_module.get_tool_calling_response(messages, openai_tools)
+            response_message = tool_selection_module.get_tool_calling_response(messages, openai_tools)
 
             if response_message and response_message.get("tool_calls"):
                 tool_call = response_message["tool_calls"][0]

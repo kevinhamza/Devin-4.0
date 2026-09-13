@@ -11,6 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
+_import_error = None
+
 try:
     from modules.cloud_integration_module import CloudFacade
     from modules.cloud_integration_utilities import CloudProvider, CloudResourceType, NormalizedCloudResource

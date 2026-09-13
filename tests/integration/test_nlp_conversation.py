@@ -12,6 +12,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
+_import_error = None
+
 try:
     from modules.robotics.voice_assistant import VoiceAssistant
     from modules.robotics.speech_to_text import SpeechToText
@@ -49,15 +51,17 @@ class ConversationalVoiceAssistant(VoiceAssistant):
             self.speak("I'm sorry, I had trouble processing that.")
             return
 
-        # Check if the command is complete
-        if structured_command.intent == Intent.FIND_OBJECT and "object" in structured_command.entities and "color" not in structured_command.entities:
+        # Check if the command is complete. NLPProcessor reports descriptive
+        # modifiers (colors included) under the generic "attributes" list,
+        # not a dedicated "color" key.
+        if structured_command.intent == Intent.FIND_OBJECT and "object" in structured_command.entities and not structured_command.entities.get("attributes"):
             # Command is incomplete, ask a clarifying question
             self.speak(f"I can look for the {structured_command.entities['object']}. What color is it?")
             self.conversation_context["waiting_for_entity"] = "color"
             self.conversation_context["previous_command"] = structured_command
         elif structured_command.intent == Intent.FIND_OBJECT:
             obj = structured_command.entities.get('object', 'item')
-            color = structured_command.entities.get('color', '')
+            color = structured_command.entities.get('attributes', [''])[0]
             self.speak(f"Okay, I will now look for the {color} {obj}.")
         else:
             self.speak(f"I understood the command: {command}")

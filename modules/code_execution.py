@@ -252,6 +252,7 @@
 #          either directly on the host or within a secure Docker sandbox.
 
 import logging
+import os
 import uuid
 import time
 import subprocess
@@ -275,6 +276,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class ExecutionStatus(Enum):
     SUCCESS = auto()
@@ -297,7 +299,12 @@ class CodeExecutor:
     """
     def __init__(self, default_timeout_sec: int = 60):
         self.default_timeout = default_timeout_sec
-        self.docker_sandbox = DockerSandbox() if DOCKER_AVAILABLE else None
+        self.docker_sandbox = None
+        if DOCKER_AVAILABLE:
+            try:
+                self.docker_sandbox = DockerSandbox()
+            except ConnectionError as e:
+                logger.warning(f"Docker sandbox unavailable, falling back to unsandboxed execution: {e}")
         logger.info("CodeExecutor initialized.")
         if not self.docker_sandbox:
             logger.warning("DockerSandbox module not available. Sandboxed execution will be disabled.")

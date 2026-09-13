@@ -2,6 +2,7 @@
 # Purpose: The central dispatcher for executing tool calls from the AI agent.
 #          It maps tool names to Python functions and handles execution.
 
+import inspect
 import logging
 from typing import Dict, Any, List, Callable
 
@@ -25,6 +26,7 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class ToolExecutor:
     """
@@ -62,12 +64,44 @@ class ToolExecutor:
         self.symmetric_crypto = managers.get("symmetric_crypto")
         self.asymmetric_crypto = managers.get("asymmetric_crypto")
 
+    _TYPE_MAP = {
+        str: "string", int: "integer", float: "number",
+        bool: "boolean", dict: "object", list: "array",
+    }
+
+    def _infer_schema(self, function: Callable) -> Dict[str, Any]:
+        """
+        Builds a JSON schema for a tool's parameters from its function
+        signature, since the AI providers otherwise have no way to know what
+        arguments a tool expects and can only guess.
+        """
+        try:
+            signature = inspect.signature(function)
+        except (TypeError, ValueError):
+            return {"type": "object", "properties": {}}
+
+        properties: Dict[str, Any] = {}
+        required: List[str] = []
+        for param_name, param in signature.parameters.items():
+            if param_name == "self" or param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+            json_type = self._TYPE_MAP.get(param.annotation, "string")
+            properties[param_name] = {"type": json_type}
+            if param.default is inspect.Parameter.empty:
+                required.append(param_name)
+
+        schema: Dict[str, Any] = {"type": "object", "properties": properties}
+        if required:
+            schema["required"] = required
+        return schema
+
     def _register_tool(self, name: str, function: Callable, description: str, is_dangerous: bool = False):
         """Registers a single tool in the tool registry."""
         self.tools[name] = {
             "function": function,
             "description": description,
-            "is_dangerous": is_dangerous
+            "is_dangerous": is_dangerous,
+            "parameters": self._infer_schema(function),
         }
 
     def _register_all_tools(self):
@@ -77,23 +111,29 @@ class ToolExecutor:
         self._register_tool("execute_python", lambda code: self.code_executor.execute_code("python", code), "Executes a block of Python code.", is_dangerous=True)
         
         # --- Cloud Services ---
-        self._register_tool("list_vms", self.cloud_manager.list_vms, "Lists virtual machines from a cloud provider (aws, gcp, azure).")
-        self._register_tool("stop_vm", self.cloud_manager.stop_vm, "Stops a specific virtual machine.", is_dangerous=True)
-        
+        if self.cloud_manager:
+            self._register_tool("list_vms", self.cloud_manager.list_vms, "Lists virtual machines from a cloud provider (aws, gcp, azure).")
+            self._register_tool("stop_vm", self.cloud_manager.stop_vm, "Stops a specific virtual machine.", is_dangerous=True)
+
         # --- File System & OS ---
-        self._register_tool("list_files", self.os_operator.list_directory, "Lists files in a specified directory.")
-        self._register_tool("read_file", self.os_operator.read_file, "Reads the content of a specified file.")
-        self._register_tool("write_file", self.os_operator.write_file, "Writes content to a specified file.", is_dangerous=True)
-        
+        if self.os_operator:
+            self._register_tool("list_files", self.os_operator.list_directory, "Lists files in a specified directory.")
+            self._register_tool("read_file", self.os_operator.read_file, "Reads the content of a specified file.")
+            self._register_tool("write_file", self.os_operator.write_file, "Writes content to a specified file.", is_dangerous=True)
+
         # --- Desktop Automation ---
-        self._register_tool("move_mouse", self.desktop_automator.move_mouse_to, "Moves the mouse to specific (x, y) coordinates.")
-        self._register_tool("click_mouse", self.desktop_automator.mouse_click, "Clicks the mouse (left or right).")
-        self._register_tool("type_text", self.desktop_automator.type_text, "Types text on the keyboard.")
-        self._register_tool("take_screenshot", self.desktop_automator.take_screenshot, "Takes a screenshot of the current screen.")
-        
+        if self.desktop_automator:
+            self._register_tool("open_application", self.desktop_automator.open_application, "Opens an application by name using the OS-native run/search dialog.")
+            self._register_tool("move_mouse", self.desktop_automator.move_mouse_to, "Moves the mouse to specific (x, y) coordinates.")
+            self._register_tool("click_mouse", self.desktop_automator.mouse_click, "Clicks the mouse (left or right).")
+            self._register_tool("type_text", self.desktop_automator.type_text, "Types text on the keyboard.")
+            self._register_tool("take_screenshot", self.desktop_automator.take_screenshot, "Takes a screenshot of the current screen.")
+
         # --- Web Automation ---
-        self._register_tool("navigate_to_url", self.web_automator.navigate_to_url, "Opens a web browser and navigates to a specific URL.")
-        self._register_tool("scrape_web_page", self.web_automator.scrape_visible_text, "Scrapes all visible text from the current web page.")
+        if self.web_automator:
+            self._register_tool("navigate_to_url", self.web_automator.navigate_to_url, "Opens a web browser and navigates to a specific URL.")
+            self._register_tool("scrape_web_page", self.web_automator.scrape_visible_text, "Scrapes all visible text from the current web page.")
+            self._register_tool("scrape_text_from_elements", self.web_automator.scrape_text_from_elements, "Scrapes the text of every element matching a locator, e.g. ['tag name', 'h1'].")
         
         # --- OpenClaw Ported Tools ---
         if self.messaging_gateway:
@@ -126,10 +166,10 @@ class ToolExecutor:
             self._register_tool("decrypt_data", self.symmetric_crypto.decrypt, "Decrypts data using symmetric encryption.")
 
 
-    def get_available_tools(self) -> List[Dict[str, str]]:
+    def get_available_tools(self) -> List[Dict[str, Any]]:
         """Returns a list of tool schemas for the AI to use."""
         return [
-            {"name": name, "description": data["description"]}
+            {"name": name, "description": data["description"], "parameters": data["parameters"]}
             for name, data in self.tools.items()
         ]
 

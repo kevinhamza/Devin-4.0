@@ -11,6 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
+_import_error = None
+
 try:
     from modules.os_operations.universal_operations import UniversalOSOperator
     import numpy as np

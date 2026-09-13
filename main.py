@@ -84,7 +84,8 @@ class DevinAGI:
             mode=self.mode, # Pass the mode to the agent
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             gemini_api_key=os.getenv("GEMINI_API_KEY"),
-            perplexity_api_key=os.getenv("PERPLEXITY_API_KEY")
+            perplexity_api_key=os.getenv("PERPLEXITY_API_KEY"),
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY")
         )
         self.uim = UserInteractionManager(use_voice=use_voice)
         self.security_dashboard = SecurityDashboard()

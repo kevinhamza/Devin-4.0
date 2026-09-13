@@ -490,6 +490,14 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 
+logger = logging.getLogger("RoboticsControlModule")
+if not logger.handlers:
+    _console_handler = logging.StreamHandler()
+    _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(_console_handler)
+    logger.setLevel(logging.INFO)
+logger.propagate = False
+
 # ... (All enums and dataclasses like RobotCommandType, RobotCommand, etc. remain unchanged from the previous version)
 class RobotCommandType(Enum):
     MOVE_RELATIVE = auto()

@@ -236,6 +236,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 Pose = Tuple[float, float, float] # (x_meters, y_meters, theta_radians)
 LidarScan = List[Tuple[float, float]]

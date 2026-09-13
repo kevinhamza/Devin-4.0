@@ -240,6 +240,8 @@
 import logging
 import os
 import base64
+import hashlib
+from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 try:
@@ -260,6 +262,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class HashingTools:
     """Provides tools for creating cryptographic hashes using hashlib."""

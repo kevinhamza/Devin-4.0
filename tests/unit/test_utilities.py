@@ -11,6 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
+_import_error = None
+
 try:
     # --- Import the specific utility classes and functions to be tested ---
     from modules.cloud_integration_utilities import DataNormalizer, CloudProvider, CloudResourceType, NormalizedCloudResource
@@ -49,8 +51,8 @@ class TestDataNormalizer(unittest.TestCase):
     def test_normalize_aws_vm(self):
         """Verify normalization of a standard AWS EC2 instance dictionary."""
         print("\n\n--- Unit Test: DataNormalizer for AWS VM ---")
-        result = self.normalizer.normalize_aws_vm(SAMPLE_AWS_EC2_RESPONSE_INSTANCE)
-        
+        result = self.normalizer.from_aws_ec2_instance(SAMPLE_AWS_EC2_RESPONSE_INSTANCE, region="us-east-1")
+
         self.assertIsInstance(result, NormalizedCloudResource)
         self.assertEqual(result.provider, CloudProvider.AWS)
         self.assertEqual(result.resource_type, CloudResourceType.VIRTUAL_MACHINE)
@@ -58,23 +60,23 @@ class TestDataNormalizer(unittest.TestCase):
         self.assertEqual(result.name, "WebServer-Prod")
         self.assertEqual(result.status, "running")
         self.assertEqual(result.public_ip, "54.123.45.67")
-        self.assertEqual(result.details["instance_type"], "t2.micro")
+        self.assertEqual(result.metadata["instance_type"], "t2.micro")
         print("  [SUCCESS] Correctly normalized standard AWS VM data.")
 
     def test_normalize_aws_vm_missing_name_tag(self):
         """Verify fallback to provider_id when 'Name' tag is missing."""
         data = SAMPLE_AWS_EC2_RESPONSE_INSTANCE.copy()
         data["Tags"] = [{"Key": "env", "Value": "prod"}] # Remove the 'Name' tag
-        
-        result = self.normalizer.normalize_aws_vm(data)
+
+        result = self.normalizer.from_aws_ec2_instance(data, region="us-east-1")
         self.assertEqual(result.name, result.provider_id, "Name should fall back to InstanceId when tag is missing.")
         print("  [SUCCESS] Correctly handled missing 'Name' tag for AWS VM.")
 
     def test_normalize_gcp_vm(self):
         """Verify normalization of a standard GCP Compute Engine instance dictionary."""
         print("\n\n--- Unit Test: DataNormalizer for GCP VM ---")
-        result = self.normalizer.normalize_gcp_vm(SAMPLE_GCP_COMPUTE_RESPONSE_INSTANCE)
-        
+        result = self.normalizer.from_gcp_compute_instance(SAMPLE_GCP_COMPUTE_RESPONSE_INSTANCE, zone="us-central1-a")
+
         self.assertIsInstance(result, NormalizedCloudResource)
         self.assertEqual(result.provider, CloudProvider.GCP)
         self.assertEqual(result.resource_type, CloudResourceType.VIRTUAL_MACHINE)
@@ -83,7 +85,7 @@ class TestDataNormalizer(unittest.TestCase):
         self.assertEqual(result.status, "RUNNING")
         self.assertEqual(result.public_ip, "34.67.89.10")
         self.assertEqual(result.tags, {"env": "dev"})
-        self.assertIn("e2-medium", result.details["machine_type"])
+        self.assertIn("e2-medium", result.metadata["machine_type"])
         print("  [SUCCESS] Correctly normalized standard GCP VM data.")
 
 

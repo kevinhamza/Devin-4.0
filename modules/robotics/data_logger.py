@@ -227,8 +227,6 @@ from typing import Dict, Any, Optional, List
 
 try:
     import pandas as pd
-    import pyarrow as pa
-    import pyarrow.feather as feather
     DEPS_AVAILABLE = True
 except ImportError as e:
     DEPS_AVAILABLE = False
@@ -241,6 +239,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 
 class DataLogger:
@@ -339,12 +338,11 @@ class DataLogger:
         
         try:
             if self.log_file_path.exists():
-                with feather.FeatherReader(self.log_file_path) as reader:
-                    df_existing = reader.read_pandas()
+                df_existing = pd.read_feather(self.log_file_path)
                 df_combined = pd.concat([df_existing, df_new], ignore_index=True)
-                feather.write_feather(df_combined, self.log_file_path)
+                df_combined.to_feather(self.log_file_path)
             else:
-                feather.write_feather(df_new, self.log_file_path)
+                df_new.to_feather(self.log_file_path)
         except Exception as e:
             logger.error(f"Error flushing data to Feather file: {e}")
 

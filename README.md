@@ -28,6 +28,9 @@ cd Devin-2.0
 
 # Install all required dependencies
 pip install -r requirements.txt
+
+# Download the spaCy language model used by the voice/NLU pipeline
+python -m spacy download en_core_web_sm
 ```
 
 ### 3. Configure Environment Variables

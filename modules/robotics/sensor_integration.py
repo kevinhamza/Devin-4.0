@@ -223,6 +223,8 @@ import threading
 import shlex
 import subprocess
 import yaml
+import numpy as np
+import cv2
 from abc import ABC, abstractmethod
 from enum import Enum
 from dataclasses import dataclass
@@ -244,6 +246,7 @@ if not logger.handlers:
     _console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(_console_handler)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 class SensorType(Enum):
     CAMERA = "Camera"

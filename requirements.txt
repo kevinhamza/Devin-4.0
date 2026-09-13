@@ -13,8 +13,10 @@ websockets
 
 # --- AI & Machine Learning ---
 openai
+anthropic
 google-generativeai
 scikit-learn
+spacy
 torch
 torchvision
 torchaudio
@@ -41,6 +43,7 @@ google-cloud-compute
 pywin32; sys_platform == 'win32'
 SpeechRecognition
 PyAudio
+pyttsx3
 simpleaudio
 
 # --- Robotics ---
@@ -50,6 +53,8 @@ opencv-python
 # --- Threat Intelligence & Pentesting ---
 python-nmap
 beautifulsoup4
+scapy
+pymetasploit3
 
 # --- Other Utilities ---
 tqdm

@@ -7,6 +7,8 @@ import time
 import os
 from typing import List, Dict, Any
 
+_import_error = None
+
 try:
     import numpy as np
     import tiktoken
@@ -24,6 +26,7 @@ if not logger.handlers:
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
     logger.setLevel(logging.INFO)
+logger.propagate = False
 
 # --- Define the standard set of benchmark prompts ---
 BENCHMARK_PROMPTS = {
