@@ -49,7 +49,7 @@ wcwidth==0.2.9
 zipp==3.19.1
 google-generativeai==0.3.0
 aiohttp==3.13.3
-ultralytics==8.0.227
+ultralytics==8.4.131
 easyocr==1.7.1
 ollama==0.1.6
 anthropic
