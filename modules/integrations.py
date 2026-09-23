@@ -898,9 +898,467 @@ def get_mouse_position() -> tuple:
             pass
     return (0, 0)
 
-# ── TOOL REGISTRY (unified, 60+ tools) ────────────────────────────────────────
+# ── Repository-Specific Tools (from integrated repos) ────────────────────────
+# These tools expose capabilities from repos/aia, repos/cheetah, repos/jarvis, etc.
+
+def read_pdf(file_path: str, page_range: str = "1-5") -> str:
+    """Read and extract text from PDF file. Page range e.g. '1-5' or '1'."""
+    try:
+        import PyPDF2
+        with open(file_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            pages = page_range.split('-')
+            start = int(pages[0]) - 1
+            end = int(pages[-1]) if len(pages) > 1 else start + 1
+            text = ""
+            for i in range(start, min(end, len(reader.pages))):
+                text += reader.pages[i].extract_text()
+            return text[:5000]
+    except Exception:
+        pass
+    # Fallback: try cheetah's PDF reader if available
+    try:
+        from cheetah_files import _read_pdf
+        return _read_pdf({"path": file_path, "page_range": page_range}, {}) or ""
+    except Exception:
+        return f"Could not read PDF: {file_path}"
+
+def read_excel(file_path: str, sheet: str = None, max_rows: int = 100) -> str:
+    """Read and extract data from Excel file."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path)
+        ws = wb[sheet] if sheet else wb.active
+        data = []
+        for row in ws.iter_rows(max_row=max_rows, values_only=True):
+            data.append(str(row))
+        return "\n".join(data[:50])
+    except Exception:
+        pass
+    # Fallback
+    try:
+        from cheetah_files import _read_xlsx
+        return _read_xlsx({}, {}) or ""
+    except Exception:
+        return f"Could not read Excel: {file_path}"
+
+def device_info() -> Dict[str, Any]:
+    """Get detailed device and system information."""
+    info = {
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "platform_version": platform.version(),
+        "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+    }
+    if HAS["psutil"]:
+        import psutil
+        info.update({
+            "cpu_percent": psutil.cpu_percent(interval=1),
+            "virtual_memory": str(psutil.virtual_memory()),
+            "disk_usage": str(psutil.disk_usage("/")),
+        })
+    return info
+
+def internet_speed_test() -> Dict[str, Any]:
+    """Test internet connection speed and latency."""
+    result = {"status": "FAILED"}
+    if HAS["requests"] and requests:
+        try:
+            import time
+            # Simple latency test to DNS
+            start = time.time()
+            r = requests.get("https://8.8.8.8", timeout=5)
+            latency = (time.time() - start) * 1000
+            result = {
+                "status": "OK",
+                "latency_ms": round(latency),
+                "dns_reachable": True
+            }
+        except Exception:
+            result["status"] = "FAILED (no internet)"
+    return result
+
+def web_research(topic: str, num_results: int = 5) -> List[Dict[str, str]]:
+    """Research a topic by searching the web and fetching summaries."""
+    results = web_search(topic, num_results)
+    detailed = []
+    for r in results[:num_results]:
+        url = r.get("url", "")
+        summary = web_fetch(url)[:500] if url else ""
+        detailed.append({
+            "url": url,
+            "title": r.get("title", ""),
+            "summary": summary
+        })
+    return detailed
+
+def code_analyze(file_path: str) -> Dict[str, Any]:
+    """Analyze code file and return metrics (lines, functions, classes, etc)."""
+    try:
+        content = Path(file_path).read_text(errors="replace")
+        lines = content.split('\n')
+
+        analysis = {
+            "file": file_path,
+            "total_lines": len(lines),
+            "non_empty_lines": len([l for l in lines if l.strip()]),
+            "comment_lines": len([l for l in lines if l.strip().startswith('#')]),
+            "functions": len([l for l in lines if l.strip().startswith('def ')]),
+            "classes": len([l for l in lines if l.strip().startswith('class ')]),
+            "imports": len([l for l in lines if 'import' in l]),
+            "language": "python" if file_path.endswith('.py') else "unknown"
+        }
+        return analysis
+    except Exception as e:
+        return {"error": str(e)}
+
+def run_security_scan(target: str, scan_type: str = "basic") -> Dict[str, Any]:
+    """Run security scan on target (nmap, port scan, or basic check)."""
+    if scan_type == "nmap" and HAS["nmap"]:
+        try:
+            return {"nmap_result": run_nmap_scan(target)}
+        except Exception:
+            pass
+
+    # Basic security checks
+    result = {
+        "target": target,
+        "scan_type": scan_type,
+        "checks": []
+    }
+
+    if HAS["requests"] and requests:
+        try:
+            # Check if HTTPS available
+            r = requests.head(f"https://{target}", timeout=5)
+            result["checks"].append({
+                "type": "https",
+                "available": r.status_code < 400
+            })
+        except Exception:
+            result["checks"].append({
+                "type": "https",
+                "available": False
+            })
+
+    return result
+
+def find_files(directory: str = ".", pattern: str = "*", max_results: int = 100) -> List[str]:
+    """Find files in directory matching pattern. Returns list of file paths."""
+    results = []
+    try:
+        for root, dirs, files in os.walk(directory):
+            if len(results) >= max_results:
+                break
+            # Skip hidden and cache dirs
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+            for f in files:
+                if len(results) >= max_results:
+                    break
+                import fnmatch
+                if fnmatch.fnmatch(f, pattern):
+                    results.append(os.path.join(root, f))
+    except Exception:
+        pass
+    return results
+
+def grep_files(directory: str = ".", pattern: str = "", file_pattern: str = "*.py") -> List[Dict]:
+    """Search for text pattern in files. Returns matches with context."""
+    results = []
+    try:
+        import re
+        regex = re.compile(pattern, re.IGNORECASE)
+        for root, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for f in files:
+                if fnmatch.fnmatch(f, file_pattern):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath, 'r', errors='ignore') as file:
+                            for i, line in enumerate(file):
+                                if regex.search(line):
+                                    results.append({
+                                        "file": fpath,
+                                        "line_num": i + 1,
+                                        "line": line.strip()[:100]
+                                    })
+                                    if len(results) >= 50:
+                                        break
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return results[:50]
+
+def task_decompose(task_description: str) -> List[str]:
+    """Break down a complex task into sub-tasks."""
+    # Simple decomposition using prompt
+    sub_tasks = []
+    lines = task_description.split('\n')
+
+    # Heuristic: if task mentions multiple things, break them up
+    import re
+    # Look for "and" separators
+    tasks = re.split(r'\s+and\s+|\s*;\s*', task_description, flags=re.IGNORECASE)
+
+    if len(tasks) > 1:
+        return [t.strip() for t in tasks if t.strip()]
+
+    # Otherwise suggest generic subtasks
+    return [
+        f"Analyze: {task_description[:50]}",
+        "Execute main action",
+        "Verify results",
+        "Report findings"
+    ]
+
+def memory_save(key: str, value: str) -> bool:
+    """Save a fact to short-term memory (session-based)."""
+    # Simple implementation using module-level dict
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    memory_save._store[key] = value
+    return True
+
+def memory_recall(key: str) -> str:
+    """Recall a saved fact from short-term memory."""
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    return memory_save._store.get(key, "")
+
+def memory_list() -> List[str]:
+    """List all saved facts in short-term memory."""
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    return list(memory_save._store.keys())
+
+# ── Data Analysis Tools ────────────────────────────────────────────────────────
+
+def parse_csv(file_path: str, max_rows: int = 100) -> str:
+    """Parse CSV file and return formatted data."""
+    try:
+        import csv
+        data = []
+        with open(file_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for i, row in enumerate(reader):
+                if i >= max_rows:
+                    break
+                data.append(str(row))
+        return "\n".join(data[:max_rows])
+    except Exception as e:
+        return f"Error reading CSV: {e}"
+
+def analyze_text(text: str, analysis_type: str = "summary") -> Dict[str, Any]:
+    """Analyze text document (length, complexity, keywords, etc)."""
+    result = {
+        "type": analysis_type,
+        "char_count": len(text),
+        "word_count": len(text.split()),
+        "line_count": len(text.split('\n')),
+        "avg_word_length": sum(len(w) for w in text.split()) / max(len(text.split()), 1),
+    }
+
+    # Find common words
+    import re
+    words = re.findall(r'\b\w+\b', text.lower())
+    from collections import Counter
+    word_freq = Counter(words)
+    result["top_words"] = dict(word_freq.most_common(10))
+
+    return result
+
+def compare_files(file1: str, file2: str) -> Dict[str, Any]:
+    """Compare two files and show differences."""
+    try:
+        content1 = Path(file1).read_text(errors='ignore')
+        content2 = Path(file2).read_text(errors='ignore')
+
+        lines1 = content1.split('\n')
+        lines2 = content2.split('\n')
+
+        import difflib
+        diff = list(difflib.unified_diff(lines1, lines2, lineterm=''))
+
+        return {
+            "file1": file1,
+            "file2": file2,
+            "same": content1 == content2,
+            "diff_lines": len(diff),
+            "diff_summary": "\n".join(diff[:20])  # First 20 diff lines
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def extract_urls(text: str) -> List[str]:
+    """Extract all URLs from text."""
+    import re
+    url_pattern = r'https?://[^\s]+'
+    return re.findall(url_pattern, text)
+
+def extract_emails(text: str) -> List[str]:
+    """Extract all email addresses from text."""
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    return re.findall(email_pattern, text)
+
+# ── Pentesting / Security Tools ────────────────────────────────────────────────
+
+def port_scan(host: str, ports: str = "22,80,443,3306,5432,8080") -> Dict[str, Any]:
+    """Scan common ports on a host."""
+    result = {"host": host, "ports_checked": ports.split(','), "open_ports": []}
+
+    if HAS["requests"] and requests:
+        for port_str in ports.split(','):
+            try:
+                port = int(port_str.strip())
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1)
+                result_code = s.connect_ex((host, port))
+                if result_code == 0:
+                    result["open_ports"].append(port)
+                s.close()
+            except Exception:
+                pass
+
+    return result
+
+def check_ssl_cert(domain: str) -> Dict[str, Any]:
+    """Check SSL certificate validity for a domain."""
+    result = {"domain": domain, "valid": False, "error": None}
+
+    if HAS["requests"] and requests:
+        try:
+            r = requests.get(f"https://{domain}", timeout=10, verify=True)
+            result["valid"] = True
+            result["status_code"] = r.status_code
+        except requests.exceptions.SSLError as e:
+            result["error"] = f"SSL Error: {str(e)[:100]}"
+        except Exception as e:
+            result["error"] = str(e)[:100]
+
+    return result
+
+def dns_lookup(hostname: str) -> Dict[str, Any]:
+    """Lookup DNS records for a hostname."""
+    result = {"hostname": hostname, "ips": [], "error": None}
+
+    try:
+        import socket
+        try:
+            ips = socket.gethostbyname_ex(hostname)
+            result["ips"] = ips[2]
+        except socket.gaierror as e:
+            result["error"] = str(e)
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def whois_lookup(domain: str) -> Dict[str, str]:
+    """WHOIS lookup for a domain."""
+    result = {"domain": domain, "registrar": "Unknown", "info": ""}
+
+    if HAS["requests"] and requests:
+        try:
+            r = requests.get(f"https://whois.arin.net/rest/ip/{domain}", timeout=10)
+            if r.ok:
+                result["info"] = r.text[:500]
+        except Exception:
+            pass
+
+    return result
+
+def hash_text(text: str, algorithm: str = "sha256") -> Dict[str, str]:
+    """Hash text using specified algorithm (md5, sha1, sha256)."""
+    import hashlib
+
+    if algorithm == "md5":
+        h = hashlib.md5(text.encode()).hexdigest()
+    elif algorithm == "sha1":
+        h = hashlib.sha1(text.encode()).hexdigest()
+    else:  # sha256 default
+        h = hashlib.sha256(text.encode()).hexdigest()
+
+    return {
+        "algorithm": algorithm,
+        "input": text[:50],
+        "hash": h
+    }
+
+def extract_metadata(file_path: str) -> Dict[str, Any]:
+    """Extract metadata from a file."""
+    result = {"file": file_path, "metadata": {}}
+
+    try:
+        from pathlib import Path
+        p = Path(file_path)
+        stat = p.stat()
+        result["metadata"] = {
+            "size_bytes": stat.st_size,
+            "created": str(stat.st_ctime),
+            "modified": str(stat.st_mtime),
+            "is_file": p.is_file(),
+            "is_dir": p.is_dir(),
+        }
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+# ── Git & Repository Tools ────────────────────────────────────────────────────
+
+def git_log(repo_path: str = ".", max_commits: int = 10) -> str:
+    """Get recent git commits from a repository."""
+    result = execute_shell(f"cd {repo_path} && git log --oneline -n {max_commits}", timeout=10)
+    return result["output"]
+
+def git_status(repo_path: str = ".") -> str:
+    """Get git status of a repository."""
+    result = execute_shell(f"cd {repo_path} && git status", timeout=10)
+    return result["output"]
+
+def git_diff(repo_path: str = ".", file_path: str = None) -> str:
+    """Get git diff for a repository or specific file."""
+    if file_path:
+        result = execute_shell(f"cd {repo_path} && git diff {file_path}", timeout=10)
+    else:
+        result = execute_shell(f"cd {repo_path} && git diff --stat", timeout=10)
+    return result["output"]
+
+# ── Automation & Workflow Tools ────────────────────────────────────────────────
+
+def run_workflow(workflow_name: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute a predefined workflow (placeholder for future automation)."""
+    workflows = {
+        "backup": "Backup important files",
+        "deploy": "Deploy to production",
+        "test": "Run test suite",
+        "monitor": "Monitor system health",
+    }
+
+    return {
+        "workflow": workflow_name,
+        "status": "queued",
+        "description": workflows.get(workflow_name, "Unknown"),
+        "params": params or {}
+    }
+
+def schedule_task(task_name: str, cron_schedule: str, command: str) -> Dict[str, str]:
+    """Schedule a task to run on a schedule (placeholder)."""
+    return {
+        "task_name": task_name,
+        "schedule": cron_schedule,
+        "command": command,
+        "status": "scheduled"
+    }
+
+# ── TOOL REGISTRY (unified, now 60+ tools) ────────────────────────────────────
 TOOL_REGISTRY: Dict[str, Any] = {
-    # OS Automation
+    # ── OS Automation (13 tools) ──
     "take_screenshot": take_screenshot,
     "mouse_click": mouse_click,
     "mouse_right_click": mouse_right_click,
@@ -913,37 +1371,99 @@ TOOL_REGISTRY: Dict[str, Any] = {
     "keyboard_hotkey": keyboard_hotkey,
     "get_screen_size": get_screen_size,
     "get_mouse_position": get_mouse_position,
+    "search_screen": search_screen,
+
+    # ── Window Management (2 tools) ──
     "list_windows": list_windows,
     "focus_window": focus_window,
+
+    # ── Application Launching (1 tool) ──
     "open_application": open_application,
-    "search_screen": search_screen,
-    # Shell & Code
+
+    # ── Shell & Code Execution (3 tools) ──
     "execute_shell": execute_shell,
     "execute_python": execute_python,
     "git_command": git_command,
-    # Files
+
+    # ── File Operations (3 tools) ──
     "read_file": read_file,
     "write_file": write_file,
     "list_files": list_files,
-    # Web
+
+    # ── Web Operations (4 tools) ──
     "web_search": web_search,
     "web_fetch": web_fetch,
     "open_browser": open_browser,
-    # Voice
+    "web_research": web_research,
+
+    # ── Voice I/O (2 tools) ──
     "speak": speak,
     "listen": listen,
-    # Clipboard
+
+    # ── Clipboard (2 tools) ──
     "clipboard_get": clipboard_get,
     "clipboard_set": clipboard_set,
-    # System
+
+    # ── System Monitoring (2 tools) ──
     "get_system_info": get_system_info,
     "list_processes": list_processes,
-    # Security
+    "device_info": device_info,
+
+    # ── Network & Internet (2 tools) ──
     "run_nmap_scan": run_nmap_scan,
-    # Image/Vision
+    "internet_speed_test": internet_speed_test,
+
+    # ── Vision & Image Analysis (1 tool) ──
     "analyze_image": analyze_image,
-    # Telegram
+
+    # ── Communications (1 tool) ──
     "send_telegram_message": send_telegram_message,
+
+    # ── Advanced File Operations (2 tools) [from repos/cheetah]
+    "read_pdf": read_pdf,
+    "read_excel": read_excel,
+
+    # ── Code Analysis (1 tool) [from repos/]
+    "code_analyze": code_analyze,
+
+    # ── Security (1 tool) [enhanced]
+    "run_security_scan": run_security_scan,
+
+    # ── File Discovery & Search (2 tools)
+    "find_files": find_files,
+    "grep_files": grep_files,
+
+    # ── Task Management (1 tool)
+    "task_decompose": task_decompose,
+
+    # ── Memory (Short-term Session Memory) (3 tools)
+    "memory_save": memory_save,
+    "memory_recall": memory_recall,
+    "memory_list": memory_list,
+
+    # ── Data Analysis (5 tools) [from repos/cheetah and enhanced]
+    "parse_csv": parse_csv,
+    "analyze_text": analyze_text,
+    "compare_files": compare_files,
+    "extract_urls": extract_urls,
+    "extract_emails": extract_emails,
+
+    # ── Pentesting & Security (7 tools) [from repos/security]
+    "port_scan": port_scan,
+    "check_ssl_cert": check_ssl_cert,
+    "dns_lookup": dns_lookup,
+    "whois_lookup": whois_lookup,
+    "hash_text": hash_text,
+    "extract_metadata": extract_metadata,
+
+    # ── Git & Repository Management (3 tools)
+    "git_log": git_log,
+    "git_status": git_status,
+    "git_diff": git_diff,
+
+    # ── Automation & Workflow (2 tools)
+    "run_workflow": run_workflow,
+    "schedule_task": schedule_task,
 }
 
 # ── Capability summary ────────────────────────────────────────────────────────
