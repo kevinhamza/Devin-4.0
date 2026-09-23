@@ -655,7 +655,12 @@ def execute_python(code: str) -> Dict[str, Any]:
 
 def read_file(path: str) -> str:
     """Read file and return its content."""
-    return Path(path).read_text(errors="replace")
+    try:
+        return Path(path).read_text(errors="replace")
+    except FileNotFoundError:
+        return f"File not found: {path}"
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
 
 def write_file(path: str, content: str) -> bool:
     """Write content to file."""
@@ -663,16 +668,20 @@ def write_file(path: str, content: str) -> bool:
     Path(path).write_text(content)
     return True
 
-def list_files(directory: str = ".", pattern: str = "*") -> List[str]:
+def list_files(directory: str = ".", pattern: str = "*", max_results: int = None) -> List[str]:
     """List files in directory matching pattern."""
     import fnmatch
     result = []
     for root, dirs, files in os.walk(directory):
+        if max_results and len(result) >= max_results:
+            break
         dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__' and d != 'node_modules']
         for f in files:
             if fnmatch.fnmatch(f, pattern):
                 result.append(os.path.join(root, f))
-    return result
+                if max_results and len(result) >= max_results:
+                    break
+    return result[:max_results] if max_results else result
 
 def web_search(query: str, num_results: int = 5) -> List[Dict]:
     """Web search using googlesearch-python or requests fallback."""
