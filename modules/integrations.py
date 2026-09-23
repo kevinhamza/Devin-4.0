@@ -1754,3 +1754,25 @@ def capabilities_summary() -> str:
         f"Inactive ({len(inactive)}): {', '.join(inactive)}\n"
         f"Tools registered: {len(TOOL_REGISTRY)}"
     )
+
+# ── Add persistent memory tools ────────────────────────────────────────────
+try:
+    from persistent_memory import (
+        memory_save_persistent, memory_recall_persistent, memory_search,
+        memory_list_persistent, memory_stats, memory_relate, memory_find_related
+    )
+    TOOL_REGISTRY.update({
+        "memory_save_persistent": memory_save_persistent,
+        "memory_recall_persistent": memory_recall_persistent,
+        "memory_search": memory_search,
+        "memory_list_persistent": memory_list_persistent,
+        "memory_stats": memory_stats,
+        "memory_relate": memory_relate,
+        "memory_find_related": memory_find_related,
+    })
+    HAS["persistent_memory"] = True
+except Exception:
+    HAS["persistent_memory"] = False
+
+# Update tool count
+TOOL_REGISTRY_SIZE = len(TOOL_REGISTRY)
