@@ -1776,3 +1776,24 @@ except Exception:
 
 # Update tool count
 TOOL_REGISTRY_SIZE = len(TOOL_REGISTRY)
+
+# ── Add access control tools ───────────────────────────────────────────
+try:
+    from access_control import (
+        check_tool_permission, get_user_tools, log_tool_access,
+        get_access_audit_log, get_role_info, list_all_roles,
+        grant_tool_to_role, revoke_tool_from_role
+    )
+    TOOL_REGISTRY.update({
+        "check_tool_permission": check_tool_permission,
+        "get_user_tools": get_user_tools,
+        "log_tool_access": log_tool_access,
+        "get_access_audit_log": get_access_audit_log,
+        "get_role_info": get_role_info,
+        "list_all_roles": list_all_roles,
+        "grant_tool_to_role": grant_tool_to_role,
+        "revoke_tool_from_role": revoke_tool_from_role,
+    })
+    HAS["access_control"] = True
+except Exception:
+    HAS["access_control"] = False
