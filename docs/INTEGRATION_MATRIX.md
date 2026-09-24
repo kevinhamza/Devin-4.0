@@ -37,48 +37,59 @@ actually invoke it") to the ground-truth column:
 - **Deliberately not exposed via runtime (offensive/authorized-only):**
   Responder, nishang, metasploit-framework.
 
-The main rows below have NOT been rewritten yet — they describe integration
-intent from prior sessions. This addendum is the source of truth for actual
-runtime state; the rows below should be reconciled against it before any
-"complete" claim.
-
+The row-by-row detail beneath the matrix has been reconciled against this
+addendum. Where the earlier session claimed `INTEGRATED` for something whose
+`HAS[]` flag is actually False (OpenDevin, vulnerability-analysis), the row
+now reads `SOURCE-ONLY (RUNTIME BLOCKED)` with the specific reason.
 
 ---
 
 ## Status Legend
-- **INTEGRATED** — Source inspected, capabilities connected to central runtime, tests exist
-- **PARTIAL** — Source available and some capabilities connected, not fully integrated
-- **REFERENCE** — Source available, inspected, but not directly connected to runtime (used as reference/docs)
-- **UNAVAILABLE** — Could not be fetched; recorded with reason
+- **INTEGRATED (VERIFIED)** — Source inspected, imports resolve at runtime,
+  `HAS[]` flag is True, capabilities reachable from a tool call *this session*.
+- **PARTIAL** — Source available; some capabilities wired (usually via TS
+  adapter or a specific helper module); not a full runtime import path.
+- **SOURCE-ONLY (RUNTIME BLOCKED)** — Source present in `repos/`, adapter
+  code may exist, but runtime import fails because of a heavy external
+  dependency (SDK / GPU stack / etc.). Documented with the blocker.
+- **REFERENCE** — Source preserved on disk, used only as design/pattern
+  reference. No runtime path, by design (usually because of license terms
+  or scope like offensive-security tooling).
 
 ---
 
 ## Repository Matrix
 
-| # | Repository | Canonical URL | Availability | License | Source Preserved | Integration Status | Entry Point |
-|---|------------|---------------|-------------|---------|-----------------|-------------------|-------------|
-| 1 | AIA | github.com/kevinhamza/AIA | ✓ Available | MIT | ✓ repos/aia/ | INTEGRATED | `modules/integrations.py` (AIAAutomation) |
-| 2 | self-operating-computer | github.com/OthersideAI/self-operating-computer | ✓ Available | MIT | ✓ repos/soc/ | INTEGRATED | `SOCOperatingSystem` via integrations.py |
-| 3 | Devin-1 | github.com/kevinhamza/Devin | ✓ Available | MIT | ✓ repos/devin1/ | PARTIAL | Python modules bridged |
-| 4 | Devin-2.0 | github.com/kevinhamza/Devin-2.0 | ✓ Available | MIT | ✓ repos/devin2/ | PARTIAL | Python modules bridged |
-| 5 | Devin-3.0 | github.com/kevinhamza/Devin-3.0 | ✓ Available | MIT | ✓ repos/devin3/ | PARTIAL | Python modules bridged |
-| 6 | OpenDevin | github.com/OpenDevin/OpenDevin | ✓ Available | MIT | ✓ repos/opendevin/ | PARTIAL | `CanvasTool` via integrations.py |
-| 7 | cheetahclaws | github.com/OoriData/cheetahclaws | ✓ Available | Apache-2.0 | ✓ repos/cheetah/ | PARTIAL | `CheetahAgent` via integrations.py; security classifier in executor.ts |
-| 8 | Jarvis (Concept-Bytes) | github.com/Concept-Bytes/Jarvis | ✓ Available | MIT | ✓ repos/jarvis/ | INTEGRATED | `src/integrations/jarvis_integration.ts`; `jarvis_command` tool |
-| 9 | JARVIS-microsoft | github.com/microsoft/JARVIS | ✓ Available | MIT | ✓ repos/jarvis_ms/ | PARTIAL | `HuggingTool` via integrations.py |
-| 10 | gemini-cli | github.com/google-gemini/gemini-cli | ✓ Available | Apache-2.0 | ✓ repos/gemini_cli/ | INTEGRATED | `src/integrations/gemini_cli_integration.ts`; `gemini_generate` tool |
-| 11 | claude-code | (source collection) | ✓ Available | Proprietary | ✓ repos/claude_code/ | REFERENCE | Architecture patterns used in src/cli.ts, terminal.ts |
-| 12 | shannon | (integrated) | ✓ Available | MIT | ✓ repos/shannon/ | INTEGRATED | `src/integrations/shannon_integration.ts`; OSINT/network tools |
-| 13 | hexstrike-ai | (integrated) | ✓ Available | MIT | ✓ repos/security/ | PARTIAL | Security tools in modules/cheetah_security.py |
-| 14 | openclaw | (integrated) | ✓ Available | MIT | ✓ repos/openclaw/ | PARTIAL | Agent framework patterns |
-| 15 | Holomat | (integrated) | ✓ Available | MIT | ✓ repos/holomat/ | REFERENCE | XR modules in modules/holomat_*.py |
-| 16 | vulnerability-analysis | (integrated) | ✓ Available | MIT | ✓ repos/security/ | INTEGRATED | `src/security/vulnerability_scanner.ts`; CVE pipeline |
-| 17 | airgorah | (integrated) | ✓ Available | MIT | ✓ repos/security/ | PARTIAL | WiFi audit tools |
-| 18 | Responder | github.com/SpiderLabs/Responder | ✓ Available | LGPL-3.0 | ✓ repos/security/ | REFERENCE | Not auto-exposed (requires auth) |
-| 19 | nishang | github.com/samratashok/nishang | ✓ Available | BSD | ✓ repos/security/ | REFERENCE | PowerShell scripts preserved; not auto-exposed |
-| 20 | PowerTools | (integrated) | ✓ Available | MIT | ✓ repos/tools/ | PARTIAL | Utility tools |
-| 21 | MoltBots | (integrated) | ✓ Available | MIT | ✓ repos/tools/ | PARTIAL | Bot integration |
-| 22 | hackability | (integrated) | ✓ Available | MIT | ✓ repos/security/ | PARTIAL | Security assessment functions |
+| # | Repository | Canonical URL | License | Source at | Runtime Status | Runtime Entry Point |
+|---|------------|---------------|---------|-----------|----------------|---------------------|
+| 1 | AIA | github.com/kevinhamza/AIA | MIT | repos/aia/ | **INTEGRATED (VERIFIED)** — `HAS['aia_automation']=True` | `modules/integrations.py::AIAAutomation` |
+| 2 | self-operating-computer | github.com/OthersideAI/self-operating-computer | MIT | repos/soc/ | **INTEGRATED (VERIFIED)** — `HAS['soc']=True` | `modules/integrations.py::soc_os.execute_action` |
+| 3 | Devin-1 | github.com/kevinhamza/Devin | GPL | repos/devin1/ | REFERENCE — source preserved, no `HAS[]` probe wired; used as pattern reference | (none — historical) |
+| 4 | Devin-2.0 | github.com/kevinhamza/Devin-2.0 | MIT | repos/devin2/ | REFERENCE — same as above | (none — historical) |
+| 5 | Devin-3.0 | github.com/kevinhamza/Devin-3.0 | MIT | repos/devin3/ | REFERENCE — same as above | (none — historical) |
+| 6 | OpenDevin (OpenHands) | github.com/All-Hands-AI/OpenHands | MIT | repos/opendevin/ | **SOURCE-ONLY (RUNTIME BLOCKED)** — `HAS['opendevin']=False`, `HAS['opendevin_source']=True`. Blocker: canvas tool needs the `openhands` SDK (heavyweight) which is not installed. | `repos/opendevin/tools/canvas_ui_tool.py` (source only) |
+| 7 | cheetahclaws | github.com/SafeRL-Lab/cheetahclaws | Apache-2.0 | repos/cheetah/ | **INTEGRATED (VERIFIED)** — `HAS['cheetah']=True` this session after fix (previously imported non-existent `Agent`; now imports real `run` + `AgentState`) | `modules/integrations.py::cheetah_run`, `CheetahAgentState` |
+| 8 | Jarvis (Concept-Bytes) | github.com/Concept-Bytes/Jarvis | not declared upstream | repos/jarvis/ | **INTEGRATED (VERIFIED)** — `HAS['jarvis']=True` | `src/integrations/jarvis_integration.ts`; `modules/integrations.py::jarvis_*` |
+| 9 | JARVIS-microsoft (HuggingGPT) | github.com/microsoft/JARVIS | MIT | repos/jarvis_ms/ | **INTEGRATED (VERIFIED)** — `HAS['jarvis_ms']=True` | `modules/integrations.py::jarvis_ms_util` |
+| 10 | gemini-cli | github.com/google-gemini/gemini-cli | Apache-2.0 | repos/gemini_cli/ | **INTEGRATED (VERIFIED)** — `HAS['google_genai']=True` via `google-genai` SDK; TS adapter also runs | `src/integrations/gemini_cli_integration.ts` |
+| 11 | claude-code (Anthropic) | github.com/anthropics/claude-code | Proprietary (Anthropic Commercial ToS) | repos/claude_code/ | REFERENCE — pattern-only, no code copied. Cannot be integrated as a runtime dep — license would forbid redistribution. | (none) |
+| 12 | shannon | github.com/KeygraphHQ/shannon | **AGPL-3.0** | repos/shannon/ | REFERENCE — deliberately kept out of runtime import path due to AGPL copyleft. TS adapters cite architectural patterns only. | (none — TS adapter uses re-implemented patterns) |
+| 13 | hexstrike-ai | github.com/0x4m4/hexstrike-ai | MIT | repos/security/hexstrike/ | PARTIAL — source preserved; no dedicated `HAS[]` flag; some helpers referenced from `modules/cheetah_security.py` | `modules/cheetah_security.py` (partial) |
+| 14 | openclaw | github.com/openclaw/openclaw | MIT | repos/openclaw/ | PARTIAL — source preserved; pattern reference for the messaging-channel design | (none — patterns only) |
+| 15 | Holomat | github.com/Concept-Bytes/Holomat | not declared upstream | repos/holomat/ | REFERENCE — XR patterns adapted into `modules/holomat_*.py` but no live import test | `modules/holomat_bridge.py` (partial) |
+| 16 | vulnerability-analysis | github.com/kevinhamza/vulnerability-analysis | Apache-2.0 | repos/security/vuln_analysis/ | **SOURCE-ONLY (RUNTIME BLOCKED)** — `HAS['vuln_analysis']=False`, `HAS['vuln_analysis_source']=True`. Blocker: needs NVIDIA `morpheus` (GPU-only). | (none at runtime) |
+| 17 | airgorah | github.com/martin-olivier/airgorah | MIT | repos/security/airgorah/ | PARTIAL — source preserved; runtime shell-out to the airgorah binary (which must be installed separately) | shell-out via `execute_shell` when authorized |
+| 18 | Responder | github.com/kevinhamza/Responder | GPL | repos/security/responder/ | **REFERENCE (offensive, not auto-exposed)** — spec §9: source preserved, deliberately NOT wired into TOOL_REGISTRY so the LLM can't invoke it. | (none — spec §9) |
+| 19 | nishang | github.com/samratashok/nishang | BSD | external/nishang/ (submodule stub) | **REFERENCE (offensive, not auto-exposed)** — spec §9 | (none — spec §9) |
+| 20 | PowerTools | github.com/kevinhamza/PowerTools | BSD-3-Clause | repos/tools/powertools/ | PARTIAL — source preserved; specific helpers referenced but no HAS flag | (partial) |
+| 21 | MoltBots | github.com/kevinhamza/moltbots.github.io | MIT | repos/tools/moltbots/ | PARTIAL — source preserved | (partial) |
+| 22 | hackability | github.com/PortSwigger/hackability | not declared upstream | repos/security/hackability/ | REFERENCE — security-research reference; not runtime-wired | (none) |
+
+### Also wired this session but not in the original 22-row list
+
+| Repository | License | Runtime Status | Runtime Entry Point |
+|---|---|---|---|
+| Hugging Face Inference (Router API) | Free-tier / PRO | **INTEGRATED (VERIFIED)** — Python `modules/hf_provider.py`, TS `src/providers/huggingface.ts`. Native OpenAI-compat tool_calls + `<tool_use>` fallback + Qwen2.5-VL vision tier. Live-tested this session. | `modules.hf_provider.chat`; `HuggingFaceProvider` |
 
 ---
 

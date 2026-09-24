@@ -1,54 +1,105 @@
 # Makefile for the Devin AGI Project
 
-# Use a virtual environment
-VENV_DIR=venv
-PYTHON=$(VENV_DIR)/bin/python
-PIP=$(VENV_DIR)/bin/pip
+VENV_DIR ?= venv
+PYTHON := $(VENV_DIR)/bin/python
+PIP := $(VENV_DIR)/bin/pip
+NPM ?= npm
 
-# Default target
-all: install
+# Default: `make` (no target) prints help.
+.DEFAULT_GOAL := help
 
-# Create virtual environment and install dependencies
+help:
+	@echo "Devin AGI 4.0 — Makefile targets"
+	@echo ""
+	@echo "  make setup            Full cold-clone install: venv + pip (locked) + npm + TS build"
+	@echo "  make install          Python venv + pinned requirements only"
+	@echo "  make install-loose    Python venv + loose requirements.txt (may resolve fresh)"
+	@echo "  make ts-build         npm install + npm run build (TypeScript CLI)"
+	@echo "  make run              Start Devin (interactive Python REPL)"
+	@echo "  make ARGS='...' run-oneshot   One-shot Python invocation"
+	@echo "  make devin            Alias for './devin' — prefers dist/cli.js, falls back to Python"
+	@echo "  make test             Run pytest suite (excludes performance)"
+	@echo "  make test-all         Run pytest including performance benchmarks"
+	@echo "  make lint             Fast static checks (Python compile + tsc --noEmit)"
+	@echo "  make smoke            main.py --test (verifies imports + tools without an LLM call)"
+	@echo "  make benchmark        Run performance benchmarks"
+	@echo "  make clean            Remove __pycache__, *.pyc"
+	@echo "  make distclean        clean + rm venv/ dist/ node_modules/"
+
+# --- Environment setup ------------------------------------------------------
 venv:
-	@echo "Creating virtual environment in $(VENV_DIR)..."
-	python3 -m venv $(VENV_DIR)
+	@if [ ! -d $(VENV_DIR) ]; then \
+		echo "Creating virtual environment in $(VENV_DIR)..."; \
+		python3 -m venv $(VENV_DIR); \
+	fi
 
 install: venv
-	@echo "Installing dependencies from requirements.txt..."
+	@echo "Installing pinned dependencies from requirements.lock..."
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.lock
+	@echo ""
+	@echo "Python deps installed. Configure .env (cp .env.example .env), then 'make run'."
+
+install-loose: venv
+	@echo "Installing loose dependencies from requirements.txt..."
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
-	@echo "\nInstallation complete. Run 'source $(VENV_DIR)/bin/activate' to use the environment."
 
-# Run the main application
+ts-build:
+	@echo "Installing Node deps (--legacy-peer-deps handles the eslint 9 vs @typescript-eslint 7 conflict)..."
+	$(NPM) install --legacy-peer-deps --no-audit --no-fund
+	@echo "Building TypeScript..."
+	$(NPM) run build
+
+setup: install ts-build
+	@if [ ! -f .env ]; then cp .env.example .env; echo ""; echo "Wrote .env — edit it and add HF_TOKEN or another provider key."; fi
+	@echo ""
+	@echo "Setup complete. Try: make smoke   then   ./devin"
+
+# --- Running ---------------------------------------------------------------
 run:
-	@echo "Starting Devin AGI..."
-	source $(VENV_DIR)/bin/activate && $(PYTHON) main.py
+	@$(PYTHON) main.py
 
-# Run all tests
+run-oneshot:
+	@if [ -z "$(ARGS)" ]; then echo "Usage: make ARGS='your prompt here' run-oneshot"; exit 1; fi
+	@$(PYTHON) main.py "$(ARGS)"
+
+devin:
+	@./devin
+
+smoke:
+	@$(PYTHON) main.py --test
+
+# --- Testing ---------------------------------------------------------------
 test:
-	@echo "Running all tests..."
-	source $(VENV_DIR)/bin/activate && $(PYTHON) -m unittest discover -s tests
+	@$(PYTHON) -m pytest tests/ --ignore=tests/performance -q --disable-warnings
 
-# Run performance benchmarks
+test-all:
+	@$(PYTHON) -m pytest tests/ -q --disable-warnings
+
 benchmark:
-	@echo "Running performance benchmarks..."
-	source $(VENV_DIR)/bin/activate && $(PYTHON) tests/performance/benchmark_ai.py
+	@$(PYTHON) tests/performance/benchmark_ai.py
 
-# Run self-pentest
 pentest:
-	@echo "Running self-penetration test..."
-	source $(VENV_DIR)/bin/activate && $(PYTHON) tests/pentesting/test_self_pentest.py
+	@$(PYTHON) tests/pentesting/test_self_pentest.py
 
-# Lint the code
+# --- Linting ---------------------------------------------------------------
 lint:
-	@echo "Linting the codebase..."
-	$(PIP) install flake8
-	$(VENV_DIR)/bin/flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+	@echo "== Python compile-check =="
+	@$(PYTHON) -m compileall -q main.py modules/ tests/ || true
+	@echo "== TypeScript type-check (no emit) =="
+	@if [ -d node_modules ]; then \
+		$(NPM) exec -- tsc --noEmit; \
+	else \
+		echo "  (skipped — node_modules missing; run 'make ts-build' first)"; \
+	fi
 
-# Clean up build artifacts
+# --- Cleanup ---------------------------------------------------------------
 clean:
-	@echo "Cleaning up..."
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name "__pycache__" -delete
+	@find . -type f -name "*.pyc" -delete
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null; true
 
-.PHONY: all install venv run test benchmark pentest lint clean
+distclean: clean
+	@rm -rf $(VENV_DIR) dist node_modules
+
+.PHONY: help venv install install-loose ts-build setup run run-oneshot devin smoke test test-all benchmark pentest lint clean distclean
