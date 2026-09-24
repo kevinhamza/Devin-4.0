@@ -206,13 +206,17 @@ Every task follows:
 OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY → CONTINUE / RECOVER / COMPLETE
 ```
 
-1. **OBSERVE** — take a screenshot or read files to see current state
-2. **UNDERSTAND** — analyze with AI vision what is on screen
-3. **PLAN** — think() through the approach step by step
-4. **ACT** — execute: mouse click, keyboard type, shell command, etc.
+1. **OBSERVE** — `observe_and_plan(goal)` takes a screenshot and analyzes the screen with AI to understand current state before acting
+2. **UNDERSTAND** — AI vision identifies what is on screen, what is in focus, what to do first
+3. **PLAN** — `think_and_plan(task)` produces a numbered step-by-step execution plan
+4. **ACT** — execute: mouse click, keyboard type, shell command, browser navigation, etc.
 5. **VERIFY** — take screenshot again, check command output, confirm result
 6. **LOOP** — continue to next step or recover from failure
 7. **COMPLETE** — call `task_complete` only when outcome is verified
+
+**Smart task vs conversation detection** (`_is_task_mode`): action-verb queries (open, run, search, install…) engage the full agentic loop with persistence. Questions get answered directly without unnecessary tool calls.
+
+**Persistence**: when the AI responds without tool calls mid-task, Devin automatically injects a "continue executing" nudge (up to 3×) before accepting the response as complete.
 
 The agent never gives up. Errors are information. If one approach fails, it switches strategy.
 
@@ -284,14 +288,14 @@ The agent never gives up. Errors are information. If one approach fails, it swit
 
 ---
 
-## Tools (103)
+## Tools (135)
 
 ```
 /tools               — list all tools
 /tools vision        — list tools in category
 ```
 
-Categories:
+135 tools total across all categories. Categories:
 - **reasoning**: think
 - **web**: web_search, web_fetch, open_browser, http_request, parse_json
 - **shell**: execute_shell, execute_python, list_processes, kill_process, sleep, run_script, install_package
@@ -340,6 +344,12 @@ Categories:
 | `/compact` | Compress conversation history to save context window |
 | `/debug` | Show context size, provider, diagnostics |
 | `/audit [target]` | Run a system or security audit |
+| `/think <task>` | Plan a task step-by-step (shows plan, asks to execute) |
+| `/workflow <task>` | Execute as a structured multi-step workflow |
+| `/pentest <target>` | Run authorized penetration test on target |
+| `/lab [setup]` | Show/setup security lab environment and tools |
+| `/os` | Show OS, platform, display, and tool availability |
+| `/run <cmd>` | Run a shell command directly (alias for /shell) |
 | `/new` | Start fresh conversation |
 | `/clear` | Clear screen |
 | `/exit` / `/quit` | Exit |
@@ -451,30 +461,33 @@ Devin, use run_devin_module to call the voice module's speak function with "hell
 ## Testing
 
 ```bash
-# Syntax check
-python3 -c "import ast; ast.parse(open('agent.py').read()); print('OK')"
+# Core test suite (38 tests, no API key required)
+python3 tests/test_core.py
 
-# Import test
-python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_location('a', 'agent.py'); m = importlib.util.module_from_spec(spec); sys.modules['a'] = m; spec.loader.exec_module(m); print(f'{len(m.TOOLS)} tools loaded')"
+# Syntax check only
+python3 -m py_compile agent.py && echo "OK"
 
 # One-shot smoke test (requires API key)
 ./devin "what is 2+2"
 
-# Shell tool test
-./devin "run: echo hello world"
-
 # Full workflow test (requires display + API key)
 ./devin "take a screenshot and describe what you see"
+
+# HuggingFace free-tier end-to-end
+HF_TOKEN=your_token ./devin --provider huggingface "list files in this directory"
 ```
 
 Test categories and status:
-- **Import/startup**: AUTOMATED VERIFIED
-- **Tool registry**: AUTOMATED VERIFIED (135 tools load cleanly)
-- **Shell/file operations**: AUTOMATED VERIFIED
-- **Web search/fetch**: AUTOMATED VERIFIED (requires network)
+- **Syntax / import**: AUTOMATED VERIFIED (38 tests pass, `tests/test_core.py`)
+- **Tool registry (135 tools)**: AUTOMATED VERIFIED
+- **Shell/file/code execution**: AUTOMATED VERIFIED
+- **Memory (SQLite)**: AUTOMATED VERIFIED
+- **Provider/model selection**: AUTOMATED VERIFIED
+- **Task mode detection**: AUTOMATED VERIFIED
+- **Context management**: AUTOMATED VERIFIED
 - **Model API connectivity**: BLOCKED BY EXTERNAL ENVIRONMENT (requires valid API key)
-- **GUI/screenshot**: MANUAL VERIFICATION REQUIRED (requires display)
-- **Voice**: MANUAL VERIFICATION REQUIRED (requires audio hardware)
+- **GUI / mouse / keyboard**: MANUAL VERIFICATION REQUIRED (requires display)
+- **Voice STT/TTS**: MANUAL VERIFICATION REQUIRED (requires audio hardware)
 - **Browser automation**: MANUAL VERIFICATION REQUIRED (requires display + browser)
 
 ---
