@@ -142,7 +142,7 @@ try:
     _pag.FAILSAFE = True
     _pag.PAUSE = 0.05
     _HAS_PAG = True
-except Exception:
+except BaseException:
     _HAS_PAG = False
 
 def _cmd_exists(cmd: str) -> bool:
@@ -161,14 +161,14 @@ _voice_mod = None
 try:
     import importlib as _il
     _voice_mod = _il.import_module('voice')
-except Exception:
+except BaseException:
     pass
 
 # Load os_automation module (enhanced OS control)
 _os_auto_mod = None
 try:
     _os_auto_mod = _il.import_module('os_automation')
-except Exception:
+except BaseException:
     pass
 
 # Load persistent_memory module (enhanced memory with categories/tags)
@@ -176,21 +176,21 @@ _pmem_mod = None
 try:
     _pmem_mod = _il.import_module('persistent_memory')
     _pmem = _pmem_mod.PersistentMemory() if hasattr(_pmem_mod, 'PersistentMemory') else None
-except Exception:
+except BaseException:
     _pmem = None
 
 # Load messaging_gateway module (Telegram/Discord/Slack)
 _msg_mod = None
 try:
     _msg_mod = _il.import_module('messaging_gateway')
-except Exception:
+except BaseException:
     pass
 
 # Load integration_hub (all 24 external repos)
 _hub_mod = None
 try:
     _hub_mod = _il.import_module('integration_hub')
-except Exception:
+except BaseException:
     pass
 
 # Load cheetahclaws_bridge (token tracking, compaction)
@@ -198,7 +198,7 @@ _cc_bridge = None
 try:
     _ccmod = _il.import_module('cheetahclaws_bridge')
     _cc_bridge = _ccmod.CheetahClawsBridge() if hasattr(_ccmod, 'CheetahClawsBridge') else None
-except Exception:
+except BaseException:
     pass
 
 # Load browser automation (Selenium/Playwright)
@@ -206,70 +206,70 @@ _browser_mod = None
 _browser_instance = None
 try:
     _browser_mod = _il.import_module('browser')
-except Exception:
+except BaseException:
     pass
 
 # Load system monitor
 _sysmon_mod = None
 try:
     _sysmon_mod = _il.import_module('system_monitor')
-except Exception:
+except BaseException:
     pass
 
 # Load code_execution module
 _code_exec_mod = None
 try:
     _code_exec_mod = _il.import_module('code_execution')
-except Exception:
+except BaseException:
     pass
 
 # Load scheduler
 _scheduler_mod = None
 try:
     _scheduler_mod = _il.import_module('scheduler')
-except Exception:
+except BaseException:
     pass
 
 # Load encryption tools
 _crypto_mod = None
 try:
     _crypto_mod = _il.import_module('encryption_tools')
-except Exception:
+except BaseException:
     pass
 
 # Load cloud integration
 _cloud_mod = None
 try:
     _cloud_mod = _il.import_module('cloud_integration_module')
-except Exception:
+except BaseException:
     pass
 
 # Load Jarvis tools
 _jarvis_tools_mod = None
 try:
     _jarvis_tools_mod = _il.import_module('jarvis_tools')
-except Exception:
+except BaseException:
     pass
 
 # Load cheetah providers (multi-model streaming)
 _cheetah_providers_mod = None
 try:
     _cheetah_providers_mod = _il.import_module('cheetah_providers')
-except Exception:
+except BaseException:
     pass
 
 # Load Ollama module (local LLM)
 _ollama_mod = None
 try:
     _ollama_mod = _il.import_module('ollama_module')
-except Exception:
+except BaseException:
     pass
 
 # Load social media API
 _social_mod = None
 try:
     _social_mod = _il.import_module('social_media_api')
-except Exception:
+except BaseException:
     pass
 
 # Count all available modules
@@ -1040,6 +1040,10 @@ def tool_remember(fact: str, tags: str = '') -> str:
     return _remember(fact, tags)
 
 def tool_recall(query: str = '') -> str:
+    return _recall(query)
+
+def tool_list_memories(query: str = '') -> str:
+    """List stored memories, optionally filtered by query."""
     return _recall(query)
 
 # ── System info ───────────────────────────────────────────────────────────────
@@ -2445,6 +2449,28 @@ TOOLS: Dict[str, Dict] = {
         "required": [],
         "category": "system",
     },
+    # ── Convenience aliases ────────────────────────────────────────────────
+    "shell": {
+        "fn": tool_execute_shell,
+        "desc": "Alias for execute_shell — run a shell command",
+        "params": {"command": {"type": "string", "description": "Shell command to run"}},
+        "required": ["command"],
+        "category": "shell",
+    },
+    "take_screenshot": {
+        "fn": tool_screenshot,
+        "desc": "Alias for screenshot — capture the screen",
+        "params": {"path": {"type": "string", "description": "Optional save path"}},
+        "required": [],
+        "category": "vision",
+    },
+    "list_memories": {
+        "fn": tool_list_memories,
+        "desc": "List stored memories, optionally filtered by query",
+        "params": {"query": {"type": "string", "description": "Optional filter query"}},
+        "required": [],
+        "category": "memory",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -2517,6 +2543,7 @@ class GeminiProvider:
         'gemini-1.5-flash',
         'gemini-1.5-pro',
     ]
+    MODELS = FALLBACK_MODELS  # alias for external access
 
     def __init__(self, api_key: str, model: str = 'gemini-3.6-flash'):
         self.api_key = api_key
@@ -3098,6 +3125,38 @@ def _print_tool_call(name: str, args: dict):
     }.get(name, '▶')
     print(f"\n  {blue(icon)} {cyan(name)}({_fmt_args(args)})", flush=True)
 
+def _estimate_chars(msgs: list) -> int:
+    """Estimate total character count of a message list."""
+    total = 0
+    for m in msgs:
+        c = m.get('content', '')
+        if isinstance(c, list):
+            c = ' '.join(str(b.get('text', '') or b.get('content', '')) for b in c)
+        total += len(str(c))
+    return total
+
+
+def _compact_messages(msgs: list) -> list:
+    """Keep last 4 message exchanges; summarise older ones into a single context block."""
+    if len(msgs) <= 4:
+        return msgs
+    old = msgs[:-4]
+    recent = msgs[-4:]
+    summary_parts = []
+    for m in old:
+        role = m.get('role', '?')
+        c = m.get('content', '')
+        if isinstance(c, list):
+            c = ' '.join(str(b.get('text', '') or b.get('content', '')) for b in c)
+        preview = str(c)[:200].replace('\n', ' ')
+        summary_parts.append(f"[{role}]: {preview}")
+    summary = "EARLIER CONTEXT (summarised):\n" + '\n'.join(summary_parts[-20:])
+    return [
+        {"role": "user", "content": summary},
+        {"role": "assistant", "content": "Understood, continuing."},
+    ] + recent
+
+
 def run_agent(task: str, provider, max_steps: int = 100,
               quiet: bool = False, conv_messages: Optional[List] = None) -> str:
     """
@@ -3116,36 +3175,8 @@ def run_agent(task: str, provider, max_steps: int = 100,
     step = 0
     consecutive_errors = 0
     MAX_ERRORS = 5  # retry up to this many consecutive provider errors
-    # Context management: estimate token count and warn when approaching limits
-    _CTX_WARN_CHARS = 60_000   # ~15k tokens — start warning
+    _CTX_WARN_CHARS = 60_000    # ~15k tokens — start warning
     _CTX_COMPACT_CHARS = 100_000  # ~25k tokens — auto-compact older messages
-
-    def _estimate_chars(msgs: list) -> int:
-        total = 0
-        for m in msgs:
-            c = m.get('content', '')
-            if isinstance(c, list):
-                c = ' '.join(str(b.get('text','') or b.get('content','')) for b in c)
-            total += len(str(c))
-        return total
-
-    def _compact_messages(msgs: list) -> list:
-        """Keep system-level context + last N exchanges to avoid context overflow."""
-        if len(msgs) <= 4:
-            return msgs
-        # Summarise older messages into a single context block
-        old = msgs[:-4]
-        recent = msgs[-4:]
-        summary_parts = []
-        for m in old:
-            role = m.get('role', '?')
-            c = m.get('content', '')
-            if isinstance(c, list):
-                c = ' '.join(str(b.get('text','') or b.get('content','')) for b in c)
-            preview = str(c)[:200].replace('\n', ' ')
-            summary_parts.append(f"[{role}]: {preview}")
-        summary = "EARLIER CONTEXT (summarised):\n" + '\n'.join(summary_parts[-20:])
-        return [{"role": "user", "content": summary}, {"role": "assistant", "content": "Understood, continuing."}] + recent
 
     if not quiet:
         print()
