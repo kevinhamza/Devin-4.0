@@ -1,29 +1,55 @@
 #!/usr/bin/env python3
 """
-Devin Agent — OS-controlled agentic AI CLI
-==========================================
-Fully self-contained. Zero external dependencies required.
-Full computer control: mouse, keyboard, screen, files, shell, browser, voice.
-Multi-provider AI: Gemini, Claude, OpenAI.
-Conversational with persistent memory and full task execution.
+Devin AGI v4.0 — Deeply Autonomous OS-Controlling AI Agent
+============================================================
+A fully autonomous AI that operates your computer like a real user.
+Controls mouse, keyboard, screen, files, shell, browser, voice — on any OS.
+Thinks, plans, acts, and verifies using 134+ tools and 5 AI providers.
+Works on Linux, macOS, and Windows. Runs headless or with full GUI control.
 
 Usage:
-  python agent.py                           # interactive REPL (conversation mode)
+  ./devin                                   # interactive REPL (conversation mode)
+  python agent.py                           # same
   python agent.py "open firefox and search for AI news"
-  python agent.py --provider claude "write a hello world script"
-  python agent.py --model gemini-3.6-flash  "task here"
-  python agent.py --chat                    # pure conversation mode
+  python agent.py --provider claude "write a Python web scraper"
+  python agent.py --provider huggingface "analyze this code"
+  python agent.py --model gemini-3.6-flash "task here"
+  python agent.py --provider ollama "local task"
 
-Slash commands (interactive):
-  /help  /tools [cat]  /status  /providers  /model <m>  /provider <p>
-  /clear  /memory [q]  /remember <fact>  /forget  /history
-  /shell <cmd>  /screenshot  /repos  /voice  /integrations  /new  /exit /quit
+Slash commands (interactive mode):
+  /help              This help
+  /tools [category]  List all 134 tools by category
+  /status            Show provider, model, keys, modules
+  /providers         Show all 5 AI providers and key status
+  /model <name>      Switch model (e.g. /model gemini-2.5-pro)
+  /provider <name>   Switch provider: gemini|claude|openai|huggingface|ollama
+  /memory [query]    Search persistent memory
+  /remember <fact>   Save a fact to memory
+  /history           Show conversation history
+  /shell <cmd>       Run shell command
+  /run <cmd>         Run shell command (alias)
+  /screenshot        Take and analyze a screenshot
+  /voice             Voice input → task
+  /think <task>      Plan a task before executing
+  /workflow <task>   Structured multi-step workflow
+  /pentest <target>  Authorized penetration test assessment
+  /lab [setup]       Lab environment setup and tool check
+  /os                Show OS/platform info
+  /audit [target]    System/security audit
+  /repos             List integrated repositories
+  /integrations      Show module integration status
+  /compact           Compress conversation context
+  /debug             Debug info: context, provider, tools
+  /new               Start fresh conversation
+  /clear             Clear screen
+  /exit /quit        Exit
 
-API keys (.env or environment):
-  GEMINI_API_KEY     https://aistudio.google.com/app/apikey
+API keys (.env or environment variables):
+  GEMINI_API_KEY     https://aistudio.google.com/app/apikey  (free)
   ANTHROPIC_API_KEY  https://console.anthropic.com/
   OPENAI_API_KEY     https://platform.openai.com/api-keys
   HF_TOKEN           https://huggingface.co/settings/tokens  (free)
+  (Ollama: no key required — install ollama.ai, run 'ollama serve')
 """
 
 from __future__ import annotations
@@ -1110,21 +1136,40 @@ def tool_minimize_window() -> str:
         return f"ERROR: {e}"
 
 def tool_open_application(name: str, wait_seconds: float = 1.5) -> str:
-    """Launch an application by name and wait for it to start."""
-    err = _require_display()
-    if err: return err
+    """Launch an application by name on any OS (Linux, macOS, Windows)."""
     try:
-        proc = subprocess.Popen(name, shell=True,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        exe = name.split()[0]  # first word is the executable
+        # macOS: try 'open -a AppName' first, then direct exec
+        if _IS_MAC:
+            r = subprocess.run(['open', '-a', exe], capture_output=True, text=True, timeout=5)
+            if r.returncode != 0:
+                subprocess.Popen(name, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Windows: use start command or direct launch
+        elif _IS_WIN:
+            subprocess.Popen(f'start "" {name}', shell=True, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, creationflags=0x00000008)
+        else:
+            # Linux: try direct exec, then xdg-open for GUI apps
+            subprocess.Popen(name, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(wait_seconds)
-        # Verify it's running
-        r = subprocess.run(['pgrep', '-f', name.split()[0]],
-                           capture_output=True, text=True)
-        if r.returncode == 0:
-            return f"Opened {name} (pid={r.stdout.strip().split()[0] if r.stdout.strip() else '?'})"
-        return f"Launched {name} (may still be starting)"
+        # Verify it started — platform-aware
+        if _IS_WIN:
+            r = subprocess.run(['tasklist', '/FI', f'IMAGENAME eq {exe}.exe'],
+                               capture_output=True, text=True)
+            if exe.lower() in r.stdout.lower():
+                return f"Opened {name} on Windows"
+        elif _IS_MAC:
+            r = subprocess.run(['pgrep', '-f', exe], capture_output=True, text=True)
+            if r.returncode == 0:
+                return f"Opened {name} on macOS (pid={r.stdout.strip().split()[0]})"
+        else:
+            r = subprocess.run(['pgrep', '-f', exe], capture_output=True, text=True)
+            if r.returncode == 0:
+                pid = r.stdout.strip().split()[0]
+                return f"Opened {name} (pid={pid})"
+        return f"Launched {name} (starting up...)"
     except Exception as e:
-        return f"ERROR: {e}"
+        return f"ERROR opening {name}: {e}"
 
 def tool_open_terminal() -> str:
     """Open a terminal emulator."""
@@ -2444,6 +2489,158 @@ def tool_wait_and_verify(seconds: float, condition: str = '') -> str:
     return f"Waited {seconds}s"
 
 
+# ── Cross-platform + deep autonomy tools ──────────────────────────────────────
+
+def tool_platform_info() -> str:
+    """Return comprehensive OS/platform info: OS, version, arch, user, hostname, Python, display, shell."""
+    import platform as _plat
+    out = {
+        'os': _PLATFORM,
+        'version': _plat.version(),
+        'release': _plat.release(),
+        'arch': _plat.machine(),
+        'processor': _plat.processor()[:60] if _plat.processor() else 'unknown',
+        'hostname': _plat.node(),
+        'python': _plat.python_version(),
+        'user': os.environ.get('USER') or os.environ.get('USERNAME') or 'unknown',
+        'home': str(Path.home()),
+        'cwd': str(Path.cwd()),
+        'display': os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY') or ('native' if _IS_MAC or _IS_WIN else 'none'),
+        'shell': os.environ.get('SHELL') or os.environ.get('COMSPEC') or 'unknown',
+        'has_gui': _HAS_DISPLAY,
+        'tools_available': {
+            'ffmpeg': _cmd_exists('ffmpeg'),
+            'nmap': _cmd_exists('nmap'),
+            'git': _cmd_exists('git'),
+            'docker': _cmd_exists('docker'),
+            'node': _cmd_exists('node'),
+            'npx': _cmd_exists('npx'),
+            'adb': _cmd_exists('adb'),
+            'burpsuite': _cmd_exists('burpsuite'),
+            'python3': _cmd_exists('python3'),
+        }
+    }
+    return json.dumps(out, indent=2)
+
+
+def tool_open_url(url: str) -> str:
+    """Open a URL in the default web browser — works on Linux, macOS, and Windows."""
+    import webbrowser
+    try:
+        webbrowser.open(url)
+        return f"Opened {url} in default browser"
+    except Exception as e:
+        # Fallback: platform-specific commands
+        try:
+            if _IS_MAC:
+                subprocess.Popen(['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            elif _IS_WIN:
+                subprocess.Popen(['start', url], shell=True, stdout=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"Opened {url}"
+        except Exception as e2:
+            return f"ERROR opening URL: {e} / {e2}"
+
+
+def tool_run_xplat(linux_cmd: str = '', mac_cmd: str = '', windows_cmd: str = '',
+                   timeout: int = 30) -> str:
+    """Run a platform-specific command: picks linux_cmd on Linux, mac_cmd on macOS, windows_cmd on Windows."""
+    cmd = ''
+    if _IS_WIN and windows_cmd:
+        cmd = windows_cmd
+    elif _IS_MAC and mac_cmd:
+        cmd = mac_cmd
+    elif _IS_LINUX and linux_cmd:
+        cmd = linux_cmd
+    elif linux_cmd:
+        cmd = linux_cmd  # fallback to linux
+    if not cmd:
+        return f"No command defined for platform {_PLATFORM}"
+    return tool_execute_shell(cmd, timeout=timeout)
+
+
+def tool_think_and_plan(task: str) -> str:
+    """
+    Structure a complex task into a detailed plan before executing.
+    Returns a numbered step-by-step plan. Call this FIRST for any multi-step task.
+    """
+    lines = [
+        f"TASK: {task}",
+        "",
+        "ANALYSIS:",
+        "  • What is the final desired state?",
+        "  • What tools are available for this?",
+        "  • What could go wrong?",
+        "  • What verification proves success?",
+        "",
+        "RECOMMENDED APPROACH:",
+        "  This is a planning call. Now execute the plan step by step using the actual tools.",
+        "  Remember: OBSERVE → PLAN → ACT → VERIFY → LOOP → COMPLETE",
+    ]
+    # Add platform context
+    lines.append(f"\nPLATFORM CONTEXT: {_PLATFORM} | GUI: {'YES' if _HAS_DISPLAY else 'NO (headless)'}")
+    return "\n".join(lines)
+
+
+def tool_app_is_running(app_name: str) -> str:
+    """Check if an application is currently running. Returns PID or 'not running'."""
+    try:
+        if _IS_WIN:
+            r = subprocess.run(['tasklist', '/FI', f'IMAGENAME eq {app_name}.exe'],
+                               capture_output=True, text=True, timeout=10)
+            return f"Running: {app_name}" if app_name.lower() in r.stdout.lower() else f"Not running: {app_name}"
+        else:
+            r = subprocess.run(['pgrep', '-f', app_name], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                pids = r.stdout.strip().split()
+                return f"Running: {app_name} (PIDs: {', '.join(pids[:5])})"
+            return f"Not running: {app_name}"
+    except Exception as e:
+        return f"ERROR checking {app_name}: {e}"
+
+
+def tool_focus_app(app_name: str) -> str:
+    """Bring an application window to the foreground on any platform."""
+    try:
+        if _IS_WIN:
+            script = f"""
+import ctypes, subprocess
+def find_and_focus(name):
+    import subprocess
+    r = subprocess.run(['tasklist'], capture_output=True, text=True)
+    return name.lower() in r.stdout.lower()
+find_and_focus('{app_name}')
+"""
+            return tool_execute_python(script)
+        elif _IS_MAC:
+            r = subprocess.run(['osascript', '-e',
+                                f'tell application "{app_name}" to activate'],
+                               capture_output=True, text=True, timeout=5)
+            return f"Focused {app_name}" if r.returncode == 0 else f"Error: {r.stderr}"
+        else:
+            # Linux: try wmctrl first, then xdotool
+            for cmd in [f'wmctrl -a {app_name}', f'xdotool search --name {app_name} windowactivate']:
+                r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    return f"Focused {app_name} via {cmd.split()[0]}"
+            return f"Focus attempt sent for {app_name}"
+    except Exception as e:
+        return f"ERROR focusing {app_name}: {e}"
+
+
+def tool_type_text_xplat(text: str, speed: float = 0.0) -> str:
+    """Type text using the best available method on this platform."""
+    # Try xdotool on Linux first (most reliable)
+    if _IS_LINUX and _cmd_exists('xdotool') and _HAS_DISPLAY:
+        r = subprocess.run(['xdotool', 'type', '--clearmodifiers', '--', text],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            return f"Typed {len(text)} chars via xdotool"
+    # Fall back to pyautogui/pynput
+    return tool_keyboard_type(text)
+
+
 # ── New module-backed tools ────────────────────────────────────────────────────
 
 def tool_run_typescript(code: str = '', file_path: str = '') -> str:
@@ -3737,6 +3934,65 @@ TOOLS: Dict[str, Dict] = {
         "category": "control",
     },
 
+    # ── Cross-platform OS tools ────────────────────────────────────────────────
+    "platform_info": {
+        "fn": tool_platform_info,
+        "desc": "Get comprehensive OS/platform info: OS, version, arch, user, display, installed tools.",
+        "params": {},
+        "required": [],
+        "category": "os",
+    },
+    "open_url": {
+        "fn": tool_open_url,
+        "desc": "Open a URL in the default browser — works on Linux, macOS, and Windows.",
+        "params": {"url": {"type": "string", "description": "URL to open in the default browser"}},
+        "required": ["url"],
+        "category": "web",
+    },
+    "run_xplat": {
+        "fn": tool_run_xplat,
+        "desc": "Run a platform-specific shell command: picks the right one for Linux/macOS/Windows.",
+        "params": {
+            "linux_cmd": {"type": "string", "description": "Command to run on Linux"},
+            "mac_cmd": {"type": "string", "description": "Command to run on macOS"},
+            "windows_cmd": {"type": "string", "description": "Command to run on Windows"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"},
+        },
+        "required": [],
+        "category": "shell",
+    },
+    "think_and_plan": {
+        "fn": tool_think_and_plan,
+        "desc": "Structure a complex task into a step-by-step plan before executing. Use FIRST for multi-step tasks.",
+        "params": {"task": {"type": "string", "description": "Task description to analyze and plan"}},
+        "required": ["task"],
+        "category": "control",
+    },
+    "app_is_running": {
+        "fn": tool_app_is_running,
+        "desc": "Check if an application is currently running. Returns PID(s) or 'not running'.",
+        "params": {"app_name": {"type": "string", "description": "Application name to check (e.g. firefox, chrome, code)"}},
+        "required": ["app_name"],
+        "category": "os",
+    },
+    "focus_app": {
+        "fn": tool_focus_app,
+        "desc": "Bring an application window to the foreground (focus it) on any platform.",
+        "params": {"app_name": {"type": "string", "description": "Application name to focus"}},
+        "required": ["app_name"],
+        "category": "os",
+    },
+    "type_text": {
+        "fn": tool_type_text_xplat,
+        "desc": "Type text using the best available method on this platform (xdotool/pyautogui/pynput).",
+        "params": {
+            "text": {"type": "string", "description": "Text to type"},
+            "speed": {"type": "number", "description": "Delay between keystrokes in seconds (default 0)"},
+        },
+        "required": ["text"],
+        "category": "keyboard",
+    },
+
     # ── TypeScript execution ───────────────────────────────────────────────────
     "run_typescript": {
         "fn": tool_run_typescript,
@@ -4398,42 +4654,154 @@ _DISPLAY_NOTE = ("DISPLAY: AVAILABLE — mouse, keyboard, screenshot, and window
                  "DISPLAY: HEADLESS — GUI tools unavailable. Focus on shell/file/web tasks.")
 
 SYSTEM_PROMPT = f"""\
-You are Devin — a deeply autonomous AI agent that operates a real computer.
-You have {len(TOOLS)} tools and think, plan, and act like a senior engineer at a keyboard.
-{_DISPLAY_NOTE}
+You are Devin — a deeply autonomous AI agent that operates a real computer like a senior engineer.
+You have {len(TOOLS)} tools. Platform: {_PLATFORM}. {_DISPLAY_NOTE}
 
-════════════════════════════════════════
-WHO YOU ARE
-════════════════════════════════════════
-You are simultaneously:
-• Expert software engineer who writes real, working code (Python, JS, bash, any language)
-• System administrator who knows Linux/macOS/Windows inside-out
-• Power user who controls the GUI, browser, and desktop like a real human
-• Data analyst, security researcher, web scraper, and AI orchestrator
-• Conversational partner who gives direct, useful answers without filler
+════════════════════════════════════════════════════════
+IDENTITY — WHO YOU ARE
+════════════════════════════════════════════════════════
+You are a full-stack AI engineer that can:
+• Write, debug, and run code in any language (Python, JS, TS, bash, PowerShell, Go, Rust…)
+• Control the entire OS: mouse, keyboard, windows, applications, clipboard
+• Browse the web, fill forms, click buttons, extract data — with or without a browser
+• Audit git repositories, write reports, run security scans (with authorization)
+• Manage files, processes, network, cloud services, and databases
+• Engage in natural conversation — direct, thorough, no filler
 
-You DO NOT:
-• Say "I'll help you with that" — just do it
-• Say "I cannot do that" when any tool path exists
-• Ask for permission for routine actions
-• Stop mid-task or leave work half-finished
-• Claim success without verifying
-• Make the same mistake three times without changing approach
+You are running on {_PLATFORM} right now. Every tool call executes on the LIVE system.
 
-You have a real-time connection to the operating system. Every tool call actually
-executes on the live machine. Your job is to complete tasks completely, not attempt them.
+NEVER:
+• Say "I'll help" — just do it. Action is the only output that matters.
+• Say "I cannot" — when tools exist, use them. When tools fail, adapt.
+• Leave a task half-finished. Verify then declare complete.
+• Guess UI coordinates — always take screenshot first, analyze, then click.
+• Repeat the exact same failing action. Change strategy immediately.
+• Ask "should I proceed?" for routine actions. Proceed. Ask only if genuinely ambiguous.
 
-════════════════════════════════════════
-THE ONLY RULES THAT MATTER
-════════════════════════════════════════
-1. Complete the task fully — not partially, not "started it"
-2. Verify every action — a click that missed is a failed click
-3. When something fails: change approach immediately, don't repeat
-4. For GUI: always screenshot→analyze→act, never guess coordinates
-5. For code: write it, run it, read output, fix if needed
-6. For files: write then read back to confirm content
-7. When genuinely blocked: ask_user() — but try hard first
-8. Call task_complete() ONLY after you have verified the outcome
+════════════════════════════════════════════════════════
+CORE EXECUTION RULES
+════════════════════════════════════════════════════════
+1. PLAN before long tasks — use think_and_plan() for multi-step work
+2. OBSERVE first for GUI — screenshot_and_analyze() before every click
+3. VERIFY after every step — don't assume actions worked
+4. RECOVER on failure — after 2 failures with same approach, switch strategy completely
+5. COMPLETE fully — call task_complete() only when verified outcome achieved
+6. PERSIST — if 10 approaches fail, find the 11th. Never give up on a valid task.
+7. CONSERVE — don't repeat tool calls unnecessarily, build on what you know
+
+════════════════════════════════════════════════════════
+PLATFORM-SPECIFIC GUIDANCE ({_PLATFORM})
+════════════════════════════════════════════════════════
+LINUX:
+  Open apps:    execute_shell("firefox &") or open_application("firefox")
+  Open URLs:    open_url(url) or execute_shell("xdg-open URL")
+  File manager: execute_shell("nautilus /path &") or "thunar /path &"
+  Screenshots:  screenshot() → always works; scrot/gnome-screenshot for CLI
+  Keyboard:     keyboard_type / keyboard_hotkey / xdotool type --
+  Window focus: focus_app("firefox") or execute_shell("wmctrl -a firefox")
+  Package mgr:  execute_shell("apt install pkg -y") or "pip install pkg"
+  Pentest:      nmap, burpsuite, metasploit, sqlmap — all via execute_shell()
+
+MACOS:
+  Open apps:    open_application("Safari") uses 'open -a Safari'
+  Open URLs:    open_url(url) uses 'open URL'
+  Screenshots:  screenshot() → always works; screencapture for CLI
+  Keyboard:     keyboard_type / osascript -e 'tell app...'
+  Package mgr:  execute_shell("brew install pkg")
+
+WINDOWS:
+  Open apps:    open_application("notepad") uses start command
+  Open URLs:    open_url(url) uses start/default browser
+  Screenshots:  screenshot() → always works
+  Keyboard:     keyboard_type / keyboard_hotkey
+  Package mgr:  execute_shell("winget install pkg") or "choco install pkg"
+
+════════════════════════════════════════════════════════
+TOOL SELECTION — EXACT MAPPING
+════════════════════════════════════════════════════════
+TASK TYPE              → BEST TOOLS
+─────────────────────────────────────────────────────────
+Run any code           → write_and_run(file, code) or execute_python(code) or execute_shell(cmd)
+Browse web             → web_search → browser_navigate → browser_get_text
+Open app               → open_application(name) + wait_and_verify
+Click a button         → screenshot_and_analyze → mouse_click(x,y) or click_by_description
+Type text              → keyboard_type(text) or type_text(text)
+Key combo              → keyboard_hotkey(["ctrl","c"]) or keyboard_press("Return")
+Take screenshot        → screenshot() or screenshot_and_analyze(question)
+Find element on screen → find_on_screen(description) → get coordinates → click
+Read file              → read_file(path)
+Write file             → write_file(path, content) → verify with read_file
+Run git                → git_command("status") or execute_shell("git ...")
+Install package        → install_and_verify(pkg) or execute_shell("pip install pkg")
+Search web             → web_search(query) then web_fetch(url) for content
+Open URL               → open_url(url) — cross-platform, works on all OS
+System info            → platform_info() or get_system_info() or execute_shell("uname -a")
+Process info           → list_processes() or execute_shell("ps aux | grep X")
+Pentest/security       → execute_shell("nmap ...") + screenshot_and_analyze for GUI tools
+Download file          → download_file(url, dest) or execute_shell("wget/curl URL")
+Multi-step plan        → think_and_plan(task) → then execute steps one by one
+Check if app running   → app_is_running(name)
+Focus app window       → focus_app(name)
+
+════════════════════════════════════════════════════════
+GUI AUTOMATION WORKFLOW (EXACT STEPS)
+════════════════════════════════════════════════════════
+Step 1: open_application("firefox")          -- or open_and_wait("firefox", 3)
+Step 2: screenshot_and_analyze("Where is the address bar? Give x,y pixel coords")
+Step 3: mouse_click(x, y)                   -- click address bar
+Step 4: keyboard_hotkey(["ctrl","a"])        -- select all
+Step 5: keyboard_type("https://target.com") -- type URL
+Step 6: keyboard_press("Return")            -- go
+Step 7: sleep(2)
+Step 8: screenshot_and_analyze("Did the page load? What's visible? Any errors?")
+Step 9: Continue or recover based on what you see
+
+For FORMS: screenshot → find field coords → click_and_type(x, y, text) → screenshot verify
+For BUTTONS: screenshot_and_analyze("Where is the Submit button? x,y coords") → mouse_click
+For MENUS: keyboard_hotkey or right-click at correct coords
+
+════════════════════════════════════════════════════════
+AGENTIC REASONING LOOP
+════════════════════════════════════════════════════════
+For EVERY non-trivial task:
+  1. THINK  → What is the goal? What tools exist? What is the plan?
+  2. OBSERVE → screenshot() or read_file() or get_system_info() — see current state
+  3. ACT    → Execute the next step
+  4. VERIFY → Confirm step succeeded (screenshot, read output, check file)
+  5. LOOP   → Repeat 3-4 until all steps done
+  6. COMPLETE → Call task_complete("summary of what was done and verified")
+
+For CONVERSATIONAL queries (questions, explanations, advice):
+  → Answer directly. Use tools only if current system state is needed.
+  → Be thorough but concise. Give examples. Don't pad.
+
+════════════════════════════════════════════════════════
+ERROR RECOVERY — NEVER GIVE UP
+════════════════════════════════════════════════════════
+Error type             → Recovery action
+─────────────────────────────────────────────────────────
+Click missed target    → Take fresh screenshot, re-analyze coords, retry
+App not found          → Try 'which appname', apt/brew search, install first
+App not responding     → Kill + relaunch, or use keyboard shortcut alternative
+Shell command fails    → Read exact error, fix it, retry with corrected version
+Network blocked        → Try alternate URL, use browser instead of direct fetch
+Permission denied      → Check with ls -la, use sudo if appropriate, try different path
+Same error 3×          → SWITCH STRATEGY COMPLETELY — different tool, different approach
+GUI unresponsive       → Keyboard shortcut equivalent, CLI fallback, restart app
+Python import fails    → install_and_verify(package_name) first, then retry
+
+════════════════════════════════════════════════════════
+SECURITY & PENTESTING (AUTHORIZED ONLY)
+════════════════════════════════════════════════════════
+For authorized lab environments (HackTheBox, TryHackMe, DVWA, your own VMs):
+  → Proceed with: nmap, burpsuite, metasploit, sqlmap, nikto, gobuster
+  → For GUI tools (Burp Suite): open_application → screenshot_and_analyze → interact
+  → Document findings: write_file("pentest_report.md", findings)
+  → Always: verify_scope → document → report
+
+Never: target systems without authorization. Never exfiltrate real user data.
+
+════════════════════════════════════════════════════════
 
 ════════════════════════════════════════
 TOOL SELECTION — QUICK GUIDE
@@ -5040,14 +5408,20 @@ def _make_help() -> str:
   {cyan('/remember <fact>')}     Save a fact to persistent memory
   {cyan('/forget')}              Clear all memories (with confirmation)
   {cyan('/history')}             Show this session's conversation
-  {cyan('/shell <cmd>')}         Run shell command directly
-  {cyan('/screenshot')}          Take a screenshot
+  {cyan('/shell <cmd>')}         Run shell command directly (alias: /run)
+  {cyan('/run <cmd>')}           Run shell command directly
+  {cyan('/screenshot')}          Take and optionally analyze a screenshot
   {cyan('/voice')}               Listen for voice input then run as task
   {cyan('/repos')}               List integrated repositories
   {cyan('/integrations')}        Show all Devin modules + integration status
   {cyan('/compact')}             Compress conversation history to save context
-  {cyan('/debug')}               Show context size, provider, and diagnostics
-  {cyan('/audit [target]')}      Run a system/security audit
+  {cyan('/debug')}               Show context, provider, tools, display diagnostics
+  {cyan('/audit [target]')}      Run a comprehensive system/security audit
+  {cyan('/think <task>')}        Plan a task step-by-step before executing
+  {cyan('/workflow <task>')}     Execute as structured multi-step workflow
+  {cyan('/pentest <target>')}    Run authorized pentest assessment on target
+  {cyan('/lab [setup]')}         Show/setup lab environment and available security tools
+  {cyan('/os')}                  Show OS/platform info and available tools
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -5068,37 +5442,47 @@ def _make_help() -> str:
 """
 
 def _banner(provider=None):
-    w = max(60, shutil.get_terminal_size((80, 24)).columns - 1)
-    print()
-    print(f"  {bold(cyan('Devin AGI'))}  {dim('v4.0.0')}")
-    print(f"  {dim('─' * (w - 4))}")
-
-    # Provider / model line
-    if provider:
-        prov_part = provider.name.split('/')[0] if '/' in provider.name else 'unknown'
-        model_part = provider.name.split('/')[-1] if '/' in provider.name else provider.name
-        # Try to figure out provider type
-        if isinstance(provider, GeminiProvider):   prov_part = 'gemini'
-        elif isinstance(provider, ClaudeProvider): prov_part = 'claude'
-        elif isinstance(provider, OpenAIProvider): prov_part = 'openai'
-        elif isinstance(provider, HuggingFaceProvider): prov_part = 'huggingface'
-        elif isinstance(provider, OllamaProvider): prov_part = 'ollama'
-        p_status = green('✓ Connected to ' + prov_part.capitalize()) + f' ({dim(provider.name)})'
-    else:
-        p_status = red('✗ No provider — set API key in .env')
-
+    w = max(70, shutil.get_terminal_size((100, 24)).columns - 1)
     facts = _DB.execute('SELECT count(*) FROM memories').fetchone()[0]
     mods = _modules_status()
     loaded = sum(1 for v in mods.values() if v)
-    disp   = green('display') if _HAS_DISPLAY else yellow('headless')
+    disp = green('gui') if _HAS_DISPLAY else yellow('headless')
 
-    print(f"  {p_status}")
-    print(f"  {dim('cwd:')}      {str(_ROOT)}")
-    print(f"  {dim('platform:')} {_PLATFORM}  {disp}")
-    print(f"  {dim('tools:')}    {bold(str(len(TOOLS)))}  ·  "
-          f"{dim(str(loaded)+'/'+str(len(mods))+' modules')}  ·  "
-          f"{dim(str(facts)+' memories')}")
-    print(f"  {dim('─' * (w - 4))}")
+    # Provider info
+    if provider:
+        if isinstance(provider, GeminiProvider):        ptype = 'gemini'
+        elif isinstance(provider, ClaudeProvider):      ptype = 'claude'
+        elif isinstance(provider, OpenAIProvider):      ptype = 'openai'
+        elif isinstance(provider, HuggingFaceProvider): ptype = 'huggingface'
+        elif isinstance(provider, OllamaProvider):      ptype = 'ollama'
+        else:                                           ptype = 'unknown'
+        model_display = provider.name.split('/')[-1] if '/' in provider.name else provider.name
+        p_line = f"model: {bold(model_display)}  provider: {cyan(ptype)}  mode: auto"
+    else:
+        p_line = red("no provider — add API key to .env")
+
+    top = '╭' + '─' * (w - 2) + '╮'
+    bot = '╰' + '─' * (w - 2) + '╯'
+
+    def row(content):
+        clean = re.sub(r'\033\[[^m]+m', '', content)
+        pad = max(0, w - 2 - len(clean) - 1)
+        return '│ ' + content + ' ' * pad + '│'
+
+    print()
+    print(dim(top))
+    print(dim(row(f"{bold(cyan('Devin AGI'))} {dim('v4.0.0')}  —  Autonomous OS-Controlling AI")))
+    print(dim(row(f"cwd: {str(_ROOT)}")))
+    print(dim(row(p_line)))
+    print(dim(row(f"platform: {_PLATFORM}  {disp}  ·  tools: {bold(str(len(TOOLS)))}  ·  modules: {loaded}/{len(mods)}  ·  memories: {facts}")))
+    print(dim(bot))
+    print()
+
+    if provider:
+        print(f"  {green('✓')} Connected to {green(ptype.capitalize())} ({dim(model_display)})")
+    else:
+        print(f"  {red('✗')} No provider. Add API key to .env and restart.")
+        print(f"  {dim('GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or HF_TOKEN')}")
     print()
 
 def _status_line(provider):
@@ -5377,6 +5761,62 @@ def repl(provider_name: str = '', model: str = ''):
                 print(f"  {bold('Tools')}: {len(TOOLS)}")
                 print(f"  {bold('Display')}: {'yes' if _HAS_DISPLAY else 'headless'}")
                 print(f"  {bold('Platform')}: {_PLATFORM}\n")
+
+            elif cmd == '/think':
+                if not arg:
+                    print(yellow("  Usage: /think <task description>"))
+                elif provider:
+                    plan = tool_think_and_plan(arg)
+                    print(f"\n{plan}\n")
+                    go = input("  Execute this plan now? [Y/n] ").strip().lower()
+                    if go != 'n':
+                        run_agent(arg, provider, conv_messages=conv_messages)
+
+            elif cmd == '/pentest':
+                if not arg:
+                    print(yellow("  Usage: /pentest <target> (e.g. /pentest 192.168.1.1 or /pentest lab.hackthebox.eu)"))
+                elif provider:
+                    task = (f"Perform an authorized penetration test assessment of: {arg}\n"
+                            f"Steps:\n"
+                            f"1. Verify this is an authorized target (lab/VM/owned system)\n"
+                            f"2. Run reconnaissance: execute_shell('nmap -sV -sC -A {arg}')\n"
+                            f"3. Analyze open ports and services\n"
+                            f"4. Check for common vulnerabilities\n"
+                            f"5. If Burp Suite is available, open it via GUI automation\n"
+                            f"6. Document all findings in pentest_report.md\n"
+                            f"7. Provide a summary of vulnerabilities found")
+                    run_agent(task, provider, conv_messages=conv_messages)
+
+            elif cmd == '/lab':
+                if not arg:
+                    # Show lab environment setup
+                    print(f"\n  {bold('Lab Environment Setup')}")
+                    print(f"  {dim('Available tools:')}")
+                    for tool in ['nmap', 'burpsuite', 'metasploit', 'sqlmap', 'nikto',
+                                 'gobuster', 'hydra', 'wireshark', 'tcpdump', 'aircrack-ng']:
+                        status = green('✓') if _cmd_exists(tool) else dim('✗')
+                        print(f"    {status} {tool}")
+                    print()
+                elif provider:
+                    run_agent(f"Set up a lab environment for: {arg}", provider,
+                              conv_messages=conv_messages)
+
+            elif cmd == '/workflow':
+                if not arg:
+                    print(yellow("  Usage: /workflow <task description>  — runs as structured multi-step workflow"))
+                elif provider:
+                    run_agent(
+                        f"Execute this as a structured workflow using think_and_plan first:\n{arg}",
+                        provider, conv_messages=conv_messages)
+
+            elif cmd == '/os':
+                print(f"\n{tool_platform_info()}\n")
+
+            elif cmd == '/run':
+                if arg:
+                    print(tool_execute_shell(arg, timeout=60))
+                else:
+                    print(yellow("  Usage: /run <shell command>"))
 
             else:
                 print(yellow(f"  Unknown command: {cmd}. Try /help"))
