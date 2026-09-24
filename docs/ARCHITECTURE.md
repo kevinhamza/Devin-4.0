@@ -1,7 +1,109 @@
 # Devin 4.0 Architecture
 
-**Last Updated:** 2026-09-24  
-**Status:** CURRENT — Phase B+ (Core Runtime + OS Automation complete)
+**Last Updated:** 2026-09-24 (Phase B–H refresh)
+**Status:** CURRENT — Core runtime, model chain, tool registry, permission gate,
+pytest suite, and vision layer all verified this session against live APIs.
+
+## Ground-truth snapshot (this session)
+
+| Fact | Value |
+|---|---|
+| Python entry | `venv/bin/python main.py` (or `./devin` with `dist/cli.js` absent) |
+| TS entry | `./devin` → `node dist/cli.js` (built via `npm run build --legacy-peer-deps`) |
+| Model chain (main.py) | Anthropic → Gemini → Hugging Face, first configured wins; auto-fallback across model IDs within each provider |
+| Providers actually wired | Anthropic SDK, Gemini REST, HF Router (chat + Qwen2.5-VL vision) |
+| Tool registry | 91 functions total in `modules/integrations.py` |
+| Schemas exposed to LLM | 63 (main.py `TOOL_SCHEMAS`) |
+| Vision path | Anthropic vision → Gemini vision → HF `Qwen/Qwen2.5-VL-*` — verified live against a real screenshot |
+| Permission modes | `auto` (default in `.env`), `default` (confirm/refuse dangerous), `plan` (describe only) — all three enforced in the loop, not just flags |
+| Pytest | 102 passed, 9 skipped, 0 failed |
+| Repos with `HAS[]=True` at runtime | AIA, self-operating-computer, Jarvis (Concept-Bytes), JARVIS-microsoft, gemini-cli SDK, cheetahclaws, HF |
+| Repos source-only (deferred integration) | OpenDevin (needs `openhands` SDK), vulnerability-analysis (needs NVIDIA morpheus), shannon, hexstrike-ai, openclaw, Holomat, airgorah, PowerTools, MoltBots, hackability, claude-code-source |
+| Repos deliberately source-only (offensive) | Responder, nishang, metasploit-framework |
+
+## Central runtime flow (as executed by `main.py::_run_agentic_loop`)
+
+```
+User prompt (one-shot arg, /-command, or REPL line)
+        │
+        ▼
+Build Gemini-shape `contents` from history + current turn
+        │
+        ▼  _call_gemini_rest (name kept, actually multi-provider now)
+        │
+        ├─ (1) Anthropic:      _call_anthropic → Claude native tool_use
+        │                        (converts contents to Anthropic content blocks,
+        │                         assigns synthetic tool_use_ids for matching)
+        │
+        ├─ (2) Gemini REST:    tries each of _GEMINI_MODELS in order
+        │                        (real 2.5/2.0/1.5 IDs, 429/404 fallthrough)
+        │
+        └─ (3) Hugging Face:   _hf_chat via router.huggingface.co/v1
+                               (OpenAI-compat tools + <tool_use> fallback parser)
+        │
+        ▼  Returns Gemini-shape data → agentic loop:
+        │
+        │   parse candidates[0].content.parts[] into text_parts + tool_calls
+        │   display text via Rich
+        │   if no tool_calls & plan-shape text: inject one [[SYSTEM NUDGE]]
+        │   else if no tool_calls: break loop, return final_text
+        │
+        ▼  For each tool_call:
+        │
+        │   ┌── task_complete → return immediately
+        │   ├── PERMISSION_MODE == "plan"    → synthetic [PLANNED …] result
+        │   ├── PERMISSION_MODE == "default"
+        │   │     + _is_dangerous(name):
+        │   │       - TTY: prompt y/N via _confirm_dangerous
+        │   │       - non-TTY one-shot: [BLOCKED …] fed back to model
+        │   └── otherwise: dispatch_tool(name, args)  → real invocation
+        │
+        ▼  Append tool result(s) as functionResponse parts to contents
+        │
+        ▼  Next round (max_rounds = 30)
+```
+
+## Permission model (§9 compliance)
+
+Dangerous tools (defined in `main.py::_DANGEROUS_TOOLS`) — 21 tools including
+`execute_shell`, `execute_python`, all mouse/keyboard/window/app tools,
+`write_file`, `git_command`, `run_nmap_scan`, `port_scan`, `check_ssl_cert`,
+`send_telegram_message`, `clipboard_set`, `open_browser` — pass through the
+permission gate. `read_file`, `list_files`, `take_screenshot`,
+`get_system_info`, etc. skip the gate as read-only. Offensive tools from
+Responder / nishang / metasploit are deliberately NOT wired into TOOL_REGISTRY
+so they cannot be invoked by the LLM even under `auto` mode; they exist in
+`repos/security/` only as source.
+
+## Vision layer (§5 compliance)
+
+`analyze_image(path, question)` (in `modules/integrations.py`) tries in order:
+1. **Anthropic Claude vision** (`claude-opus-4-5` → `claude-sonnet-4-5` →
+   `claude-3-5-sonnet-20241022`) — best for describing UI/screens.
+2. **Gemini vision** (`gemini-2.5-flash` → `gemini-2.0-flash` →
+   `gemini-1.5-flash`) — via v1beta REST with `inlineData`.
+3. **Hugging Face vision** (`Qwen/Qwen2.5-VL-72B-Instruct` →
+   `Qwen/Qwen2.5-VL-7B-Instruct` → Llama 3.2 Vision 90B → 11B) — via
+   `router.huggingface.co/v1/chat/completions` with OpenAI-compat
+   `image_url` data-URI parts. **Verified live this session** against a real
+   `take_screenshot()` output.
+4. If none configured, returns a specific "no vision provider available"
+   string — the tool doesn't lie about capability.
+
+## Slash-command surface (§15 compliance)
+
+| Command | Python (`main.py`) | TypeScript (`src/cli.ts`) |
+|---|---|---|
+| `/help` `/clear` `/status` `/tools` `/repos` `/screenshot` `/memory` `/remember` `/shell` `/model` `/exit` | ✓ | ✓ |
+| `/plan` (describe, don't run) | ✓ (loop intercepts every tool call with `[PLANNED …]`) | ✓ (planMode flag) |
+| `/auto` (auto-approve) | ✓ (sets PERMISSION_MODE) | ✓ |
+| `/default` (gate dangerous) | ✓ (interactive y/N or non-TTY refuse) | ✓ (default) |
+| `/verbose` | ✓ (toggles DEVIN_DEBUG) | ✓ |
+| `/voice` | ✓ (toggles VOICE_MODE) | ✓ |
+
+All twelve Python commands programmatically verified this session. Two
+previously-crashing ones (`/memory`, `/remember`) fixed via a legacy-list
+migration in `_load_memory()`.
 
 ---
 

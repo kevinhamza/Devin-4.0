@@ -997,7 +997,56 @@ def analyze_image(image_path: str, question: str = "What do you see?") -> str:
             except Exception:
                 continue
 
-    return f"[analyze_image: no vision provider available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY. Image was {len(data)} bytes, {media_type}.]"
+    # 3) Try Hugging Face vision (Qwen2.5-VL and Llama-3.2-11B-Vision on the
+    # HF Router speak OpenAI-compat chat/completions with an image_url part).
+    hf = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+    if hf and HAS.get("requests") and requests:
+        vl_models = [
+            "Qwen/Qwen2.5-VL-72B-Instruct",
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        ]
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {hf}",
+            "X-Use-Cache": "false",
+        }
+        for model in vl_models:
+            body = {
+                "model": model,
+                "max_tokens": 1024,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                        {"type": "text", "text": question},
+                    ],
+                }],
+            }
+            try:
+                r = requests.post("https://router.huggingface.co/v1/chat/completions",
+                                  headers=headers, json=body, timeout=60)
+                if r.status_code == 200:
+                    choice = (r.json().get("choices") or [{}])[0]
+                    text = (choice.get("message") or {}).get("content") or ""
+                    if text.strip():
+                        return text.strip()
+                elif r.status_code == 404 or "not_found" in r.text.lower():
+                    continue  # try next model
+                elif r.status_code in (429, 503):
+                    continue
+                else:
+                    # Non-retriable — no point trying more models on same failure.
+                    break
+            except Exception:
+                continue
+
+    return (
+        f"[analyze_image: no vision provider available. Set ANTHROPIC_API_KEY, "
+        f"GEMINI_API_KEY, or ensure HF_TOKEN has quota + can reach a VL model. "
+        f"Image was {len(data)} bytes, {media_type}.]"
+    )
 
 def search_screen(image_template: str) -> Optional[tuple]:
     """Find an image on screen, return (x, y) center or None."""
