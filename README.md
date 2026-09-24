@@ -166,10 +166,10 @@ User (CLI / voice)
 │  OpenAIProvider │ HuggingFaceProvider │  │
 │  OllamaProvider                          │
 └────────────────┬─────────────────────────┘
-                 │  tool calls (134 tools)
+                 │  tool calls (135 tools)
                  ▼
 ┌──────────────────────────────────────────┐
-│  TOOL REGISTRY  (134 tools)              │
+│  TOOL REGISTRY  (135 tools)              │
 │  reasoning  web  shell  files  vision    │
 │  mouse  keyboard  windows  apps          │
 │  browser  clipboard  voice  memory       │
@@ -469,7 +469,7 @@ python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_loc
 
 Test categories and status:
 - **Import/startup**: AUTOMATED VERIFIED
-- **Tool registry**: AUTOMATED VERIFIED (134 tools load cleanly)
+- **Tool registry**: AUTOMATED VERIFIED (135 tools load cleanly)
 - **Shell/file operations**: AUTOMATED VERIFIED
 - **Web search/fetch**: AUTOMATED VERIFIED (requires network)
 - **Model API connectivity**: BLOCKED BY EXTERNAL ENVIRONMENT (requires valid API key)

@@ -147,7 +147,7 @@ These are recorded as BLOCKED in `README_COMPLIANCE.md`.
 ## Integration Architecture Summary
 
 ```
-Central Runtime (agent.py — 134 tools, 5 providers)
+Central Runtime (agent.py — 135 tools, 5 providers)
         │
         ├── Module integration layer (41 modules loaded)
         │   ├── voice.py              — TTS/STT (espeak/say/pyttsx3, SpeechRecognition/Whisper)

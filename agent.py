@@ -2578,9 +2578,47 @@ def tool_think_and_plan(task: str) -> str:
         "  This is a planning call. Now execute the plan step by step using the actual tools.",
         "  Remember: OBSERVE → PLAN → ACT → VERIFY → LOOP → COMPLETE",
     ]
-    # Add platform context
     lines.append(f"\nPLATFORM CONTEXT: {_PLATFORM} | GUI: {'YES' if _HAS_DISPLAY else 'NO (headless)'}")
     return "\n".join(lines)
+
+
+def tool_observe_and_plan(goal: str) -> str:
+    """
+    Take a screenshot, analyze current screen state with AI, then return a
+    structured action plan for achieving the goal. Use this at the START of any
+    GUI task to understand what is currently on screen before acting.
+    """
+    try:
+        # 1. Take screenshot
+        shot = tool_screenshot()
+        if shot.startswith('ERROR'):
+            return f"OBSERVE: Cannot screenshot ({shot})\nPLAN: Use shell/browser tools instead of GUI.\nFIRST_ACTION: execute_shell or browser_navigate"
+
+        # 2. Try AI analysis
+        path = shot.split(': ', 1)[-1].strip().split()[0]
+        analysis = tool_analyze_image(
+            path,
+            f"I need to: {goal}\n\n"
+            "Please analyze this screenshot and answer:\n"
+            "1. What is currently visible on screen?\n"
+            "2. What application/window is in focus?\n"
+            "3. What specific UI elements are relevant to my goal?\n"
+            "4. What is the best first action to take? (give exact coordinates if clicking)\n"
+            "5. Are there any obstacles or errors visible?"
+        )
+        return (
+            f"GOAL: {goal}\n\n"
+            f"CURRENT SCREEN STATE:\n{analysis}\n\n"
+            f"PLATFORM: {_PLATFORM} | GUI: {'available' if _HAS_DISPLAY else 'headless'}\n\n"
+            f"NOW: Execute the first action above using the appropriate tool."
+        )
+    except Exception as e:
+        return (
+            f"GOAL: {goal}\n"
+            f"OBSERVE: Failed to get screen state ({e})\n"
+            f"PLATFORM: {_PLATFORM} | GUI: {'available' if _HAS_DISPLAY else 'headless'}\n"
+            f"PLAN: Proceed using shell/browser tools. Start with: execute_shell or browser_navigate"
+        )
 
 
 def tool_app_is_running(app_name: str) -> str:
@@ -3968,6 +4006,13 @@ TOOLS: Dict[str, Dict] = {
         "required": ["task"],
         "category": "control",
     },
+    "observe_and_plan": {
+        "fn": tool_observe_and_plan,
+        "desc": "Take a screenshot, analyze the current screen state with AI, then return a structured plan. Use at the START of any GUI task.",
+        "params": {"goal": {"type": "string", "description": "What you are trying to accomplish on the screen"}},
+        "required": ["goal"],
+        "category": "vision",
+    },
     "app_is_running": {
         "fn": tool_app_is_running,
         "desc": "Check if an application is currently running. Returns PID(s) or 'not running'.",
@@ -4740,12 +4785,14 @@ Process info           → list_processes() or execute_shell("ps aux | grep X")
 Pentest/security       → execute_shell("nmap ...") + screenshot_and_analyze for GUI tools
 Download file          → download_file(url, dest) or execute_shell("wget/curl URL")
 Multi-step plan        → think_and_plan(task) → then execute steps one by one
+GUI task (any)         → observe_and_plan(goal) → get screen state + action plan
 Check if app running   → app_is_running(name)
 Focus app window       → focus_app(name)
 
 ════════════════════════════════════════════════════════
 GUI AUTOMATION WORKFLOW (EXACT STEPS)
 ════════════════════════════════════════════════════════
+Step 0: observe_and_plan("open firefox and search web")  -- analyze current screen first
 Step 1: open_application("firefox")          -- or open_and_wait("firefox", 3)
 Step 2: screenshot_and_analyze("Where is the address bar? Give x,y pixel coords")
 Step 3: mouse_click(x, y)                   -- click address bar
@@ -4862,6 +4909,7 @@ For file tasks, ALWAYS read back after writing to confirm content.
 GUI AUTOMATION WORKFLOW
 ════════════════════════════════════════
 CORRECT approach:
+  0. observe_and_plan("my goal here")            # analyze screen FIRST, get action plan
   1. open_and_wait("firefox", wait_seconds=3)   # open app, wait for load
   2. screenshot_and_analyze("Where is the address bar? Give x,y coordinates")
   3. mouse_click(x, y)                          # click based on AI coordinates
@@ -5140,13 +5188,18 @@ def _print_tool_call(name: str, args: dict):
 
 def _print_tool_result(result: str, is_error: bool = False):
     """Print tool result in Claude Code style: ↳ result"""
-    preview = str(result)[:400]
-    if '\n' in preview:
-        first_line = preview.split('\n')[0]
-        more_lines = preview.count('\n')
-        preview = first_line + (f"  [{more_lines} more lines]" if more_lines > 1 else "")
+    r = str(result)
     colour = red if is_error else dim
-    print(f"{colour('↳')} {colour(preview)}", flush=True)
+    lines = r.split('\n')
+    if len(lines) <= 3 and len(r) <= 300:
+        # Short result: show inline
+        print(f"{colour('↳')} {colour(r.strip())}", flush=True)
+    else:
+        # Long result: show first 3 lines + count
+        shown = '\n  '.join(l for l in lines[:3] if l.strip())
+        extra = len(lines) - 3
+        suffix = f"  {dim(f'[+{extra} lines]')}" if extra > 0 else ''
+        print(f"{colour('↳')} {colour(shown)}{suffix}", flush=True)
 
 def _estimate_chars(msgs: list) -> int:
     """Estimate total character count of a message list."""
@@ -5180,12 +5233,43 @@ def _compact_messages(msgs: list) -> list:
     ] + recent
 
 
+_TASK_VERBS = re.compile(
+    r'\b(open|launch|start|run|execute|install|download|create|write|make|build|'
+    r'search|find|scan|audit|test|check|clone|read|analyze|fix|debug|deploy|'
+    r'send|post|get|fetch|navigate|browse|click|type|press|drag|scroll|'
+    r'move|copy|delete|remove|rename|update|upgrade|configure|setup|'
+    r'monitor|record|capture|save|upload|convert|compress|extract|'
+    r'generate|summarize|translate|parse|list|show|display|print|'
+    r'pentest|hack|exploit|scan|enumerate|fuzz|inject)\b',
+    re.IGNORECASE
+)
+
+def _is_task_mode(text: str) -> bool:
+    """Detect if the user is requesting a task (vs a simple question/chat)."""
+    t = text.strip()
+    # Pure questions are chat mode
+    if t.endswith('?') and len(t.split()) < 15:
+        return False
+    # Short factual queries are chat
+    if len(t.split()) < 5 and not _TASK_VERBS.search(t):
+        return False
+    # Contains action verbs → task mode
+    if _TASK_VERBS.search(t):
+        return True
+    # Multi-sentence descriptions → task mode
+    if len(t.split()) > 20:
+        return True
+    return False
+
+
 def run_agent(task: str, provider, max_steps: int = 100,
               quiet: bool = False, conv_messages: Optional[List] = None) -> str:
     """
     Run the agentic loop.
     conv_messages: if provided, conversation history is preserved (REPL mode).
     """
+    task_mode = _is_task_mode(task)
+
     if conv_messages is not None:
         # Conversation mode — append task to existing history
         conv_messages.append({"role": "user", "content": task})
@@ -5197,7 +5281,9 @@ def run_agent(task: str, provider, max_steps: int = 100,
     final_result = ""
     step = 0
     consecutive_errors = 0
-    MAX_ERRORS = 5  # retry up to this many consecutive provider errors
+    no_tool_pushes = 0          # times we nudged AI to continue after no tool calls
+    MAX_ERRORS = 5              # retry up to this many consecutive provider errors
+    MAX_NO_TOOL_PUSHES = 3      # max times to nudge AI before accepting its response
     _CTX_WARN_CHARS = 60_000    # ~15k tokens — start warning
     _CTX_COMPACT_CHARS = 100_000  # ~25k tokens — auto-compact older messages
 
@@ -5295,14 +5381,42 @@ def run_agent(task: str, provider, max_steps: int = 100,
             if text or calls:
                 messages.append({"role": "assistant", "content": text or ""})
 
-        # No tool calls — model is done or wants to chat
+        # No tool calls — decide: accept or push forward
         if not calls:
             if text.strip():
                 final_result = text.strip()
-                # In conversation mode, the response IS the result (no task_complete needed)
-                if conv_messages is not None:
-                    return final_result
-            break
+
+            # Pure conversation query → accept AI's response directly
+            if not task_mode:
+                return final_result if final_result else "(no response)"
+
+            # Task mode — check if AI explicitly says it's done
+            done_phrases = re.compile(
+                r'\b(task (is )?complete|done|finished|completed|accomplished|'
+                r'successfully (done|completed|finished)|all done|all steps (done|complete)|'
+                r'that\'s (all|it)|i\'ve (completed|finished|done))\b',
+                re.IGNORECASE
+            )
+            if done_phrases.search(final_result):
+                # AI said it's done — accept
+                return final_result
+
+            # AI responded but didn't use tools and didn't declare done
+            # Push it to continue executing
+            if no_tool_pushes < MAX_NO_TOOL_PUSHES:
+                no_tool_pushes += 1
+                push_msg = (
+                    "Continue executing the task using tools. "
+                    "Do not describe what you would do — actually do it by calling tools. "
+                    f"This is step {step} of the task: {task[:80]}"
+                )
+                if not quiet:
+                    print(dim(f"\r  ↺ Pushing AI to continue (push {no_tool_pushes}/{MAX_NO_TOOL_PUSHES})…"))
+                messages.append({"role": "user", "content": push_msg})
+                continue
+            else:
+                # Max pushes reached — accept what we have
+                return final_result if final_result else "(task ended without explicit completion)"
 
         # Execute tools
         tool_results = []
