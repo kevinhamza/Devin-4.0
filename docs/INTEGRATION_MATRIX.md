@@ -1,7 +1,7 @@
 # Integration Matrix
 
-**Last Updated:** 2026-09-24  
-**Total Repositories Audited:** 22
+**Last Updated:** 2026-09-24 (Phase J)  
+**Total Repositories Audited:** 24 | **Modules Loaded:** 21/25 | **Total Tools:** 108
 
 ---
 
@@ -147,7 +147,30 @@ These are recorded as BLOCKED in `README_COMPLIANCE.md`.
 ## Integration Architecture Summary
 
 ```
-Central Runtime (src/cli.ts + modules/integrations.py)
+Central Runtime (agent.py — 108 tools, 5 providers)
+        │
+        ├── Module integration layer (25 modules loaded)
+        │   ├── voice.py              — TTS/STT (espeak/say/pyttsx3, SpeechRecognition/Whisper)
+        │   ├── os_automation.py      — pyautogui, xdotool, pynput
+        │   ├── browser.py            — Selenium, Playwright
+        │   ├── persistent_memory.py  — SQLite long-term memory
+        │   ├── messaging_gateway.py  — Telegram, Discord, Slack
+        │   ├── integration_hub.py    — 24 external repo bridge
+        │   ├── system_monitor.py     — psutil CPU/RAM/disk/net
+        │   ├── cheetahclaws_bridge.py — token tracking, compaction
+        │   ├── keyboard_mouse_control.py — low-level pynput
+        │   ├── code_execution.py     — sandboxed Python/JS
+        │   ├── cloud_integration_module.py — AWS/Azure/GCP
+        │   ├── ollama_module.py      — local LLM via Ollama
+        │   ├── analytics_module.py   — data analysis / stats
+        │   ├── automation_tools.py   — additional OS automation
+        │   ├── ai_connector.py       — AI provider bridge
+        │   ├── email_tools.py        — email send/receive
+        │   ├── repo_tools.py         — git repo inspection
+        │   ├── cheetah_security.py   — authorized security scanning
+        │   ├── pentesting_module.py  — authorized pentest utilities
+        │   ├── privacy_tools.py      — privacy/anonymization
+        │   └── resilience_tools.py   — fault tolerance / retry
         │
         ├── Python integration layer (modules/integrations.py)
         │   ├── AIA (automation, voice, ML)
