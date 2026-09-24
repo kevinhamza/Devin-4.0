@@ -1690,6 +1690,368 @@ def tool_context_info() -> str:
     }, indent=2)
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ADVANCED OS AUTOMATION TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_screenshot_and_analyze(prompt: str = '') -> str:
+    """Take a screenshot and immediately analyze it with AI. Returns description + coordinates."""
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return shot
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    q = prompt or ('Describe every UI element visible on screen. For each: name it, '
+                   'give its (x, y) center pixel coordinates, and describe its purpose. '
+                   'List any text fields, buttons, menus, and the window title.')
+    return f"Screenshot: {shot}\n\nAnalysis:\n{tool_analyze_image(path, q)}"
+
+
+def tool_click_by_description(description: str, screenshot_path: str = '') -> str:
+    """Find a UI element by description in the current screen and click it.
+    Takes a screenshot if none provided, analyzes it, extracts coordinates, and clicks."""
+    if not _HAS_DISPLAY:
+        return 'ERROR: No display available'
+    # Take screenshot
+    shot_result = tool_screenshot()
+    if shot_result.startswith('ERROR'):
+        return shot_result
+    path = shot_result.split(': ', 1)[-1].strip().split()[0]
+    # Ask AI to find the element and return its coordinates
+    analysis = tool_analyze_image(
+        path,
+        f"Find the UI element described as: '{description}'. "
+        "Reply with ONLY the x,y pixel coordinates in this exact format: COORDS:x,y "
+        "where x and y are integers. If not found, reply: NOT_FOUND"
+    )
+    m = re.search(r'COORDS:\s*(\d+)\s*,\s*(\d+)', analysis, re.IGNORECASE)
+    if m:
+        x, y = int(m.group(1)), int(m.group(2))
+        return tool_mouse_click(x, y)
+    return f'ERROR: Could not find "{description}" on screen. AI response: {analysis[:200]}'
+
+
+def tool_observe_and_act(goal: str) -> str:
+    """High-level: take screenshot, analyze current state toward goal, and suggest next action.
+    Returns a JSON with {state, next_action, reasoning}."""
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return json.dumps({"state": "headless", "next_action": "use_shell", "reasoning": "No display"})
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    analysis = tool_analyze_image(path,
+        f"Goal: {goal}\n"
+        "Analyze the current screen state. Reply as JSON with keys:\n"
+        "- state: brief description of what is currently on screen\n"
+        "- goal_achieved: true/false\n"
+        "- next_action: the single most important next action to take\n"
+        "- coordinates: {{x: N, y: N}} if a click is needed, otherwise null\n"
+        "- reasoning: one sentence explaining why"
+    )
+    return analysis
+
+
+def tool_browser_audit_repo(repo_url: str) -> str:
+    """Open a GitHub repository in the browser and perform a full visual audit.
+    Takes screenshots, navigates through key pages, and returns findings."""
+    results = []
+    results.append(f"Starting audit of: {repo_url}")
+
+    # Try Selenium/Playwright first
+    nav = tool_browser_navigate(repo_url)
+    results.append(f"Navigation: {nav}")
+
+    time.sleep(3)
+    # Get page text
+    text = tool_browser_get_text()
+    results.append(f"Page content (first 2000 chars):\n{text[:2000]}")
+
+    # Navigate to key sections
+    for path, desc in [('/blob/main/README.md', 'README'), ('/tree/main', 'File tree')]:
+        url2 = repo_url.rstrip('/') + path
+        r = tool_browser_navigate(url2)
+        time.sleep(2)
+        content = tool_browser_get_text()
+        results.append(f"\n{desc} ({url2}):\n{content[:1500]}")
+
+    # Take a screenshot of final state
+    shot = tool_browser_screenshot()
+    results.append(f"\nFinal screenshot: {shot}")
+    return '\n'.join(results)
+
+
+def tool_type_and_submit(text: str, submit_key: str = 'Return') -> str:
+    """Type text and immediately press a submit key (Enter, Tab, etc.)."""
+    r1 = tool_keyboard_type(text)
+    time.sleep(0.2)
+    r2 = tool_keyboard_press(submit_key)
+    return f"Typed: {r1} | Submitted: {r2}"
+
+
+def tool_click_and_verify(x: int, y: int, expected: str = '') -> str:
+    """Click at coordinates, take a screenshot, and verify the expected outcome."""
+    click_result = tool_mouse_click(x, y)
+    time.sleep(0.8)
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return f"Click: {click_result} | Verify: no display"
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    if expected:
+        analysis = tool_analyze_image(path, f"Does the screen now show '{expected}'? Reply: YES or NO and why.")
+        return f"Click: {click_result} | Screenshot: {shot} | Verify: {analysis}"
+    return f"Click: {click_result} | Screenshot: {shot}"
+
+
+def tool_open_and_wait(app_name: str, wait_seconds: float = 3.0, window_title: str = '') -> str:
+    """Open an application, wait for it to load, and verify it's open."""
+    open_result = tool_open_application(app_name, wait_seconds=0.5)
+    time.sleep(wait_seconds)
+    if window_title:
+        focus = tool_focus_window(window_title)
+        return f"{open_result} | {focus}"
+    # Take screenshot to confirm
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return open_result
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    verify = tool_analyze_image(path, f"Is {app_name} visible and open on screen? Reply: YES or NO")
+    return f"{open_result} | Loaded: {verify.strip()}"
+
+
+def tool_search_web_open(query: str, browser: str = 'firefox') -> str:
+    """Open a browser and search for a query. Full automation: launch → navigate → search."""
+    url = f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
+    # Try browser automation first
+    nav = tool_browser_navigate(url)
+    if 'ERROR' not in nav:
+        time.sleep(2)
+        content = tool_browser_get_text()
+        return f"Searched for: {query}\nBrowser: {nav}\nResults preview:\n{content[:2000]}"
+    # Fallback: open GUI browser if display available
+    if _HAS_DISPLAY:
+        open_result = tool_open_and_wait(browser, wait_seconds=3.0)
+        time.sleep(1)
+        # Use keyboard shortcut to focus address bar
+        tool_keyboard_hotkey(['ctrl', 'l'])
+        time.sleep(0.3)
+        tool_keyboard_type(url)
+        tool_keyboard_press('Return')
+        time.sleep(3)
+        shot = tool_screenshot()
+        return f"Opened {browser}: {open_result}\nNavigated to: {url}\nScreenshot: {shot}"
+    # Last resort: web fetch
+    return tool_web_fetch(url)
+
+
+def tool_read_screen_text(region: str = '') -> str:
+    """Take a screenshot and extract all readable text from the screen using AI."""
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return shot
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    prompt = "Extract and transcribe ALL text visible on the screen. Include every word, number, and label."
+    if region:
+        prompt = f"Extract ALL text from the {region} area of the screen."
+    return tool_analyze_image(path, prompt)
+
+
+def tool_get_window_info(title: str = '') -> str:
+    """Get detailed info about window(s): title, size, position, state."""
+    active = tool_get_active_window()
+    windows = tool_list_windows()
+    if _HAS_PAG:
+        try:
+            sz = _pag.size()
+            screen_info = f"Screen: {sz.width}x{sz.height}"
+        except Exception:
+            screen_info = tool_get_screen_size()
+    else:
+        screen_info = tool_get_screen_size()
+    return f"Active window: {active}\nAll windows: {windows}\n{screen_info}"
+
+
+def tool_execute_shell_interactive(command: str, timeout: int = 60) -> str:
+    """Run a shell command and return both stdout and stderr clearly separated."""
+    try:
+        proc = subprocess.run(
+            command, shell=True, capture_output=True, text=True,
+            timeout=timeout, cwd=str(Path.cwd())
+        )
+        out = proc.stdout.strip()
+        err = proc.stderr.strip()
+        parts = []
+        if out:
+            parts.append(f"STDOUT:\n{out[:4000]}")
+        if err:
+            parts.append(f"STDERR:\n{err[:2000]}")
+        if proc.returncode != 0:
+            parts.append(f"EXIT CODE: {proc.returncode}")
+        return '\n'.join(parts) if parts else "(no output)"
+    except subprocess.TimeoutExpired:
+        return f"TIMEOUT after {timeout}s"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def tool_file_tree(path: str = '.', depth: int = 3) -> str:
+    """Show directory tree up to given depth."""
+    try:
+        r = subprocess.run(['find', path, '-maxdepth', str(depth), '-not', '-path', '*/.*'],
+                           capture_output=True, text=True, timeout=10)
+        lines = sorted(r.stdout.strip().splitlines())
+        return '\n'.join(lines[:200]) or "(empty)"
+    except Exception:
+        try:
+            base = Path(path)
+            result = []
+            for item in sorted(base.rglob('*')):
+                try:
+                    rel = item.relative_to(base)
+                    parts = rel.parts
+                    if len(parts) <= depth and not any(p.startswith('.') for p in parts):
+                        indent = '  ' * (len(parts) - 1)
+                        result.append(f"{indent}{item.name}{'/' if item.is_dir() else ''}")
+                except Exception:
+                    pass
+            return '\n'.join(result[:200]) or "(empty)"
+        except Exception as e:
+            return f"ERROR: {e}"
+
+
+def tool_diff_files(path1: str, path2: str) -> str:
+    """Show unified diff between two files."""
+    try:
+        r = subprocess.run(['diff', '-u', path1, path2], capture_output=True, text=True)
+        return r.stdout[:4000] or "(no differences)"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def tool_pipe_commands(commands: str) -> str:
+    """Execute a shell pipeline and return output. E.g. 'cat file.txt | grep error | sort'"""
+    return tool_execute_shell(commands)
+
+
+def tool_check_port(host: str = 'localhost', port: int = 80) -> str:
+    """Check if a TCP port is open on host."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            return f"Port {host}:{port} is OPEN"
+    except Exception as e:
+        return f"Port {host}:{port} is CLOSED/unreachable: {e}"
+
+
+def tool_read_url_content(url: str, selector: str = '') -> str:
+    """Fetch a URL and extract clean text content. Optionally filter by CSS selector via browser."""
+    if selector and _browser_instance:
+        try:
+            tool_browser_navigate(url)
+            time.sleep(2)
+            return tool_browser_get_text(selector)
+        except Exception:
+            pass
+    return tool_web_fetch(url, max_chars=6000)
+
+
+def tool_save_output(content: str, filename: str = '') -> str:
+    """Save content to a file. Auto-generates filename with timestamp if not provided."""
+    if not filename:
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"devin_output_{ts}.txt"
+    path = Path(filename) if Path(filename).is_absolute() else _ROOT / 'data' / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding='utf-8')
+    return f"Saved {len(content)} chars to: {path}"
+
+
+def tool_multi_click(actions: str) -> str:
+    """Execute a sequence of clicks/keys from a JSON array.
+    Format: [{"type":"click","x":100,"y":200}, {"type":"key","key":"Return"}, {"type":"type","text":"hello"}]"""
+    try:
+        steps = json.loads(actions)
+    except Exception:
+        return "ERROR: actions must be valid JSON array"
+    results = []
+    for step in steps:
+        t = step.get('type', '')
+        try:
+            if t == 'click':
+                r = tool_mouse_click(step['x'], step['y'])
+            elif t == 'dclick':
+                r = tool_mouse_double_click(step['x'], step['y'])
+            elif t == 'rclick':
+                r = tool_mouse_right_click(step['x'], step['y'])
+            elif t == 'type':
+                r = tool_keyboard_type(step['text'])
+            elif t == 'key':
+                r = tool_keyboard_press(step['key'])
+            elif t == 'hotkey':
+                r = tool_keyboard_hotkey(step['keys'])
+            elif t == 'sleep':
+                time.sleep(float(step.get('seconds', 0.5)))
+                r = f"slept {step.get('seconds', 0.5)}s"
+            elif t == 'screenshot':
+                r = tool_screenshot()
+            else:
+                r = f"unknown step type: {t}"
+            results.append(f"[{t}] {r}")
+        except Exception as e:
+            results.append(f"[{t}] ERROR: {e}")
+    return '\n'.join(results)
+
+
+def tool_pen_test_recon(target: str) -> str:
+    """Basic reconnaisance on an authorized target: port scan, HTTP headers, robots.txt.
+    ONLY use on systems you own or have explicit written permission to test."""
+    if not target:
+        return "ERROR: target required"
+    results = [f"Recon on: {target} (authorized target assumed)"]
+    # HTTP headers
+    try:
+        url = target if target.startswith('http') else f"http://{target}"
+        req = urllib.request.Request(url, method='HEAD')
+        with urllib.request.urlopen(req, timeout=5) as r:
+            results.append(f"\nHTTP headers:\n" + '\n'.join(f"  {k}: {v}" for k, v in r.headers.items()))
+    except Exception as e:
+        results.append(f"\nHTTP: {e}")
+    # robots.txt
+    try:
+        robots_url = (target.rstrip('/') if target.startswith('http') else f"http://{target}") + '/robots.txt'
+        robots = tool_web_fetch(robots_url, max_chars=500)
+        results.append(f"\nrobots.txt:\n{robots}")
+    except Exception:
+        pass
+    # Port check on common ports
+    import socket
+    host = re.sub(r'^https?://', '', target).split('/')[0].split(':')[0]
+    open_ports = []
+    for port in [80, 443, 8080, 8443, 22, 21, 3306, 5432]:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                open_ports.append(port)
+        except Exception:
+            pass
+    results.append(f"\nOpen ports (quick scan): {open_ports}")
+    return '\n'.join(results)
+
+
+def tool_system_security_check() -> str:
+    """Run local system security checks: listening ports, running services, sudo config."""
+    checks = []
+    for cmd, label in [
+        ("ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null", "Listening ports"),
+        ("ps aux --sort=-%cpu | head -20", "Top processes by CPU"),
+        ("find /etc -name '*.conf' -newer /etc/passwd 2>/dev/null | head -10", "Recently modified configs"),
+        ("last | head -10", "Recent logins"),
+        ("uname -r", "Kernel version"),
+    ]:
+        try:
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            checks.append(f"\n{label}:\n{r.stdout.strip()[:500]}")
+        except Exception as e:
+            checks.append(f"\n{label}: {e}")
+    return '\n'.join(checks)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2471,6 +2833,172 @@ TOOLS: Dict[str, Dict] = {
         "required": [],
         "category": "memory",
     },
+    # ── Advanced OS automation ─────────────────────────────────────────────
+    "screenshot_and_analyze": {
+        "fn": tool_screenshot_and_analyze,
+        "desc": "Take screenshot and immediately analyze it with AI. Returns description + UI element coordinates.",
+        "params": {"prompt": {"type": "string", "description": "What to look for or analyze"}},
+        "required": [],
+        "category": "vision",
+    },
+    "click_by_description": {
+        "fn": tool_click_by_description,
+        "desc": "Find a UI element by text/description and click it automatically using screenshot + AI.",
+        "params": {"description": {"type": "string", "description": "Description of element to click, e.g. 'address bar', 'Submit button', 'Firefox icon'"}},
+        "required": ["description"],
+        "category": "vision",
+    },
+    "observe_and_act": {
+        "fn": tool_observe_and_act,
+        "desc": "Take screenshot, analyze current screen state toward a goal, and return next recommended action with coordinates.",
+        "params": {"goal": {"type": "string", "description": "The goal you are trying to achieve"}},
+        "required": ["goal"],
+        "category": "vision",
+    },
+    "click_and_verify": {
+        "fn": tool_click_and_verify,
+        "desc": "Click at coordinates, take screenshot, and verify expected outcome.",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+            "expected": {"type": "string", "description": "What you expect to see after clicking"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "type_and_submit": {
+        "fn": tool_type_and_submit,
+        "desc": "Type text and immediately press a submit key (Return/Tab/etc).",
+        "params": {
+            "text": {"type": "string", "description": "Text to type"},
+            "submit_key": {"type": "string", "description": "Key to press after typing: Return, Tab, Escape"},
+        },
+        "required": ["text"],
+        "category": "keyboard",
+    },
+    "open_and_wait": {
+        "fn": tool_open_and_wait,
+        "desc": "Open an application, wait for it to fully load, and verify it opened.",
+        "params": {
+            "app_name": {"type": "string", "description": "Application to open"},
+            "wait_seconds": {"type": "number", "description": "Seconds to wait for load"},
+            "window_title": {"type": "string", "description": "Expected window title to focus"},
+        },
+        "required": ["app_name"],
+        "category": "apps",
+    },
+    "search_web_open": {
+        "fn": tool_search_web_open,
+        "desc": "Open browser and search the web. Full automation: launch → navigate → search.",
+        "params": {
+            "query": {"type": "string", "description": "Search query"},
+            "browser": {"type": "string", "description": "Browser to use: firefox, chromium, chrome"},
+        },
+        "required": ["query"],
+        "category": "browser",
+    },
+    "read_screen_text": {
+        "fn": tool_read_screen_text,
+        "desc": "Take screenshot and extract all readable text from screen using AI.",
+        "params": {"region": {"type": "string", "description": "Optional: region to read (top, bottom, left, right, center)"}},
+        "required": [],
+        "category": "vision",
+    },
+    "get_window_info": {
+        "fn": tool_get_window_info,
+        "desc": "Get detailed info about windows: titles, positions, sizes.",
+        "params": {"title": {"type": "string", "description": "Optional window title filter"}},
+        "required": [],
+        "category": "windows",
+    },
+    "execute_shell_verbose": {
+        "fn": tool_execute_shell_interactive,
+        "desc": "Run shell command with clearly separated stdout/stderr output and exit code.",
+        "params": {
+            "command": {"type": "string", "description": "Shell command to run"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds"},
+        },
+        "required": ["command"],
+        "category": "shell",
+    },
+    "file_tree": {
+        "fn": tool_file_tree,
+        "desc": "Show directory tree structure up to specified depth.",
+        "params": {
+            "path": {"type": "string", "description": "Directory path to scan"},
+            "depth": {"type": "integer", "description": "Maximum depth (default 3)"},
+        },
+        "required": [],
+        "category": "files",
+    },
+    "diff_files": {
+        "fn": tool_diff_files,
+        "desc": "Show unified diff between two files.",
+        "params": {
+            "path1": {"type": "string", "description": "First file path"},
+            "path2": {"type": "string", "description": "Second file path"},
+        },
+        "required": ["path1", "path2"],
+        "category": "files",
+    },
+    "check_port": {
+        "fn": tool_check_port,
+        "desc": "Check if a TCP port is open on a host.",
+        "params": {
+            "host": {"type": "string", "description": "Hostname or IP"},
+            "port": {"type": "integer", "description": "Port number"},
+        },
+        "required": ["host", "port"],
+        "category": "network",
+    },
+    "read_url_content": {
+        "fn": tool_read_url_content,
+        "desc": "Fetch a URL and return clean readable text content.",
+        "params": {
+            "url": {"type": "string", "description": "URL to fetch"},
+            "selector": {"type": "string", "description": "Optional CSS selector to extract specific content"},
+        },
+        "required": ["url"],
+        "category": "web",
+    },
+    "save_output": {
+        "fn": tool_save_output,
+        "desc": "Save content to a file with optional filename (auto-timestamped if not provided).",
+        "params": {
+            "content": {"type": "string", "description": "Content to save"},
+            "filename": {"type": "string", "description": "Output filename (optional)"},
+        },
+        "required": ["content"],
+        "category": "files",
+    },
+    "multi_click": {
+        "fn": tool_multi_click,
+        "desc": 'Execute sequence of clicks/keys/types from JSON array. E.g. [{"type":"click","x":100,"y":200},{"type":"type","text":"hello"},{"type":"key","key":"Return"}]',
+        "params": {"actions": {"type": "string", "description": "JSON array of actions: [{type,x,y}, {type,text}, {type,key}, {type,keys}, {type,seconds}]"}},
+        "required": ["actions"],
+        "category": "mouse",
+    },
+    "browser_audit_repo": {
+        "fn": tool_browser_audit_repo,
+        "desc": "Open a GitHub repository in the browser and perform a full visual audit including README, file tree, and key pages.",
+        "params": {"repo_url": {"type": "string", "description": "GitHub repository URL"}},
+        "required": ["repo_url"],
+        "category": "browser",
+    },
+    "pen_test_recon": {
+        "fn": tool_pen_test_recon,
+        "desc": "Basic recon on an AUTHORIZED target: HTTP headers, robots.txt, open ports. ONLY use on systems you own or have explicit written permission to test.",
+        "params": {"target": {"type": "string", "description": "Target hostname or URL (must be authorized)"}},
+        "required": ["target"],
+        "category": "security",
+    },
+    "system_security_check": {
+        "fn": tool_system_security_check,
+        "desc": "Run local system security checks: listening ports, top processes, recent logins, kernel version.",
+        "params": {},
+        "required": [],
+        "category": "security",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -2797,14 +3325,26 @@ class HuggingFaceProvider:
     Falls back to ReAct-style text parsing for models without native tool support.
     """
     URL = "https://api-inference.huggingface.co/v1/chat/completions"
+    # Best free-tier models ordered by capability
     MODELS = [
-        'meta-llama/Meta-Llama-3.1-70B-Instruct',
-        'Qwen/Qwen2.5-72B-Instruct',
-        'mistralai/Mixtral-8x7B-Instruct-v0.1',
-        'meta-llama/Meta-Llama-3.1-8B-Instruct',
-        'mistralai/Mistral-7B-Instruct-v0.3',
-        'microsoft/Phi-3.5-mini-instruct',
+        'Qwen/Qwen2.5-72B-Instruct',             # best free reasoning + code
+        'meta-llama/Llama-3.3-70B-Instruct',     # latest Meta, excellent instruction following
+        'meta-llama/Meta-Llama-3.1-70B-Instruct',# Meta 70B stable
+        'deepseek-ai/DeepSeek-R1-Distill-Llama-70B',  # reasoning distill
+        'Qwen/Qwen2.5-Coder-32B-Instruct',       # best for code tasks
+        'mistralai/Mistral-Nemo-Instruct-2407',  # compact capable model
+        'mistralai/Mixtral-8x7B-Instruct-v0.1',  # MOE model
+        'meta-llama/Meta-Llama-3.1-8B-Instruct', # fast small model
+        'microsoft/Phi-3.5-mini-instruct',        # tiny but capable
     ]
+    # Models known to support native function/tool calling
+    TOOL_CALL_MODELS = {
+        'Qwen/Qwen2.5-72B-Instruct',
+        'Qwen/Qwen2.5-Coder-32B-Instruct',
+        'meta-llama/Llama-3.3-70B-Instruct',
+        'meta-llama/Meta-Llama-3.1-70B-Instruct',
+        'meta-llama/Meta-Llama-3.1-8B-Instruct',
+    }
     # ReAct-style tool call markers for text-parsing fallback
     _CALL_OPEN  = '<tool_call>'
     _CALL_CLOSE = '</tool_call>'
@@ -2976,125 +3516,265 @@ _DISPLAY_NOTE = ("DISPLAY: AVAILABLE — mouse, keyboard, screenshot, and window
                  "DISPLAY: HEADLESS — GUI tools unavailable. Focus on shell/file/web tasks.")
 
 SYSTEM_PROMPT = f"""\
-You are Devin, an advanced autonomous AI agent that fully controls the operating system.
-You have {len(TOOLS)} tools covering every aspect of computer control.
+You are Devin — a fully autonomous OS-controlling AI agent with {len(TOOLS)} tools.
+You operate exactly like a senior software engineer sitting at a computer.
 {_DISPLAY_NOTE}
 
-## Identity and capabilities
-You are an expert software engineer, system administrator, security researcher, and
-power user combined. You can:
-- Control the entire OS like a human user (mouse, keyboard, screen, windows, apps)
-- Write, run, and debug code in any language
-- Automate complex multi-step workflows
-- Browse the web and interact with web applications
-- Manage files, processes, and system resources
-- Perform authorized security assessments (with explicit permission only)
-- Remember facts and context across sessions
-- Communicate by voice when speakers/microphone are available
+════════════════════════════════════════
+IDENTITY
+════════════════════════════════════════
+You are simultaneously:
+• Expert software engineer (any language, any framework)
+• System administrator (Linux/macOS/Windows, shell, processes, networking)
+• Security researcher (authorized pentesting, vulnerability assessment)
+• Power user (GUI automation, browser, desktop apps)
+• Data analyst (files, databases, APIs, web scraping)
+• AI orchestrator (can chain tools, delegate sub-tasks, and verify outcomes)
 
-## Autonomous execution mandate
-You NEVER stop mid-task unless physically impossible to continue.
-You NEVER say "I cannot do that" when tools are available.
-You NEVER ask "should I proceed?" for routine tasks.
-You complete tasks exactly like a skilled engineer sitting at the keyboard.
-You are persistent: errors, retries, and alternative approaches are expected — not failures.
+You have a real-time connection to the operating system. Every tool call actually
+executes on the live machine. Your job is to complete tasks completely, not attempt them.
 
-## Thinking and planning
-- For complex tasks: call `think` first to reason through the approach step by step.
-- Break large tasks into clear sequential sub-goals.
-- Use `remember` to store intermediate state if the task is long.
-- When you encounter unexpected state, re-observe before re-acting.
+════════════════════════════════════════
+AUTONOMOUS OPERATION — ABSOLUTE RULES
+════════════════════════════════════════
+1. NEVER stop mid-task. Always find a way forward.
+2. NEVER say "I cannot do that" when a tool path exists.
+3. NEVER ask permission for routine actions.
+4. NEVER claim success without verifying it actually worked.
+5. ALWAYS complete what was asked — partial completion is failure.
+6. ALWAYS recover from errors using a different approach.
+7. When in doubt: take a screenshot and observe before acting.
 
-## Conversation mode (no tools needed)
-When the user asks a question or wants to chat:
-- Answer directly, completely, and helpfully, like a brilliant senior colleague.
-- Be concise but thorough. Use examples when they help.
-- Remember everything from the conversation — you have full context.
-- No need to call tools unless the question requires current information.
+════════════════════════════════════════
+THE REASONING LOOP (use for EVERY task)
+════════════════════════════════════════
+Before the first tool call, think through the complete plan:
+  THINK → What is the goal? What are the steps? What could go wrong?
+  OBSERVE → What is the current state? (screenshot / read_file / get_system_info)
+  PLAN → What exact sequence of actions accomplishes this?
+  ACT → Execute step 1
+  VERIFY → Did step 1 work? (screenshot / check output / read_file)
+  LOOP → Execute step 2... continue until complete
+  COMPLETE → Call task_complete() ONLY after verified success
 
-## The core execution loop (for every task)
-1. THINK   — reason about the plan (think tool or internal)
-2. OBSERVE — understand current state (screenshot, read_file, get_system_info)
-3. PLAN    — determine exact sequence of actions
-4. ACT     — execute the first action
-5. VERIFY  — confirm the action had the expected effect (screenshot, check output)
-6. LOOP    — continue to next action or recover if wrong
-7. COMPLETE — only call task_complete when the outcome is verified, not just attempted
+For GUI tasks, ALWAYS use screenshot_and_analyze before clicking — never guess coordinates.
+For shell tasks, ALWAYS inspect stdout+stderr to confirm success.
+For file tasks, ALWAYS read back after writing to confirm content.
 
-## Error recovery (NEVER give up)
-- Tool returns ERROR → try an alternative approach immediately
-- GUI click missed → take screenshot, re-analyze coordinates, retry
-- App not responding → check list_windows, sleep, try keyboard shortcut
-- Network/web fails → try a different URL or approach
-- Shell command fails → inspect the error, fix the command or environment
-- Permission denied → try with sudo or check file permissions first
-- IMPORTANT: 3 failed attempts with same approach → switch to a completely different strategy
+════════════════════════════════════════
+GUI AUTOMATION WORKFLOW
+════════════════════════════════════════
+CORRECT approach:
+  1. open_and_wait("firefox", wait_seconds=3)   # open app, wait for load
+  2. screenshot_and_analyze("Where is the address bar? Give x,y coordinates")
+  3. mouse_click(x, y)                          # click based on AI coordinates
+  4. keyboard_hotkey(["ctrl","a"])              # select all in field
+  5. keyboard_type("https://example.com")       # type URL
+  6. keyboard_press("Return")                   # submit
+  7. sleep(2) then screenshot_and_analyze("Did the page load? What URL is shown?")
+  8. Continue or recover
 
-## Real OS control workflow (GUI tasks)
-ALWAYS follow: OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY
-Never click blind coordinates. Always verify with screenshot first.
+WRONG approach: guessing x,y coordinates without screenshot analysis.
+WRONG approach: clicking once and assuming it worked.
+WRONG approach: stopping after the first error.
 
-Standard GUI workflow:
-1. open_application("appname") + sleep(2)         ← launch, wait for load
-2. screenshot() → analyze_screenshot("describe UI, list coordinates of: address bar, buttons, inputs")
-3. mouse_click(x, y) [from analysis]              ← precise click
-4. keyboard_hotkey(["ctrl","a"]) + keyboard_type("text")  ← type
-5. keyboard_press("Return") or mouse_click(submit_x, submit_y)
-6. sleep(1) + screenshot() → analyze_screenshot("verify: did it work?")
-7. If verified: task_complete / continue to next step
-8. If wrong: re-observe, diagnose, retry with corrected approach
+High-level helpers (USE THESE for common patterns):
+  • screenshot_and_analyze(prompt) — screenshot + AI analysis in one call
+  • click_by_description("Submit button") — AI finds and clicks element
+  • observe_and_act(goal) — AI analyzes screen toward goal and suggests action
+  • click_and_verify(x, y, expected) — click + screenshot + verify outcome
+  • open_and_wait("app", wait=3) — open app and verify it loaded
+  • search_web_open("python tutorials") — full browser search automation
+  • multi_click('[{{"type":"click","x":100,"y":200}},{{"type":"type","text":"hello"}}]')
 
-## Browser automation (Selenium/Playwright — headless capable)
-1. browser_navigate("https://url.com")  ← auto-starts browser
-2. browser_get_text() → understand page structure
-3. browser_click("selector") + browser_type("selector", "text")
-4. browser_execute_js("return document.title")  ← verify
-5. browser_close()
+════════════════════════════════════════
+BROWSER AUTOMATION (headless-capable)
+════════════════════════════════════════
+Use Selenium/Playwright for reliable headless browser control:
+  1. browser_navigate("https://github.com/user/repo")
+  2. browser_get_text() → understand page structure
+  3. browser_execute_js("return document.title") → verify
+  4. browser_click("button.submit") → interact
+  5. browser_audit_repo("https://github.com/user/repo") → full repo audit
 
-## Security and authorized testing
-For authorized penetration testing and security research:
-- Always verify explicit authorization before any security tool use
-- Use execute_shell to run nmap, burpsuite, metasploit, etc. with AUTHORIZED targets only
-- Document findings with write_file
-- Use web_fetch to research CVEs and techniques
-- For lab environments (HackTheBox, TryHackMe, DVWA, etc.) — proceed with tools
+For GitHub audits use browser_audit_repo() — it navigates through README, files, structure.
 
-## Multi-step autonomous workflow example
-Task: "Test the webapp on localhost:8080 for SQL injection"
-1. think("Plan: check if server is running, find login/input forms, test each")
-2. execute_shell("curl -s http://localhost:8080/ | head -50") → observe structure
-3. web_fetch("http://localhost:8080/login") → identify form fields
-4. execute_shell("sqlmap -u 'http://localhost:8080/login' --data='user=test&pass=test' --batch")
-5. write_file("security_report.txt", results) → document findings
-6. task_complete("SQL injection test complete. Results saved to security_report.txt")
+════════════════════════════════════════
+ERROR RECOVERY (NEVER give up)
+════════════════════════════════════════
+Error pattern → Recovery strategy:
+  GUI click missed         → screenshot_and_analyze to re-find element, retry
+  App not found            → try 'which appname', check applications menu
+  App not responding       → list_windows, focus_window, or keyboard shortcut
+  Shell command fails      → read the error, fix it, retry with corrected command
+  Network/web blocked      → try alternative URL, use browser instead of fetch
+  Permission denied        → check permissions with ls -la, try sudo if appropriate
+  File not found           → search_files to locate it first
+  Same error 3 times       → SWITCH STRATEGY completely (different tool/approach)
 
-## Full Devin codebase integration
-- `discover_modules` — find all capabilities across 103+ modules and 24+ repos
-- `run_devin_module` — call ANY function from ANY Python file in the codebase
-- `devin_module` — invoke built-in modules (voice, os_automation, integration_hub, etc.)
-- `list_integrations` — see currently loaded integration status
-- All of Devin's modules, external repos, and tools are available to you.
+After 3 failed attempts with same approach, always try a completely different method.
 
-## Tool reference (all {len(TOOLS)} tools)
-reasoning:    think
-web:          web_search, web_fetch, open_browser, http_request, parse_json
-shell:        execute_shell, execute_python, list_processes, kill_process, sleep, run_script, install_package
-files:        read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files
-git:          git_command, git_advanced
-vision:       screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window, wait_and_click, scroll_to_element
-mouse:        mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
-keyboard:     keyboard_type, keyboard_press, keyboard_hotkey, click_and_type, type_text_at, press_key_at
-windows:      get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab, get_active_window, resize_window, move_window
-apps:         open_application, open_terminal, close_application, send_notification
-browser:      browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
-clipboard:    clipboard_get, clipboard_set, select_all_copy
-voice:        speak, listen
-memory:       remember, recall
-system:       get_system_info, get_system_metrics, network_info, context_info
-code:         analyze_code
-integrations: devin_module, list_integrations, run_devin_module, discover_modules
-notes:        take_note
-control:      task_complete
+════════════════════════════════════════
+CONVERSATION MODE
+════════════════════════════════════════
+When the user asks questions (not task execution):
+  • Answer directly and completely like a knowledgeable senior colleague
+  • Be concise but thorough — use examples when they clarify
+  • Remember everything from this conversation — full context available
+  • If the question is about current system state, use get_system_info or screenshot
+  • Never be dismissive — if you're uncertain, say so and offer alternatives
+
+════════════════════════════════════════
+SECURITY — AUTHORIZED TESTING ONLY
+════════════════════════════════════════
+Security tools (nmap, metasploit, burpsuite, sqlmap, etc.) require:
+  ✓ Explicit authorization from the system owner
+  ✓ Clear scope definition (target IPs/domains)
+  ✓ Lab environments (HackTheBox, TryHackMe, DVWA, own VMs): proceed
+  ✗ Never target systems without explicit written authorization
+  ✗ Never exfiltrate real credentials or personal data
+
+For authorized testing:
+  1. think("Verify authorization, define scope, plan approach")
+  2. pen_test_recon("target.example.com") → basic recon
+  3. execute_shell("nmap -sV --open target.example.com") → port/service scan
+  4. Document with write_file("pentest_report.txt", findings)
+  5. task_complete with summary
+
+════════════════════════════════════════
+TOOL REFERENCE — ALL {len(TOOLS)} TOOLS
+════════════════════════════════════════
+REASONING:
+  think(thought)                    — reason through plan, record thoughts
+
+WEB & FETCH:
+  web_search(query)                 — DuckDuckGo search, returns URLs + snippets
+  web_fetch(url)                    — fetch URL, return text content
+  read_url_content(url, selector)   — fetch URL with optional CSS selector
+  http_request(url, method, ...)    — raw HTTP request with custom headers/body
+  open_browser(url)                 — open system browser at URL
+  parse_json(text, path)            — parse JSON with optional dot-path extraction
+
+SHELL & CODE:
+  execute_shell(command, cwd, timeout) — run any shell command, captures stdout+stderr
+  execute_shell_verbose(command)       — same but with clearly labeled STDOUT/STDERR/EXIT CODE
+  execute_python(code, cwd)           — run Python code, captures output
+  run_script(path, interpreter)       — execute .py/.sh/.js/.ps1/.bat files
+  install_package(package, manager)   — pip/apt/brew/npm/choco install
+  list_processes(filter)              — show running processes
+  kill_process(pid)                   — kill process by PID
+  sleep(seconds)                      — wait N seconds
+  pipe_commands(commands)             — shell pipeline: "cat file | grep x | sort"
+
+FILES & FILESYSTEM:
+  read_file(path, offset, limit)      — read file contents (line-by-line)
+  write_file(path, content)           — write/create file
+  edit_file(path, old, new)           — find+replace in file
+  delete_file(path)                   — delete file
+  list_files(path, pattern, recursive)— list directory contents
+  search_files(pattern, path)         — grep for text in files
+  file_tree(path, depth)              — show directory tree structure
+  create_directory(path)              — create directory
+  diff_files(path1, path2)            — show unified diff
+  save_output(content, filename)      — save any content to file
+  git_command(args)                   — run git commands
+  git_advanced(subcommand, repo_path) — git status/log/diff/blame
+
+VISION & SCREEN:
+  screenshot(path)                    — take screenshot, returns path
+  screenshot_and_analyze(prompt)      — screenshot + AI analysis (PREFERRED)
+  analyze_screenshot(prompt)          — analyze most recent screenshot with AI
+  analyze_image(path, question)       — analyze any image with AI
+  find_on_screen(element)             — find element on screen, return coordinates
+  read_screen_text(region)            — extract all text from screen with AI
+  observe_and_act(goal)               — AI analyzes screen toward goal
+
+MOUSE:
+  mouse_click(x, y, button)          — click at coordinates
+  mouse_double_click(x, y)           — double-click
+  mouse_right_click(x, y)            — right-click
+  mouse_move(x, y)                   — move mouse without clicking
+  mouse_drag(x1, y1, x2, y2)         — drag operation
+  mouse_scroll(x, y, direction, amount) — scroll at position
+  get_mouse_position()               — get current cursor coordinates
+  click_and_verify(x, y, expected)   — click + screenshot + verify
+  click_by_description(desc)         — AI finds and clicks element by description
+  multi_click(actions_json)          — sequence of clicks/keys/waits
+
+KEYBOARD:
+  keyboard_type(text)                — type text at current focus
+  keyboard_press(key)                — press single key (Return, Escape, Tab, F5...)
+  keyboard_hotkey(keys)              — press key combination: ["ctrl","c"]
+  click_and_type(x, y, text)         — click position then type
+  type_and_submit(text, submit_key)  — type + press submit key
+  type_text_at(x, y, text)           — move to x,y then type
+  press_key_at(x, y, key)            — move to x,y then press key
+  select_all_copy()                  — Ctrl+A, Ctrl+C
+
+WINDOWS & APPS:
+  get_screen_size()                  — screen dimensions
+  list_windows()                     — list all open windows
+  focus_window(title)                — bring window to focus
+  get_active_window()                — get current active window info
+  get_window_info(title)             — detailed window info
+  maximize_window()                  — maximize current window
+  minimize_window()                  — minimize current window
+  resize_window(w, h, title)         — resize window
+  move_window(x, y, title)           — move window
+  alt_tab()                          — switch windows
+  wait_for_window(title, timeout)    — wait until window appears
+  open_application(name, wait)       — launch application
+  open_and_wait(name, wait, title)   — launch + verify it opened (PREFERRED)
+  open_terminal()                    — open terminal window
+  close_application(name)            — close application
+  send_notification(title, body)     — show desktop notification
+
+BROWSER (Selenium/Playwright):
+  browser_navigate(url)              — navigate headless browser to URL
+  browser_click(selector)            — click CSS selector in browser
+  browser_type(selector, text)       — type in browser element
+  browser_get_text(selector)         — extract page/element text
+  browser_execute_js(script)         — run JavaScript in browser
+  browser_screenshot(path)           — screenshot of browser page
+  browser_start(headless)            — explicitly start browser
+  browser_close()                    — close browser
+  browser_audit_repo(repo_url)       — full GitHub repo audit via browser
+  search_web_open(query, browser)    — launch browser and search
+
+CLIPBOARD:
+  clipboard_get()                    — get clipboard contents
+  clipboard_set(text)                — set clipboard text
+  select_all_copy()                  — Ctrl+A + Ctrl+C
+
+VOICE:
+  speak(text)                        — text-to-speech
+  listen(timeout)                    — speech-to-text (microphone)
+
+MEMORY:
+  remember(fact, tags)               — store persistent fact
+  recall(query)                      — retrieve relevant memories
+  take_note(title, content)          — save formatted note to file
+
+SYSTEM:
+  get_system_info()                  — OS, Python, hardware info
+  get_system_metrics()               — CPU, RAM, disk usage
+  network_info()                     — network interfaces, connectivity
+  context_info()                     — current agent context/status
+  check_port(host, port)             — test if TCP port is open
+  system_security_check()            — local security audit
+
+INTEGRATIONS:
+  devin_module(module, action, params) — call any of the 103 built-in modules
+  run_devin_module(path, fn, args)     — call any function from any .py file
+  discover_modules()                   — list all 103+ available modules
+  list_integrations()                  — show loaded integration status
+
+SECURITY (AUTHORIZED ONLY):
+  pen_test_recon(target)             — HTTP headers, robots.txt, open ports
+  system_security_check()            — local system security audit
+
+CONTROL:
+  task_complete(result)              — ONLY call when task is FULLY VERIFIED complete
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
