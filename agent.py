@@ -272,6 +272,69 @@ try:
 except BaseException:
     pass
 
+# Load analytics module
+_analytics_mod = None
+try:
+    _analytics_mod = _il.import_module('analytics_module')
+except BaseException:
+    pass
+
+# Load automation tools (advanced automation patterns)
+_auto_tools_mod = None
+try:
+    _auto_tools_mod = _il.import_module('automation_tools')
+except BaseException:
+    pass
+
+# Load AI connector (multi-AI routing)
+_ai_connector_mod = None
+try:
+    _ai_connector_mod = _il.import_module('ai_connector')
+except BaseException:
+    pass
+
+# Load email tools
+_email_mod = None
+try:
+    _email_mod = _il.import_module('email_tools')
+except BaseException:
+    pass
+
+# Load repo tools (git operations, GitHub API)
+_repo_tools_mod = None
+try:
+    _repo_tools_mod = _il.import_module('repo_tools')
+except BaseException:
+    pass
+
+# Load cheetah security (security assessment tools)
+_cheetah_sec_mod = None
+try:
+    _cheetah_sec_mod = _il.import_module('cheetah_security')
+except BaseException:
+    pass
+
+# Load pentesting module (authorized security testing)
+_pentest_mod = None
+try:
+    _pentest_mod = _il.import_module('pentesting_module')
+except BaseException:
+    pass
+
+# Load privacy tools
+_privacy_mod = None
+try:
+    _privacy_mod = _il.import_module('privacy_tools')
+except BaseException:
+    pass
+
+# Load resilience tools
+_resilience_mod = None
+try:
+    _resilience_mod = _il.import_module('resilience_tools')
+except BaseException:
+    pass
+
 # Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
@@ -291,6 +354,15 @@ def _modules_status() -> Dict[str, bool]:
         'cheetah_providers': _cheetah_providers_mod is not None,
         'ollama':            _ollama_mod          is not None,
         'social_media':      _social_mod          is not None,
+        'analytics':         _analytics_mod       is not None,
+        'automation_tools':  _auto_tools_mod      is not None,
+        'ai_connector':      _ai_connector_mod    is not None,
+        'email_tools':       _email_mod           is not None,
+        'repo_tools':        _repo_tools_mod      is not None,
+        'cheetah_security':  _cheetah_sec_mod     is not None,
+        'pentest':           _pentest_mod         is not None,
+        'privacy':           _privacy_mod         is not None,
+        'resilience':        _resilience_mod      is not None,
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2059,6 +2131,104 @@ def tool_system_security_check() -> str:
     return '\n'.join(checks)
 
 
+def tool_send_email(to: str, subject: str, body: str) -> str:
+    """Send email using configured email integration."""
+    if _email_mod:
+        try:
+            fn = getattr(_email_mod, 'send_email', None) or getattr(_email_mod, 'SendEmail', None)
+            if fn:
+                return str(fn(to=to, subject=subject, body=body))
+        except Exception as e:
+            return f"ERROR: {e}"
+    return "ERROR: email_tools module not available"
+
+
+def tool_analyze_data(data: str, analysis_type: str = 'summary') -> str:
+    """Analyze data using the analytics module. Types: summary, stats, patterns, anomalies."""
+    if _analytics_mod:
+        try:
+            fn = (getattr(_analytics_mod, 'analyze', None) or
+                  getattr(_analytics_mod, 'analyze_data', None) or
+                  getattr(_analytics_mod, 'run_analysis', None))
+            if fn:
+                return str(fn(data=data, analysis_type=analysis_type))
+        except Exception as e:
+            return f"Analytics error: {e}"
+    # Fallback: basic Python stats
+    import statistics
+    lines = [l.strip() for l in str(data).split('\n') if l.strip()]
+    numbers = []
+    for l in lines:
+        try: numbers.append(float(l))
+        except: pass
+    if numbers:
+        return (f"Lines: {len(lines)}  Numbers found: {len(numbers)}\n"
+                f"Min: {min(numbers):.2f}  Max: {max(numbers):.2f}  "
+                f"Mean: {statistics.mean(numbers):.2f}  "
+                f"Stdev: {statistics.stdev(numbers):.2f if len(numbers)>1 else 'n/a'}")
+    return f"Lines: {len(lines)}  Words: {sum(len(l.split()) for l in lines)}  Chars: {len(data)}"
+
+
+def tool_schedule_task(task: str, delay_seconds: float = 0, recurring: bool = False) -> str:
+    """Schedule a task to run after a delay. Uses scheduler module if available."""
+    if _scheduler_mod:
+        try:
+            fn = (getattr(_scheduler_mod, 'schedule_task', None) or
+                  getattr(_scheduler_mod, 'add_task', None))
+            if fn:
+                return str(fn(task=task, delay=delay_seconds, recurring=recurring))
+        except Exception as e:
+            return f"Scheduler error: {e}"
+    # Simple fallback: just sleep and note
+    return f"Scheduled: '{task[:60]}' (delay={delay_seconds}s) — run with execute_shell or execute_python"
+
+
+def tool_repo_info(repo_path: str = '.') -> str:
+    """Get detailed git repo information: status, log, branches, remotes."""
+    if _repo_tools_mod:
+        try:
+            fn = (getattr(_repo_tools_mod, 'get_repo_info', None) or
+                  getattr(_repo_tools_mod, 'repo_status', None))
+            if fn:
+                return str(fn(repo_path=repo_path))
+        except Exception as e:
+            return f"repo_tools error: {e}"
+    # Fallback to git commands
+    parts = []
+    for cmd in ['git -C "{p}" log --oneline -5'.format(p=repo_path),
+                'git -C "{p}" status --short'.format(p=repo_path),
+                'git -C "{p}" branch -a'.format(p=repo_path)]:
+        try:
+            r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+            parts.append(r.stdout.strip()[:300])
+        except Exception:
+            pass
+    return '\n'.join(parts) or "Not a git repo or git not available"
+
+
+def tool_security_scan(target: str, scan_type: str = 'basic') -> str:
+    """Run an authorized security scan. scan_type: basic | ports | web | full.
+    Only use on systems you own or have explicit written authorization to test."""
+    if _cheetah_sec_mod:
+        try:
+            fn = (getattr(_cheetah_sec_mod, 'run_scan', None) or
+                  getattr(_cheetah_sec_mod, 'security_scan', None))
+            if fn:
+                return str(fn(target=target, scan_type=scan_type))
+        except Exception as e:
+            return f"cheetah_security error: {e}"
+    if _pentest_mod:
+        try:
+            fn = (getattr(_pentest_mod, 'run_pentest', None) or
+                  getattr(_pentest_mod, 'scan', None))
+            if fn:
+                return str(fn(target=target))
+        except Exception as e:
+            return f"pentest error: {e}"
+    # Fallback to basic nmap
+    return tool_pen_test_recon(target)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3005,6 +3175,67 @@ TOOLS: Dict[str, Dict] = {
         "desc": "Run local system security checks: listening ports, top processes, recent logins, kernel version.",
         "params": {},
         "required": [],
+        "category": "security",
+    },
+
+    # ── Email ──────────────────────────────────────────────────────────────────
+    "send_email": {
+        "fn": tool_send_email,
+        "desc": "Send an email using the configured email integration.",
+        "params": {
+            "to": {"type": "string", "description": "Recipient email address"},
+            "subject": {"type": "string", "description": "Email subject line"},
+            "body": {"type": "string", "description": "Email body text"},
+        },
+        "required": ["to", "subject", "body"],
+        "category": "integrations",
+    },
+
+    # ── Analytics ──────────────────────────────────────────────────────────────
+    "analyze_data": {
+        "fn": tool_analyze_data,
+        "desc": "Analyze data: summary statistics, trends, correlation, or anomaly detection.",
+        "params": {
+            "data": {"type": "string", "description": "Data as JSON string, CSV text, or description"},
+            "analysis_type": {"type": "string", "description": "One of: summary, trends, correlation, anomaly (default: summary)"},
+        },
+        "required": ["data"],
+        "category": "data",
+    },
+
+    # ── Scheduling ─────────────────────────────────────────────────────────────
+    "schedule_task": {
+        "fn": tool_schedule_task,
+        "desc": "Schedule a shell command or task to run after a delay (optionally recurring).",
+        "params": {
+            "task": {"type": "string", "description": "Shell command or task description to run"},
+            "delay_seconds": {"type": "number", "description": "Seconds to wait before running (default 0)"},
+            "recurring": {"type": "boolean", "description": "Whether to repeat the task (default false)"},
+        },
+        "required": ["task"],
+        "category": "scheduling",
+    },
+
+    # ── Repository ─────────────────────────────────────────────────────────────
+    "repo_info": {
+        "fn": tool_repo_info,
+        "desc": "Get info about a git repository: branch, recent commits, status, remotes.",
+        "params": {
+            "repo_path": {"type": "string", "description": "Path to git repo (default: current directory)"},
+        },
+        "required": [],
+        "category": "git",
+    },
+
+    # ── Security Scan ──────────────────────────────────────────────────────────
+    "security_scan": {
+        "fn": tool_security_scan,
+        "desc": "Run a security scan on a target file, directory, or URL. Requires explicit authorization.",
+        "params": {
+            "target": {"type": "string", "description": "File path, directory, or URL to scan"},
+            "scan_type": {"type": "string", "description": "Scan type: basic, ports, files, web (default: basic)"},
+        },
+        "required": ["target"],
         "category": "security",
     },
 }
