@@ -6193,6 +6193,133 @@ def repl(provider_name: str = '', model: str = ''):
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _cli_doctor() -> int:
+    """Deep diagnostic — health + dependency check + test run summary."""
+    print()
+    print(bold("Devin AGI v4.0.0 — Doctor"))
+    print("=" * 60)
+
+    # 1. Python / Platform
+    print(f"\n{bold('Runtime')}")
+    print(f"  Python       : {sys.version.split()[0]}")
+    print(f"  Platform     : {_PLATFORM}")
+    print(f"  Display      : {'yes ('+os.environ.get('DISPLAY','?')+')' if _HAS_DISPLAY else 'headless'}")
+    print(f"  Working dir  : {_ROOT}")
+
+    # 2. Core deps
+    print(f"\n{bold('Core Python dependencies')}")
+    core_deps = ['sqlite3', 'urllib', 'subprocess', 'json', 'importlib']
+    for d in core_deps:
+        try:
+            __import__(d)
+            print(f"  {green('✓')} {d}")
+        except ImportError:
+            print(f"  {red('✗')} {d} MISSING (should never happen — stdlib)")
+
+    # 3. Optional deps (that unlock capabilities)
+    print(f"\n{bold('Optional dependencies')} (each enables a capability tier)")
+    optional = [
+        ('pyautogui',  'mouse/keyboard/screenshot (all OS)'),
+        ('mss',        'fast cross-platform screenshot'),
+        ('PIL',        'image manipulation'),
+        ('selenium',   'browser automation'),
+        ('playwright', 'modern browser automation'),
+        ('requests',   'nicer HTTP than urllib'),
+        ('psutil',     'system monitoring (cpu/mem/disk)'),
+        ('speech_recognition', 'speech-to-text'),
+        ('pyttsx3',    'text-to-speech'),
+        ('rich',       'nicer terminal UI'),
+        ('anthropic',  'Claude SDK (alt to raw HTTP)'),
+    ]
+    for pkg, purpose in optional:
+        try:
+            __import__(pkg)
+            print(f"  {green('✓')} {pkg:20s} {dim(purpose)}")
+        except ImportError:
+            print(f"  {dim('✗')} {pkg:20s} {dim(purpose + '  (not installed)')}")
+
+    # 4. Provider keys
+    print(f"\n{bold('AI provider keys')}")
+    for k, note in [
+        ('GEMINI_API_KEY', 'Google Gemini (free tier)'),
+        ('ANTHROPIC_API_KEY', 'Anthropic Claude (paid)'),
+        ('OPENAI_API_KEY', 'OpenAI (paid)'),
+        ('HF_TOKEN', 'HuggingFace (free tier)'),
+    ]:
+        val = os.environ.get(k) or (k == 'HF_TOKEN' and os.environ.get('HUGGINGFACE_API_KEY'))
+        marker = green('✓ set') if val else dim('✗ not set')
+        print(f"  {marker:10s}  {k:22s} {dim(note)}")
+
+    # 5. Ollama probe
+    print(f"\n{bold('Ollama (local LLM)')}")
+    ollama_url = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+    try:
+        req = urllib.request.Request(f"{ollama_url}/api/tags")
+        with urllib.request.urlopen(req, timeout=1) as r:
+            data = json.loads(r.read())
+            models = [m.get('name') for m in data.get('models', [])]
+            print(f"  {green('✓')} Reachable at {ollama_url}")
+            if models:
+                print(f"      Models: {', '.join(models[:5])}{' …' if len(models) > 5 else ''}")
+            else:
+                print(f"      No models pulled. Try: ollama pull llama3.2")
+    except Exception as e:
+        print(f"  {dim('✗')} Not reachable at {ollama_url}  ({type(e).__name__})")
+
+    # 6. External tools
+    print(f"\n{bold('External CLI tools')}")
+    for cmd, purpose in [
+        ('git', 'version control'),
+        ('firefox', 'browser (Linux/Win)'),
+        ('chromium', 'browser'),
+        ('google-chrome', 'browser'),
+        ('xdotool', 'X11 mouse/keyboard/window (Linux)'),
+        ('scrot', 'screenshot (Linux)'),
+        ('wmctrl', 'window management (Linux)'),
+        ('xclip', 'clipboard (Linux)'),
+        ('nmap', 'network scanning (authorized only)'),
+        ('curl', 'HTTP'),
+        ('wget', 'download'),
+    ]:
+        if _cmd_exists(cmd):
+            print(f"  {green('✓')} {cmd:16s} {dim(purpose)}")
+        else:
+            print(f"  {dim('✗')} {cmd:16s} {dim(purpose + '  (not in PATH)')}")
+
+    # 7. Registry integrity
+    print(f"\n{bold('Registry integrity')}")
+    mods = _modules_status()
+    loaded = sum(1 for v in mods.values() if v)
+    print(f"  Tools: {len(TOOLS)}  ({sum(1 for t in TOOLS.values() if t.get('category') == 'os')} os, "
+          f"{sum(1 for t in TOOLS.values() if t.get('category') == 'vision')} vision, "
+          f"{sum(1 for t in TOOLS.values() if t.get('category') == 'shell')} shell, ...)")
+    print(f"  Modules: {loaded}/{len(mods)} loaded")
+    print(f"  Memory: {_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts in {_DB_PATH.name}")
+
+    # 8. Fast self-check
+    print(f"\n{bold('Self-check')}")
+    checks = [
+        ('execute_python', lambda: '4' in tool_execute_python('print(2+2)')),
+        ('execute_shell', lambda: 'devin' in tool_execute_shell('echo devin').lower()),
+        ('platform_info', lambda: len(tool_platform_info()) > 20),
+        ('think_and_plan', lambda: 'TASK' in tool_think_and_plan('test')),
+        ('_is_task_mode',   lambda: _is_task_mode('open firefox') == True),
+    ]
+    ok = 0
+    for name, fn in checks:
+        try:
+            if fn():
+                print(f"  {green('✓')} {name}")
+                ok += 1
+            else:
+                print(f"  {red('✗')} {name}: unexpected result")
+        except Exception as e:
+            print(f"  {red('✗')} {name}: {e}")
+    print(f"\n  {ok}/{len(checks)} self-checks passed")
+    print()
+    return 0 if ok == len(checks) else 1
+
+
 def _cli_health() -> int:
     """Print core health check and exit. No AI required."""
     mods = _modules_status()
@@ -6257,6 +6384,7 @@ def main():
             print("  ./devin --provider huggingface ...  — pick a provider")
             print("  ./devin --model MODEL_ID ...        — pick a model")
             print("  ./devin --health                    — health check (no AI)")
+            print("  ./devin --doctor                    — deep diagnostic (deps, tools, self-check)")
             print("  ./devin --test                      — run test suite (no AI)")
             print("  ./devin --version                   — print version")
             sys.exit(0)
@@ -6266,6 +6394,8 @@ def main():
             sys.exit(0)
         elif a == '--health':
             sys.exit(_cli_health())
+        elif a == '--doctor':
+            sys.exit(_cli_doctor())
         elif a == '--test':
             # Run the core test suite
             test_file = _ROOT / 'tests' / 'test_core.py'
