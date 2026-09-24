@@ -3,54 +3,63 @@
 An autonomous OS-controlling AI agent. Controls the computer like a human: moves the mouse, types, takes screenshots, runs commands, launches applications, browses the web, and reasons about what it sees. Powered by Gemini, Claude, OpenAI, HuggingFace, or Ollama.
 
 ```
-╭────────────────────────────────────────────────────────╮
-│  Devin AGI  v4.0                                       │
-│  model: gemini/gemini-3.6-flash                        │
-│  keys: Gemini ●  Claude ○  OpenAI ○  HuggingFace ●    │
-│  os: Linux  display: ✓  12 memories  16/16 modules     │
-╰────────────────────────────────────────────────────────╯
+  Devin AGI  v4.0.0
+  ──────────────────────────────────────────────────────
+  ✓ Connected to Gemini (gemini/gemini-3.6-flash)
+  cwd:      /home/user/Devin-4.0
+  platform: Linux  display
+  tools:    103  ·  16/16 modules  ·  12 memories
+  ──────────────────────────────────────────────────────
 
-Talk to Devin — ask a question, give a task, or type /help.
+  Try: open firefox and search for python tutorials
 
-❯ open firefox, go to google.com, search python tutorials, screenshot the results
+❯ Devin-4.0 open firefox, go to google.com, search python tutorials
 
-  💭 think(thought="Plan: open firefox, wait, analyze screen, click address bar, type URL, search, screenshot")
-  🚀 open_application(name="firefox")
-     ← Opened firefox (pid=18234)
-  ⏱ sleep(seconds=2)
-     ← waited 2s
-  📷 screenshot()
-     ← /tmp/devin_shot_1720000001.png (310KB)
-  👁 analyze_screenshot(prompt="Where is the address bar? Give exact (x,y) pixel coordinates.")
-     ← Address bar is at approximately (680, 45) — the URL bar at the top
-  🖱 mouse_click(x=680, y=45)
-     ← Clicked left at (680, 45)
-  ⌨ keyboard_hotkey(keys=["ctrl","a"])
-     ← OK
-  ⌨ keyboard_type(text="https://www.google.com")
-     ← Typed 22 chars
-  ⌨ keyboard_press(key="Return")
-     ← Pressed key: Return
-  ⏱ sleep(seconds=2)
-     ← waited 2s
-  📷 screenshot()
-     ← /tmp/devin_shot_1720000002.png (290KB)
-  👁 analyze_screenshot(prompt="Is Google loaded? Type 'python tutorials' in the search box.")
-     ← Google homepage is visible. Search box at (680, 300).
-  🖱 mouse_click(x=680, y=300)
-     ← Clicked left at (680, 300)
-  ⌨ keyboard_type(text="python tutorials")
-     ← Typed 16 chars
-  ⌨ keyboard_press(key="Return")
-     ← Pressed key: Return
-  ⏱ sleep(seconds=2)
-     ← waited 2s
-  📷 screenshot()
-     ← /tmp/devin_shot_1720000003.png (280KB)
-  ✅ task_complete(result="Opened Firefox, navigated to Google, searched 'python tutorials'. Screenshot saved.")
+● think(thought='Plan: open_and_wait(firefox), screenshot_and_analyze for address bar, click+type URL, search')
+↳ ready
 
-Devin
-Done. Firefox is open showing python tutorial search results. Screenshot at /tmp/devin_shot_1720000003.png.
+● open_and_wait(app_name='firefox', wait_seconds=3)
+↳ Opened firefox (pid=18234) | Loaded: YES
+
+● screenshot_and_analyze(prompt='Where is the address bar? Give exact (x,y) pixel coordinates.')
+↳ Address bar is at approximately (680, 45) — the URL input field at the top
+
+● mouse_click(x=680, y=45)
+↳ Clicked left at (680, 45)
+
+● keyboard_hotkey(keys=['ctrl', 'a'])
+↳ OK
+
+● keyboard_type(text='https://www.google.com')
+↳ Typed 22 chars
+
+● keyboard_press(key='Return')
+↳ Pressed key: Return
+
+● sleep(seconds=2)
+↳ waited 2s
+
+● screenshot_and_analyze(prompt='Is Google loaded? Where is the search box?')
+↳ Google homepage visible. Search box at (680, 300).
+
+● mouse_click(x=680, y=300)
+↳ Clicked left at (680, 300)
+
+● keyboard_type(text='python tutorials')
+↳ Typed 16 chars
+
+● keyboard_press(key='Return')
+↳ Pressed key: Return
+
+● screenshot_and_analyze(prompt='Did python tutorials search results appear?')
+↳ Yes — showing 10 results for "python tutorials"
+
+● task_complete(result='Opened Firefox, navigated to Google, searched python tutorials. Results visible.')
+↳ TASK_COMPLETE: Done. Firefox is open on python tutorial results.
+
+✓ Task complete
+
+Done. Firefox is showing python tutorial search results.
 ```
 
 ---
@@ -131,7 +140,7 @@ See `.env.example` for the full list.
 | `gemini` | `GEMINI_API_KEY` | ✓ free | gemini-3.6-flash | → 2.5-flash → 2.5-pro → 2.0-flash |
 | `claude` | `ANTHROPIC_API_KEY` | paid | claude-sonnet-4-6 | — |
 | `openai` | `OPENAI_API_KEY` | paid | gpt-4o-mini | — |
-| `huggingface` | `HF_TOKEN` | ✓ free | Meta-Llama-3.1-70B | ReAct text fallback |
+| `huggingface` | `HF_TOKEN` | ✓ free | Qwen2.5-72B-Instruct | → Llama-3.3-70B → DeepSeek-R1 |
 | `ollama` | none | ✓ local | llama3.2 | — |
 
 Switch providers at runtime with `/provider <name>` or `--provider <name>`.
@@ -160,7 +169,7 @@ User (CLI / voice)
                  │  tool calls (82+ tools)
                  ▼
 ┌──────────────────────────────────────────┐
-│  TOOL REGISTRY  (~82 tools)              │
+│  TOOL REGISTRY  (103 tools)              │
 │  reasoning  web  shell  files  vision    │
 │  mouse  keyboard  windows  apps          │
 │  browser  clipboard  voice  memory       │
@@ -275,7 +284,7 @@ The agent never gives up. Errors are information. If one approach fails, it swit
 
 ---
 
-## Tools (82+)
+## Tools (103)
 
 ```
 /tools               — list all tools
@@ -324,6 +333,9 @@ Categories:
 | `/voice` | Listen for voice then run as task |
 | `/repos` | List external repos |
 | `/integrations` | Module integration status |
+| `/compact` | Compress conversation history to save context window |
+| `/debug` | Show context size, provider, diagnostics |
+| `/audit [target]` | Run a system or security audit |
 | `/new` | Start fresh conversation |
 | `/clear` | Clear screen |
 | `/exit` / `/quit` | Exit |
