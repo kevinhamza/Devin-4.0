@@ -1,205 +1,193 @@
 # Devin 4.0 Architecture
 
-**Last Updated:** 2026-09-24  
-**Status:** CURRENT — Phase B+ (Core Runtime + OS Automation complete)
+**Last Updated:** 2026-09-24
+**Status:** CURRENT — Unified agent.py runtime
 
 ---
 
 ## Overview
 
-Devin 4.0 is a multi-provider AI agent with real OS control, built on:
-- **TypeScript CLI** (`src/`) — primary, full-featured, multi-provider
-- **Python CLI** (`main.py`) — secondary, Gemini-native agentic loop
-- **Python backend** (`modules/`) — OS automation, integrations, tool registry
-
-### Entry Points
-
-| Entry | Command | When to use |
-|-------|---------|-------------|
-| `./devin` | Bash launcher | Preferred — tries TS first, falls back to Python |
-| `python main.py` | Python CLI | Direct Python mode, useful without Node.js |
-| `npm start` | TS dev mode | Development |
-| `node dist/cli.js` | TS production | After `npm run build` |
-
----
-
-## Runtime Architecture
+Devin 4.0 is a unified, OS-controlling agentic AI CLI. The single entry point is `agent.py`,
+invoked via the `./devin` shell script. It provides a Claude Code-style conversational interface
+powered by any of three AI providers: Gemini, Claude (Anthropic), or OpenAI.
 
 ```
-User Input (terminal or voice)
-        │
-        ▼
-┌───────────────────────────────────────────┐
-│          Entry Point                       │
-│  TypeScript CLI (src/cli.ts)              │
-│  or Python CLI (main.py)                  │
-└─────────────────┬─────────────────────────┘
-                  │
-                  ▼
-┌───────────────────────────────────────────┐
-│          AI Provider Layer                 │
-│  ┌─────────┐ ┌─────────┐ ┌────────────┐  │
-│  │ Gemini  │ │ Claude  │ │ OpenAI/etc │  │
-│  │(primary)│ │(fallback│ │ (fallback) │  │
-│  └─────────┘ └─────────┘ └────────────┘  │
-│  Auto-fallback on rate limit / error       │
-└─────────────────┬─────────────────────────┘
-                  │
-                  ▼
-┌───────────────────────────────────────────┐
-│        Conversation + System Prompt        │
-│  OBSERVE → UNDERSTAND → PLAN → ACT →      │
-│  VERIFY → CONTINUE → COMPLETE             │
-└─────────────────┬─────────────────────────┘
-                  │ tool calls
-                  ▼
-┌───────────────────────────────────────────┐
-│         Capability Registry (88+ tools)    │
-│                                           │
-│  OS Automation    │  Files & Code         │
-│  Screenshot/Vision│  Web Search/Fetch     │
-│  Mouse/Keyboard   │  Memory               │
-│  Windows/Apps     │  Voice I/O            │
-│  Shell/Python     │  Security             │
-│  Browser          │  Cloud/Messaging      │
-└─────────────────┬─────────────────────────┘
-                  │
-                  ▼
-┌───────────────────────────────────────────┐
-│     OS Automation Backend                  │
-│  modules/os_automation.py                 │
-│  pyautogui + xdotool + mss + PIL          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │  Linux   │ │  macOS   │ │ Windows  │ │
-│  │ (tested) │ │ (impl'd) │ │ (impl'd) │ │
-│  └──────────┘ └──────────┘ └──────────┘ │
-└───────────────────────────────────────────┘
+User (CLI)
+    │
+    ▼
+./devin → agent.py (REPL / one-shot)
+    │
+    ▼
+┌─────────────────────────────────────────┐
+│         AI PROVIDER LAYER               │
+│  GeminiProvider │ ClaudeProvider │      │
+│  OpenAIProvider │ (auto-fallback) │     │
+└───────────────────┬─────────────────────┘
+                    │ tool calls
+                    ▼
+┌─────────────────────────────────────────┐
+│           TOOL REGISTRY (~85 tools)     │
+│                                         │
+│  reasoning  web  shell  files  vision   │
+│  mouse  keyboard  windows  apps         │
+│  browser  clipboard  voice  memory      │
+│  system  network  data  code  git       │
+│  integrations  notes  control           │
+└───────────────────┬─────────────────────┘
+                    │ dispatch
+                    ▼
+┌─────────────────────────────────────────┐
+│         MODULE INTEGRATION LAYER        │
+│                                         │
+│  modules/voice.py          (TTS/STT)    │
+│  modules/os_automation.py  (OS control) │
+│  modules/browser.py        (Selenium)   │
+│  modules/persistent_memory.py           │
+│  modules/messaging_gateway.py           │
+│  modules/integration_hub.py (24 repos)  │
+│  modules/system_monitor.py              │
+│  modules/cheetahclaws_bridge.py         │
+│  + 95 other modules/                    │
+└───────────────────┬─────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────┐
+│           OS / ENVIRONMENT              │
+│  filesystem  shell  GUI  browser        │
+│  applications  network  clipboard       │
+└─────────────────────────────────────────┘
 ```
 
----
+## Entry Points
 
-## Component Details
+| Command | Description |
+|---------|-------------|
+| `./devin` | Primary launcher — loads .env, runs agent.py |
+| `python3 agent.py` | Direct Python execution |
+| `python3 agent.py "task"` | One-shot task mode |
+| `python3 agent.py --provider claude "task"` | Specify provider |
+| `python3 agent.py --model gemini-2.5-pro` | Specify model |
 
-### src/cli.ts — TypeScript Main Loop
-- Interactive REPL with slash commands
-- One-shot mode (`./devin "task"`)
-- Web UI mode (`./devin --web`)
-- Streaming output with spinner
-- Loop detection (prevents infinite tool loops)
-- History compaction (handles long conversations)
+## Core Components
 
-### src/conversation.ts — System Prompt + Context
-- Rich system prompt with OBSERVE-ACT-VERIFY loop
-- Full tool reference with examples
-- OS detection and integration listing
-- History management + compaction
-- Context builder for provider APIs
+### agent.py (~3000 lines)
+The single unified entry point. Contains:
+- **AI Providers**: GeminiProvider, ClaudeProvider, OpenAIProvider
+- **Tool functions**: ~85 tools covering all OS capabilities
+- **Tool registry**: TOOLS dict with schemas for all providers
+- **Agentic loop**: `run_agent()` — observe/plan/act/verify/complete
+- **REPL**: `repl()` — interactive conversational interface
+- **Module loader**: Graceful loading of all modules/
 
-### src/providers/ — AI Model Providers
-- `anthropic.ts` — Claude (streaming, tool use, thinking)
-- `gemini.ts` — Gemini (REST, function calling, vision)
-- `openai.ts` — GPT-4/etc (streaming, function calling)
-- `ollama.ts` — Local models via Ollama
-- `multi.ts` — DeepSeek, Groq, Mistral, etc.
-- Auto-fallback on rate limit / unavailability
+### modules/ (103 files)
+Domain-specific capability modules:
+- `voice.py` — TTS (espeak/pyttsx3) + STT (SpeechRecognition/Whisper)
+- `os_automation.py` — pyautogui, xdotool, pynput OS control
+- `browser.py` — Selenium, Playwright browser automation
+- `persistent_memory.py` — SQLite-backed long-term memory
+- `messaging_gateway.py` — Telegram, Discord, Slack
+- `integration_hub.py` — Bridge to 24 external repos
+- `system_monitor.py` — psutil CPU/RAM/disk/network
+- `cheetahclaws_bridge.py` — Token tracking, compaction
+- `keyboard_mouse_control.py` — Low-level pynput control
+- `code_execution.py` — Sandboxed code execution
+- `cloud_integration_module.py` — AWS, Azure, GCP
+- `ollama_module.py` — Local LLM via Ollama
+- `scheduler.py` — Task scheduling
+- `encryption_tools.py` — Cryptography utilities
 
-### src/tools/executor.ts — Tool Execution
-- 88+ tools across all categories
-- OS automation via Python subprocess bridge
-- File I/O with security checks
-- Shell execution with timeout
-- Web search (DuckDuckGo) + HTTP fetch
-- Browser automation (Playwright)
-- AI vision (inline image embedding for Gemini)
-- Security tools with authorization checks
+### external/ (24 repos)
+Cloned external repositories providing additional capabilities:
+- AIA — Advanced Intelligence Architecture
+- Devin, Devin-2.0, Devin-3.0 — Earlier versions
+- cheetahclaws — Multi-provider streaming agent
+- claude-code, claude-code-source — Claude Code reference
+- gemini-cli — Gemini CLI reference
+- Jarvis, JARVIS-microsoft — Personal assistant patterns
+- OpenDevin — Open DevIn reference
+- self-operating-computer — Vision-guided clicking
+- hackability, vulnerability-analysis — Security tools
+- shannon — Additional AI capabilities
+- hexstrike-ai — Security assessment
+- openclaw — AI assistant patterns
+- airgorah — WiFi security
+- metasploit-framework, nishang, Responder, PowerTools — Security research
+- Holomat — Mixed reality
+- moltbots.github.io — Multi-agent patterns
 
-### src/os/automation.ts — OS Automation Bridge
-- TypeScript → Python subprocess (`modules/os_automation.py`)
-- Cross-platform: Linux/macOS/Windows
-- Actions: screenshot, mouse, keyboard, windows, apps
-- Result parsing: JSON protocol
+### src/ (TypeScript)
+TypeScript source for the original CLI (now superseded by agent.py):
+- `src/memory/compaction.ts` — Token estimation, context management
+- `src/integrations/gemini_cli_integration.ts` — Gemini API integration
 
-### modules/os_automation.py — OS Automation Backend
-- pyautogui (primary): mouse, keyboard, screenshot
-- xdotool (Linux): window management, keyboard
-- mss (screenshot): fast multi-screen capture
-- PIL/Pillow: image processing
-- Platform detection and routing
+## AI Provider Details
 
-### modules/integrations.py — Python Tool Registry
-- Loads all 22+ integrated repos via sys.path manipulation
-- Graceful fallback if any repo fails to load
-- HAS[] dict tracks what's actually available
-- Unified TOOL_REGISTRY exposed to main.py
+### GeminiProvider
+- Models: gemini-3.6-flash (default), gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash, gemini-1.5-flash
+- Auth: Traditional `?key=` param (AIzaSy* keys) or `X-goog-api-key` header (AQ.* keys)
+- Fallback: Automatic model fallback chain on 404/503
+- Retries: 503 (high demand) with 5s×attempt backoff
 
----
+### ClaudeProvider
+- Models: claude-sonnet-4-6 (default), any claude-* model
+- Auth: `x-api-key` header + `anthropic-version`
+- Retries: 429/529 with 4s×attempt backoff
 
-## Data Flow: Screenshot → Vision → Action
+### OpenAIProvider
+- Models: gpt-4o-mini (default), gpt-4o, o3, o4-mini
+- Auth: `Authorization: Bearer` header
+- Retries: 429 with 4s×attempt backoff
+
+## Agentic Loop
 
 ```
-1. take_screenshot()
-   → modules/os_automation.py: screenshot action
-   → mss/pyautogui captures screen
-   → saves to /tmp/devin_shot_<timestamp>.png
-   → returns file path
-
-2. analyze_screenshot_gemini(prompt)
-   → executor.ts: automate('screenshot', {path: tmpFile})
-   → reads screenshot bytes
-   → base64 encodes
-   → returns __IMG__image/png__<base64>__ENDIMG__\nTask: <prompt>
-
-3. Provider receives result with embedded image
-   → gemini.ts: makeParts() splits text + inline image
-   → Gemini API analyzes image inline (no extra API call)
-   → Returns text description + coordinates
-
-4. AI uses coordinates
-   → mouse_click(x, y)
-   → automation backend moves and clicks
-   → returns OK
-
-5. take_screenshot() again → verify
+task input
+    │
+    ▼
+run_agent(task, provider)
+    │
+    ├── [conv mode] append to conv_messages (persistent history)
+    │
+    ▼
+while step < max_steps:
+    │
+    ├── provider.call(messages, system=SYSTEM_PROMPT)
+    │   ├── [error] exponential backoff, up to MAX_ERRORS=5
+    │   └── [success] text + tool_calls
+    │
+    ├── print assistant text
+    │
+    ├── for each tool_call:
+    │   ├── _dispatch_tool(name, args)
+    │   ├── print tool result
+    │   └── append to messages
+    │
+    ├── [task_complete called] → return result
+    ├── [no tool calls] → return text (conv mode)
+    └── continue
 ```
 
----
+## Security Model
 
-## Memory System
-
-- **Local JSON** (`data/memory.json`): simple fact storage
-- **Vector search** (`LocalMemory` in `src/memory/`): semantic recall
-- **Session compaction**: old history summarized when > 200 messages
-- Memories auto-recalled at conversation start
-
----
-
-## Security Boundaries
-
-| Tier | Tools | Default Mode |
-|------|-------|-------------|
-| Safe | read_file, web_search, recall, speak | Auto-approved |
-| Caution | mouse_click, keyboard_type, execute_shell, write_file | Prompted |
-| Dangerous | security tools, kill_process, delete_file | Requires --auto or explicit yes |
-
----
-
-## External Repository Integration
-
-22+ repos integrated via three mechanisms:
-
-1. **Native Python** — source in `repos/*/` added to sys.path, imported directly
-2. **TypeScript adapters** — `src/integrations/` wraps TS/JS repos
-3. **Subprocess bridge** — shell-called for CLI tools (nmap, etc.)
-
-See `docs/INTEGRATION_MATRIX.md` for per-repo details.
-
----
+- No API keys in source code — all from .env
+- Security modules (vulnerability-analysis, metasploit, etc.) are source-preserved but NOT autonomously invoked
+- Destructive operations require explicit user confirmation
+- Permission boundaries enforced per tool category
+- No credentials stored in memory or logged
 
 ## Platform Support
 
-| Platform | Mouse | Keyboard | Screenshot | Window Mgmt | Status |
-|----------|-------|----------|------------|-------------|--------|
-| Linux (X11) | ✓ pyautogui + xdotool | ✓ pyautogui + xdotool | ✓ mss | ✓ xdotool | TESTED |
-| Linux (Wayland) | ✓ via XWayland | ✓ via XWayland | ✓ mss | PARTIAL | PARTIAL |
-| macOS | ✓ pyautogui | ✓ pyautogui | ✓ mss | ✓ osascript | IMPLEMENTED |
-| Windows | ✓ pyautogui | ✓ pyautogui | ✓ mss | ✓ win32gui | IMPLEMENTED |
+| Feature | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| Shell execution | ✓ | ✓ | ✓ |
+| File operations | ✓ | ✓ | ✓ |
+| Web/HTTP | ✓ | ✓ | ✓ |
+| Mouse/keyboard (pyautogui) | ✓ | ✓ | ✓ |
+| Mouse/keyboard (xdotool) | ✓ | ✗ | ✗ |
+| Screenshot (scrot) | ✓ | ✗ | ✗ |
+| Screenshot (pyautogui) | ✓ | ✓ | ✓ |
+| Voice TTS (espeak) | ✓ | ✗ | ✗ |
+| Voice TTS (say) | ✗ | ✓ | ✗ |
+| Browser (Selenium) | ✓ | ✓ | ✓ |
+| Clipboard (xclip) | ✓ | ✗ | ✗ |
+| Clipboard (pbcopy) | ✗ | ✓ | ✗ |

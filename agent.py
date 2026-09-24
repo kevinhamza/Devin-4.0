@@ -200,14 +200,96 @@ try:
 except Exception:
     pass
 
+# Load browser automation (Selenium/Playwright)
+_browser_mod = None
+_browser_instance = None
+try:
+    _browser_mod = _il.import_module('browser')
+except Exception:
+    pass
+
+# Load system monitor
+_sysmon_mod = None
+try:
+    _sysmon_mod = _il.import_module('system_monitor')
+except Exception:
+    pass
+
+# Load code_execution module
+_code_exec_mod = None
+try:
+    _code_exec_mod = _il.import_module('code_execution')
+except Exception:
+    pass
+
+# Load scheduler
+_scheduler_mod = None
+try:
+    _scheduler_mod = _il.import_module('scheduler')
+except Exception:
+    pass
+
+# Load encryption tools
+_crypto_mod = None
+try:
+    _crypto_mod = _il.import_module('encryption_tools')
+except Exception:
+    pass
+
+# Load cloud integration
+_cloud_mod = None
+try:
+    _cloud_mod = _il.import_module('cloud_integration_module')
+except Exception:
+    pass
+
+# Load Jarvis tools
+_jarvis_tools_mod = None
+try:
+    _jarvis_tools_mod = _il.import_module('jarvis_tools')
+except Exception:
+    pass
+
+# Load cheetah providers (multi-model streaming)
+_cheetah_providers_mod = None
+try:
+    _cheetah_providers_mod = _il.import_module('cheetah_providers')
+except Exception:
+    pass
+
+# Load Ollama module (local LLM)
+_ollama_mod = None
+try:
+    _ollama_mod = _il.import_module('ollama_module')
+except Exception:
+    pass
+
+# Load social media API
+_social_mod = None
+try:
+    _social_mod = _il.import_module('social_media_api')
+except Exception:
+    pass
+
+# Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
-        'voice':             _voice_mod   is not None,
-        'os_automation':     _os_auto_mod is not None,
-        'persistent_memory': _pmem        is not None,
-        'messaging_gateway': _msg_mod     is not None,
-        'integration_hub':   _hub_mod     is not None,
-        'cheetahclaws':      _cc_bridge   is not None,
+        'voice':             _voice_mod           is not None,
+        'os_automation':     _os_auto_mod         is not None,
+        'persistent_memory': _pmem                is not None,
+        'messaging_gateway': _msg_mod             is not None,
+        'integration_hub':   _hub_mod             is not None,
+        'cheetahclaws':      _cc_bridge           is not None,
+        'browser':           _browser_mod         is not None,
+        'system_monitor':    _sysmon_mod          is not None,
+        'code_execution':    _code_exec_mod       is not None,
+        'scheduler':         _scheduler_mod       is not None,
+        'encryption':        _crypto_mod          is not None,
+        'cloud':             _cloud_mod           is not None,
+        'jarvis_tools':      _jarvis_tools_mod    is not None,
+        'cheetah_providers': _cheetah_providers_mod is not None,
+        'ollama':            _ollama_mod          is not None,
+        'social_media':      _social_mod          is not None,
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1012,6 +1094,112 @@ def tool_get_system_metrics() -> str:
 def tool_task_complete(result: str) -> str:
     return f"TASK_COMPLETE:{result}"
 
+# ── Browser automation (Selenium/Playwright/fallback) ────────────────────────
+
+def tool_browser_start(headless: bool = False) -> str:
+    """Start a browser session for automation. Uses Selenium → Playwright → fallback."""
+    global _browser_instance
+    if _browser_mod is None:
+        return "ERROR: browser module not available"
+    try:
+        cls = getattr(_browser_mod, 'BrowserAutomation', None)
+        if cls:
+            _browser_instance = cls(headless=bool(headless))
+            return _browser_instance.start()
+        return "ERROR: BrowserAutomation class not found"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_navigate(url: str) -> str:
+    """Navigate browser to a URL."""
+    global _browser_instance
+    if _browser_instance is None:
+        r = tool_browser_start()
+        if r.startswith('ERROR'):
+            return r
+    try:
+        return _browser_instance.navigate(url)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_click(selector: str) -> str:
+    """Click an element in the browser by CSS selector or text."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "ERROR: browser not started. Call browser_start first."
+    try:
+        return _browser_instance.click(selector)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_type(selector: str, text: str) -> str:
+    """Type text into a browser input field."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "ERROR: browser not started."
+    try:
+        return _browser_instance.type_text(selector, text)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_get_text(selector: str = '') -> str:
+    """Get page text or text of an element by CSS selector."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "ERROR: browser not started."
+    try:
+        fn = getattr(_browser_instance, 'get_text', None) or getattr(_browser_instance, 'page_source', None)
+        if callable(fn):
+            return str(fn(selector) if selector else fn())[:4000]
+        return "ERROR: get_text not available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_screenshot(path: str = '') -> str:
+    """Take a screenshot of the current browser state."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "ERROR: browser not started."
+    try:
+        fn = getattr(_browser_instance, 'screenshot', None)
+        if callable(fn):
+            return str(fn(path) if path else fn())
+        return "ERROR: screenshot not available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_browser_close() -> str:
+    """Close the browser session."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "Browser was not running."
+    try:
+        fn = getattr(_browser_instance, 'close', None) or getattr(_browser_instance, 'quit', None)
+        if callable(fn):
+            fn()
+        _browser_instance = None
+        return "Browser closed."
+    except Exception as e:
+        _browser_instance = None
+        return f"Closed (with error): {e}"
+
+def tool_browser_execute_js(script: str) -> str:
+    """Execute JavaScript in the browser."""
+    global _browser_instance
+    if _browser_instance is None:
+        return "ERROR: browser not started."
+    try:
+        fn = getattr(_browser_instance, 'execute_js', None) or getattr(_browser_instance, 'execute_script', None)
+        if callable(fn):
+            return str(fn(script))
+        # Try direct driver
+        driver = getattr(_browser_instance, '_driver', None)
+        if driver:
+            return str(driver.execute_script(script))
+        return "ERROR: execute_js not available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
 # ── HTTP request (generic) ────────────────────────────────────────────────────
 
 def tool_http_request(url: str, method: str = 'GET', headers: str = '',
@@ -1715,6 +1903,67 @@ TOOLS: Dict[str, Dict] = {
         "category": "control",
     },
 
+    # ── Browser automation ─────────────────────────────────────────────────────
+    "browser_start": {
+        "fn": tool_browser_start,
+        "desc": "Start a browser session (Selenium/Playwright). Use headless=true for no window.",
+        "params": {"headless": {"type": "boolean", "description": "Run headlessly (default false)"}},
+        "required": [],
+        "category": "browser",
+    },
+    "browser_navigate": {
+        "fn": tool_browser_navigate,
+        "desc": "Navigate browser to a URL. Starts browser automatically if needed.",
+        "params": {"url": {"type": "string", "description": "URL to navigate to"}},
+        "required": ["url"],
+        "category": "browser",
+    },
+    "browser_click": {
+        "fn": tool_browser_click,
+        "desc": "Click a browser element by CSS selector (e.g. '#btn', '.nav a', 'button[type=submit]').",
+        "params": {"selector": {"type": "string", "description": "CSS selector or element text"}},
+        "required": ["selector"],
+        "category": "browser",
+    },
+    "browser_type": {
+        "fn": tool_browser_type,
+        "desc": "Type text into a browser input field.",
+        "params": {
+            "selector": {"type": "string", "description": "CSS selector for input field"},
+            "text":     {"type": "string", "description": "Text to type"},
+        },
+        "required": ["selector", "text"],
+        "category": "browser",
+    },
+    "browser_get_text": {
+        "fn": tool_browser_get_text,
+        "desc": "Get visible text from current page or a specific element.",
+        "params": {"selector": {"type": "string", "description": "CSS selector (optional, empty = full page)"}},
+        "required": [],
+        "category": "browser",
+    },
+    "browser_screenshot": {
+        "fn": tool_browser_screenshot,
+        "desc": "Take a screenshot of the current browser state.",
+        "params": {"path": {"type": "string", "description": "Save path (optional)"}},
+        "required": [],
+        "category": "browser",
+    },
+    "browser_execute_js": {
+        "fn": tool_browser_execute_js,
+        "desc": "Execute JavaScript code in the browser and return result.",
+        "params": {"script": {"type": "string", "description": "JavaScript to execute"}},
+        "required": ["script"],
+        "category": "browser",
+    },
+    "browser_close": {
+        "fn": tool_browser_close,
+        "desc": "Close the browser session.",
+        "params": {},
+        "required": [],
+        "category": "browser",
+    },
+
     # ── Network / HTTP ─────────────────────────────────────────────────────────
     "http_request": {
         "fn": tool_http_request,
@@ -2173,7 +2422,8 @@ vision: screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_
 mouse: mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
 keyboard: keyboard_type, keyboard_press, keyboard_hotkey, click_and_type
 windows: get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab
-apps: open_application, open_terminal, open_browser, close_application
+apps: open_application, open_terminal, close_application
+browser: browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
 clipboard: clipboard_get, clipboard_set
 voice: speak, listen
 memory: remember, recall
@@ -2185,6 +2435,23 @@ git: git_advanced
 integrations: devin_module, list_integrations, run_devin_module, discover_modules
 notes: take_note
 control: task_complete
+
+## OS automation workflow (real user simulation)
+For any GUI task, always follow: OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY
+Example — open Firefox and search:
+1. open_application("firefox") + sleep(2)
+2. screenshot() + analyze_screenshot("where is address bar? give exact X,Y coords")
+3. mouse_click(x, y) + keyboard_hotkey(["ctrl","a"]) + keyboard_type("https://google.com") + keyboard_press("Return")
+4. sleep(2) + screenshot() + analyze_screenshot("what loaded? was it successful?")
+5. task_complete("searched for X in Firefox")
+
+## Browser automation workflow (Selenium/Playwright)
+For headless or programmatic browser tasks:
+1. browser_start() [or browser_navigate(url) which auto-starts]
+2. browser_navigate("https://example.com")
+3. browser_click("#search") + browser_type("#search", "query") + browser_execute_js("document.forms[0].submit()")
+4. browser_get_text() → parse results
+5. browser_close()
 
 ## Full Devin codebase access
 Use `discover_modules` to explore all available modules across the Devin codebase.

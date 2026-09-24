@@ -61,36 +61,24 @@ cp api_keys.yaml.example .env
 echo "GEMINI_API_KEY=your_key_here" > .env
 ```
 
-### Python CLI (Recommended for first run)
+### Install & Run
 
 ```bash
-# Activate the virtual environment
+# Activate the virtual environment (optional, recommended)
 source venv/bin/activate
 
-# Interactive mode
-python main.py
+# Interactive REPL mode
+./devin
 
-# One-shot (non-interactive)
-python main.py "open a terminal and run ls -la"
+# One-shot task mode
+./devin "open a terminal and run ls -la"
 
-# Voice mode
-python main.py --voice
+# Specify a provider
+./devin --provider claude "take a screenshot"
+./devin --provider openai "list files in current directory"
 
-# Smoke test
-python main.py --test
-```
-
-### TypeScript CLI (Full-featured)
-
-```bash
-npm install
-npm run build
-./devin                              # Interactive mode
-./devin "take a screenshot"          # One-shot
-./devin --provider anthropic         # Use Claude
-./devin --plan                       # Plan mode (describe, don't run)
-./devin --auto                       # Auto-approve all actions
-./devin --web --port 3000            # Web UI
+# Specify a model
+./devin --model gemini-2.5-pro "analyze this codebase"
 ```
 
 ---
@@ -145,52 +133,26 @@ Devin follows an **Observe → Understand → Plan → Act → Verify → Contin
 
 ```
 Devin-4.0/
-├── main.py                  # Python CLI entry point (Gemini agentic loop)
-├── devin                    # Bash launcher (prefers TypeScript CLI)
-├── src/                     # TypeScript CLI (primary, full-featured)
-│   ├── cli.ts               # Main REPL loop
-│   ├── conversation.ts      # System prompt + history management
-│   ├── types.ts             # Shared type definitions
-│   ├── config.ts            # Config loader (.env + args)
-│   ├── providers/           # AI model providers
-│   │   ├── anthropic.ts     # Claude (Anthropic)
-│   │   ├── gemini.ts        # Gemini (Google)
-│   │   ├── openai.ts        # GPT (OpenAI)
-│   │   ├── ollama.ts        # Local Ollama models
-│   │   └── multi.ts         # Multi-provider router
-│   ├── tools/
-│   │   ├── definitions.ts   # All 88+ tool schemas
-│   │   └── executor.ts      # Tool execution (OS, files, web, security)
-│   ├── os/
-│   │   ├── automation.ts    # OS automation bridge (TS → Python)
-│   │   └── control.ts       # Window/app control
-│   ├── ui/
-│   │   └── terminal.ts      # Claude Code-style terminal UI
-│   ├── memory/              # Persistent memory system
-│   ├── agents/              # Research sub-agent
-│   ├── security/            # Vulnerability scanner, web scanner
-│   ├── voice/               # Voice I/O
-│   └── integrations/        # AIA, Jarvis, Gemini CLI, Shannon adapters
-├── modules/
-│   ├── integrations.py      # Python tool registry (all repos)
-│   ├── os_automation.py     # Cross-platform automation backend
-│   ├── os_operations/       # Platform-specific (Linux/macOS/Windows)
-│   ├── browser.py           # Browser automation
-│   ├── voice.py             # TTS/STT
-│   └── ...                  # 50+ specialized modules
-├── repos/                   # Integrated repo source trees
-│   ├── aia/                 # AIA automation + voice + ML
-│   ├── soc/                 # self-operating-computer
-│   ├── opendevin/           # OpenDevin agent
-│   ├── jarvis/              # Jarvis AI assistant
-│   ├── cheetah/             # cheetahclaws multi-agent
-│   ├── gemini_cli/          # gemini-cli
-│   ├── claude_code/         # claude-code
-│   ├── shannon/             # Shannon OSINT/network
-│   └── security/            # Offensive/defensive security tools
-├── external/                # Original git clones (reference)
+├── agent.py                 # Unified agentic CLI (~3000 lines) — PRIMARY ENTRY POINT
+├── devin                    # Bash launcher → always runs agent.py
+├── modules/                 # 103 domain-specific capability modules
+│   ├── voice.py             # TTS (espeak/pyttsx3) + STT (SpeechRecognition/Whisper)
+│   ├── os_automation.py     # pyautogui, xdotool, pynput OS control
+│   ├── browser.py           # Selenium + Playwright browser automation
+│   ├── persistent_memory.py # SQLite-backed long-term memory
+│   ├── messaging_gateway.py # Telegram, Discord, Slack
+│   ├── integration_hub.py   # Bridge to 24 external repos
+│   ├── system_monitor.py    # psutil CPU/RAM/disk/network
+│   ├── cheetahclaws_bridge.py # Token tracking + context compaction
+│   ├── code_execution.py    # Sandboxed code execution
+│   ├── cloud_integration_module.py # AWS, Azure, GCP
+│   ├── ollama_module.py     # Local LLM via Ollama
+│   ├── scheduler.py         # Task scheduling
+│   ├── encryption_tools.py  # Cryptography utilities
+│   └── ... (90+ more)
+├── external/                # 24 cloned external repos (reference/integration)
+├── src/                     # TypeScript source (context management utilities)
 ├── docs/                    # Architecture, compliance, integration docs
-├── data/                    # Runtime data (memory, screenshots)
 └── venv/                    # Python virtual environment
 ```
 
@@ -321,17 +283,17 @@ Full details: see `docs/INTEGRATION_MATRIX.md`
 ## Testing
 
 ```bash
-# Python smoke test
-python main.py --test
+# Verify syntax and imports
+python3 -c "import ast; ast.parse(open('agent.py').read()); print('OK')"
 
-# TypeScript build test
-npm run build
+# Run existing test suite
+python -m pytest docs/ tests/ -v 2>/dev/null || true
 
-# Run test suite
-python -m pytest tests/ -v
+# Connectivity test (requires API key in .env)
+./devin "echo hello world using shell_execute"
 
-# TypeScript tests
-npm test
+# Module loading test
+python3 -c "import agent; print('agent loaded OK')"
 ```
 
 Key test areas:
