@@ -109,6 +109,7 @@ cp .env.example .env
 
 # Health check + tests (no AI needed)
 ./devin --health          # platform, tools, providers, Ollama detection
+./devin --doctor          # deep diagnostic: deps, CLI tools, providers, self-check
 ./devin --test            # runs the 40-test core suite
 ./devin --version         # tool + module count
 ```
