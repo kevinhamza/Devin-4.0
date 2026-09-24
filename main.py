@@ -80,7 +80,8 @@ except ImportError:
 # ── Gemini REST API ───────────────────────────────────────────────────────────
 _GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _GEMINI_MODELS = [
-    "gemini-2.5-flash",      # primary — latest flash model
+    "gemini-3.6-flash",      # primary — latest flash model (2025)
+    "gemini-2.5-flash",      # previous flash
     "gemini-2.5-pro",        # pro fallback
     "gemini-2.0-flash",      # previous gen flash
     "gemini-1.5-flash",      # legacy fallback
