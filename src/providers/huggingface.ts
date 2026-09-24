@@ -154,14 +154,23 @@ export class HuggingFaceProvider extends BaseProvider {
   }
 
   private toHFMessages(messages: Message[], tools: ToolDefinition[], override?: string): HFChatMessage[] {
+    // HF Router requires OpenAI-shape `role: "tool"` messages to include a
+    // `tool_call_id` linked to the assistant's prior tool_call. We don't
+    // reliably have that id in our Message stream, so instead we fold every
+    // tool result into a user-role message tagged with the tool name. The
+    // model still sees the result; the router no longer 422s on missing ids.
     const sysText = (override ?? messages.find(m => m.role === 'system')?.content ?? '') + toolInstructions(tools);
     const out: HFChatMessage[] = [];
     if (sysText.trim()) out.push({ role: 'system', content: sysText });
     for (const m of messages) {
       if (m.role === 'system') continue;
+      if (m.role === 'tool') {
+        const label = m.name ? `[tool_result ${m.name}]` : '[tool_result]';
+        out.push({ role: 'user', content: `${label} ${m.content}` });
+        continue;
+      }
       const role: HFChatMessage['role'] =
-        m.role === 'assistant' ? 'assistant' :
-        m.role === 'tool' ? 'tool' : 'user';
+        m.role === 'assistant' ? 'assistant' : 'user';
       out.push({ role, content: m.content });
     }
     return out;
