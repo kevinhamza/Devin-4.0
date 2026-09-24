@@ -3,7 +3,7 @@ modules/integrations.py — Unified API for all 24 integrated repos.
 Every import is wrapped in try/except; missing dependencies disable only that feature.
 """
 from __future__ import annotations
-import os, sys, json, time, subprocess, platform, tempfile, types
+import os, sys, json, time, subprocess, platform, tempfile, types, shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -431,10 +431,74 @@ except Exception:
 
 PLATFORM = platform.system()  # 'Linux', 'Darwin', 'Windows'
 
+# Marker string returned when Wayland detected + no native grabber. The
+# agentic loop treats a return that starts with WAYLAND_CAPTURE_ERROR as a
+# real error (not a valid path) so it surfaces to the user immediately.
+WAYLAND_CAPTURE_ERROR = "[SCREENSHOT_ERROR:WAYLAND_NO_GRABBER]"
+
+
+def _looks_like_real_screenshot(path: str) -> bool:
+    """Heuristic: a real GUI capture is > 8 KB. Xwayland's empty framebuffer
+    compresses to 2–5 KB because it's a uniform color. If we're on Wayland
+    and get that, mss captured nothing real."""
+    try:
+        return os.path.exists(path) and os.path.getsize(path) > 8000
+    except Exception:
+        return False
+
+
 def take_screenshot(path: Optional[str] = None) -> str:
-    """Take a screenshot, return file path. Uses mss → pyautogui → PIL fallback."""
+    """Take a real screenshot and return the path. Chooses a capture backend
+    based on the actual display server:
+
+    - On Wayland, `mss` and `pyautogui` capture the empty Xwayland fallback
+      surface — NOT the real compositor. We try native Wayland grabbers
+      first: grim (wlroots), gnome-screenshot (GNOME), spectacle (KDE). If
+      NONE are installed, we return a WAYLAND_CAPTURE_ERROR marker so the
+      caller shows the user an actionable install hint instead of a fake
+      3 KB uniform-color PNG. The marker string is deliberately not a valid
+      file path.
+    - On X11, mss / pyautogui / PIL / scrot are all fine.
+    """
     if path is None:
         path = tempfile.mktemp(suffix=".png", prefix="devin_")
+
+    is_wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland" or \
+                 bool(os.environ.get("WAYLAND_DISPLAY"))
+
+    if PLATFORM == "Linux" and is_wayland:
+        wayland_cmds = [
+            ("grim", ["grim", "%P"]),
+            ("gnome-screenshot", ["gnome-screenshot", "-f", "%P"]),
+            ("spectacle", ["spectacle", "-bno", "%P"]),
+        ]
+        tried = []
+        for _bin, template in wayland_cmds:
+            tried.append(_bin)
+            if not shutil.which(_bin):
+                continue
+            try:
+                cmd = [a.replace("%P", path) for a in template]
+                subprocess.run(cmd, timeout=6, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if _looks_like_real_screenshot(path):
+                    return path
+            except Exception:
+                continue
+        # No Wayland grabber worked. Return the marker so the caller can show
+        # an install hint. Skip the X-server fallbacks — they'd produce a
+        # deceptive blank PNG that looks valid but has no real content.
+        return (
+            f"{WAYLAND_CAPTURE_ERROR} Devin is running on a Wayland session "
+            f"(compositor: {os.environ.get('GDMSESSION') or os.environ.get('DESKTOP_SESSION') or 'unknown'}), "
+            f"but none of the native screenshot tools are installed. Install ONE of: "
+            f"'sudo apt install gnome-screenshot' (GNOME), or 'sudo apt install grim slurp' (wlroots/Sway), "
+            f"or 'sudo apt install kde-spectacle' (KDE). "
+            f"Without one of these, mss/pyautogui only capture the empty Xwayland surface, "
+            f"not your real desktop. Tools tried: {tried}."
+        )
+
+    # X11 / non-Wayland path.
     if HAS["mss"] and mss:
         try:
             with mss.mss() as sct:
@@ -456,13 +520,17 @@ def take_screenshot(path: Optional[str] = None) -> str:
             return path
         except Exception:
             pass
-    # Linux fallback: scrot
     if PLATFORM == "Linux":
-        try:
-            subprocess.run(["scrot", path], timeout=5, check=True)
-            return path
-        except Exception:
-            pass
+        for _bin, args in (("scrot", [path]), ("import", ["-window", "root", path])):
+            if not shutil.which(_bin):
+                continue
+            try:
+                subprocess.run([_bin] + args, timeout=6, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if os.path.exists(path) and os.path.getsize(path) > 500:
+                    return path
+            except Exception:
+                continue
     return ""
 
 def mouse_click(x: int, y: int, button: str = "left") -> bool:
