@@ -139,6 +139,24 @@ def _db_connect() -> sqlite3.Connection:
 _DB = _db_connect()
 _SESSION_ID = datetime.now().strftime('%Y%m%d_%H%M%S')
 
+# Session runtime statistics — updated during agentic loop
+_SESSION_STATS: Dict[str, Any] = {
+    'started_at': time.time(),
+    'tool_calls': 0,             # total tool invocations this session
+    'errors': 0,                 # tool calls that returned ERROR
+    'agent_steps': 0,            # total run_agent iterations
+    'tasks_completed': 0,        # times task_complete was called
+    'tool_usage': {},            # per-tool call counts
+    'provider_calls': 0,         # times a provider was hit
+    'no_tool_pushes': 0,         # times the loop nudged to continue
+}
+
+def _stats_record_tool(name: str, is_error: bool = False):
+    _SESSION_STATS['tool_calls'] += 1
+    if is_error:
+        _SESSION_STATS['errors'] += 1
+    _SESSION_STATS['tool_usage'][name] = _SESSION_STATS['tool_usage'].get(name, 0) + 1
+
 def _remember(fact: str, tags: str = '') -> str:
     _DB.execute('INSERT INTO memories (fact, tags, session) VALUES (?,?,?)',
                 (fact, tags, _SESSION_ID))
@@ -5430,6 +5448,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
 
     while step < max_steps:
         step += 1
+        _SESSION_STATS['agent_steps'] += 1
 
         # Context size management
         ctx_chars = _estimate_chars(messages)
@@ -5450,6 +5469,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
             print(f"\r  {dim(next(_SPIN))} {dim(label)}  ", end='', flush=True)
 
         try:
+            _SESSION_STATS['provider_calls'] += 1
             text, calls = provider.call(messages, system=SYSTEM_PROMPT)
             consecutive_errors = 0  # reset on success
         except KeyboardInterrupt:
@@ -5533,6 +5553,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
             # Push it to continue executing
             if no_tool_pushes < MAX_NO_TOOL_PUSHES:
                 no_tool_pushes += 1
+                _SESSION_STATS['no_tool_pushes'] += 1
                 push_msg = (
                     "Continue executing the task using tools. "
                     "Do not describe what you would do — actually do it by calling tools. "
@@ -5574,6 +5595,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
 
             # Task complete?
             if name == "task_complete" or result.startswith("TASK_COMPLETE:"):
+                _SESSION_STATS['tasks_completed'] += 1
                 final_result = result.replace("TASK_COMPLETE:", "").strip()
                 if not quiet:
                     _print_tool_result(str(result))
@@ -5584,8 +5606,11 @@ def run_agent(task: str, provider, max_steps: int = 100,
                         print(f"\n{_render_markdown(final_result)}\n")
                 return final_result
 
+            is_err = str(result).startswith('ERROR:')
+            _stats_record_tool(name, is_error=is_err)
+
             if not quiet:
-                _print_tool_result(str(result), is_error=str(result).startswith('ERROR:'))
+                _print_tool_result(str(result), is_error=is_err)
 
             tool_results.append({
                 "call_id": call.get("id", f"t{step}_{name}"),
@@ -5666,6 +5691,7 @@ def _make_help() -> str:
   {cyan('/os')}                  Show OS/platform info and available tools
   {cyan('/audit_repo <own/nm>')} Audit a public GitHub repo (metadata + README + tree)
   {cyan('/demo')}                Quick health check (platform, tools, memory, providers)
+  {cyan('/stats')}               Session stats (steps, tool calls, errors, top tools)
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -6067,6 +6093,23 @@ def repl(provider_name: str = '', model: str = ''):
                     print(yellow("  Usage: /audit_repo <owner/name>  (e.g. /audit_repo torvalds/linux)"))
                 else:
                     print(f"\n{tool_github_repo_audit(arg, deep=True)}\n")
+
+            elif cmd == '/stats':
+                s = _SESSION_STATS
+                elapsed = time.time() - s['started_at']
+                mm, ss = divmod(int(elapsed), 60); hh, mm = divmod(mm, 60)
+                print(f"\n  {bold('Session Stats')}")
+                print(f"    Elapsed        : {hh:02d}:{mm:02d}:{ss:02d}")
+                print(f"    Agent steps    : {s['agent_steps']}")
+                print(f"    Provider calls : {s['provider_calls']}")
+                print(f"    Tool calls     : {s['tool_calls']} ({s['errors']} errors)")
+                print(f"    Tasks complete : {s['tasks_completed']}")
+                print(f"    Continue nudges: {s['no_tool_pushes']}")
+                if s['tool_usage']:
+                    print(f"\n  {bold('Top tools')}")
+                    for tool, cnt in sorted(s['tool_usage'].items(), key=lambda x: -x[1])[:10]:
+                        print(f"    {cnt:4d} × {tool}")
+                print()
 
             elif cmd == '/demo':
                 # Quick end-to-end health check without needing AI
