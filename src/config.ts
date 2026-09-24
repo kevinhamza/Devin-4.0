@@ -45,15 +45,17 @@ function pickProvider(): Config['provider'] {
   if (process.env.ANTHROPIC_API_KEY) return 'anthropic';
   if (process.env.GEMINI_API_KEY) return 'gemini';
   if (process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY) return 'huggingface';
   return 'ollama';
 }
 
 function pickModel(provider: Config['provider']): string {
   switch (provider) {
-    case 'anthropic': return process.env.DEVIN_MODEL || 'claude-sonnet-4-6';
-    case 'gemini':    return process.env.DEVIN_MODEL || 'gemini-3.6-flash';
-    case 'openai':    return process.env.DEVIN_MODEL || 'gpt-4o';
-    default:          return process.env.DEVIN_MODEL || 'llama3.1';
+    case 'anthropic':   return process.env.DEVIN_MODEL || 'claude-sonnet-5';
+    case 'gemini':      return process.env.DEVIN_MODEL || 'gemini-2.5-flash';
+    case 'openai':      return process.env.DEVIN_MODEL || 'gpt-4o';
+    case 'huggingface': return process.env.DEVIN_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
+    default:            return process.env.DEVIN_MODEL || 'llama3.1';
   }
 }
 

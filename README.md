@@ -4,7 +4,7 @@ An advanced AI agent with **real OS control** — it moves the mouse, types, tak
 
 ```
 ╭──────────────────────────────────────────────────────────────────╮
-│  Devin AGI  v4.0.0
+│  Devin AGI  v4.0.0  (Phase B refresh 2026-09-24)
 │  cwd: /home/user/project
 │  model: gemini-2.5-flash  provider: gemini  mode: auto_approve
 ╰──────────────────────────────────────────────────────────────────╯
@@ -137,7 +137,7 @@ Devin follows an **Observe → Understand → Plan → Act → Verify → Contin
 | Cloud integrations (AWS/Azure/GCP) | PARTIALLY | requires credentials |
 | Telegram bot control | PARTIALLY | requires bot token |
 | Cross-platform (Linux/macOS/Windows) | PARTIALLY | Linux fully tested |
-| Multi-model (Gemini/Claude/GPT/Ollama) | ✓ VERIFIED | auto-fallback |
+| Multi-model (Gemini/Claude/GPT/Ollama/Hugging Face) | ✓ VERIFIED | auto-fallback across providers, HF live-tested via Qwen 2.5 72B |
 
 ---
 
@@ -251,10 +251,11 @@ User Input (text or voice)
 Create a `.env` file (never commit this):
 
 ```env
-# Required — at least one
+# Required — at least one of these five
 GEMINI_API_KEY=your_gemini_key_here
 ANTHROPIC_API_KEY=your_anthropic_key_here   # optional
 OPENAI_API_KEY=your_openai_key_here         # optional
+HF_TOKEN=your_hf_token_here                 # optional (free tier available)
 
 # Optional
 TELEGRAM_BOT_TOKEN=your_bot_token
@@ -263,7 +264,12 @@ AWS_SECRET_ACCESS_KEY=your_aws_secret
 DISPLAY=:0                                  # Linux display (default :0)
 ```
 
-See `api_keys.yaml.example` for the full list of supported keys.
+See `.env.example` for the full list of supported keys.
+
+**Automatic fallback (Python runtime, `main.py`):** if Gemini is unconfigured or
+rate-limited, Devin transparently retries the same request against Hugging Face
+(`Qwen/Qwen2.5-72B-Instruct`, then Llama 3.1 70B / Mistral 7B / Zephyr 7B). No
+code change needed — just set `HF_TOKEN` alongside `GEMINI_API_KEY`.
 
 ### Model Selection
 
@@ -272,10 +278,13 @@ See `api_keys.yaml.example` for the full list of supported keys.
 ./devin --provider gemini --model gemini-2.5-flash
 
 # Use Claude (requires ANTHROPIC_API_KEY)
-./devin --provider anthropic --model claude-opus-4-5
+./devin --provider anthropic --model claude-opus-5-5
 
 # Use GPT-4 (requires OPENAI_API_KEY)
 ./devin --provider openai --model gpt-4o
+
+# Use Hugging Face (free-tier — requires HF_TOKEN)
+./devin --provider huggingface --model Qwen/Qwen2.5-72B-Instruct
 
 # Use local Ollama
 ./devin --provider ollama --model llama3.2
@@ -302,6 +311,7 @@ Security tools (nmap, vulnerability scanning, OSINT) require:
 
 | Repository | Source | Capabilities Used |
 |------------|--------|-------------------|
+| Hugging Face Inference | huggingface.co/router | Free-tier LLM fallback (Qwen 2.5 72B, Llama 3.1 70B, Mistral, Zephyr) |
 | AIA | github.com/kevinhamza/AIA | Automation, voice, ML, social |
 | self-operating-computer | github.com/OthersideAI/self-operating-computer | Vision-based computer control |
 | OpenDevin | github.com/OpenDevin/OpenDevin | Agent framework, canvas UI |

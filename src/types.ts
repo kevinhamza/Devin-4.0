@@ -81,7 +81,7 @@ export interface Config {
     telegramBotToken?: string;
   };
   model: string;
-  provider: 'anthropic' | 'gemini' | 'openai' | 'ollama';
+  provider: 'anthropic' | 'gemini' | 'openai' | 'ollama' | 'huggingface';
   maxTokens: number;
   enableThinking: boolean;
   thinkingBudget: number;

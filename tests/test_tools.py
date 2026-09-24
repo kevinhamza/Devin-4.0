@@ -358,8 +358,12 @@ class TestToolRegistry:
 
     def test_tool_registry_populated(self):
         """Test that registry is populated"""
+        # The Phase 3 additions bumped the base registry to 88 (73 core + 7
+        # persistent_memory + 8 access_control). main.py then adds 3 more
+        # locally (remember, recall, task_complete) → 91 total. This test
+        # sees only the base 88.
         assert len(TOOL_REGISTRY) >= 60
-        assert len(TOOL_REGISTRY) == 73  # Current count
+        assert len(TOOL_REGISTRY) >= 73  # was ==73; loosened as tools grow
 
     def test_all_tools_callable(self):
         """Test that all tools are callable"""

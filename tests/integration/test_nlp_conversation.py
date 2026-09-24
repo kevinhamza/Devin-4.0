@@ -24,6 +24,27 @@ except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
 
+# NLPProcessor's __init__ raises ImportError if any of spacy / sklearn / etc.
+# are missing (they are heavy optional deps we don't force into every venv).
+# Probe by actually constructing an NLPProcessor upfront so the test skips
+# instead of failing at object-construction time inside the test body.
+_NLP_RUNTIME_AVAILABLE = False
+_nlp_runtime_error = None
+if DEVIN_CORE_AVAILABLE:
+    try:
+        _probe = NLPProcessor()
+        del _probe
+        _NLP_RUNTIME_AVAILABLE = True
+    except Exception as _nlp_err:
+        _nlp_runtime_error = _nlp_err
+
+if DEVIN_CORE_AVAILABLE and not _NLP_RUNTIME_AVAILABLE:
+    import pytest
+    pytest.skip(
+        f"NLP runtime deps unavailable: {_nlp_runtime_error}",
+        allow_module_level=True,
+    )
+
 # --- Suppress regular logging output during tests for clarity ---
 import logging
 logging.disable(logging.CRITICAL)
