@@ -19,17 +19,43 @@
 | O     | 136 tools, `github_repo_audit` (headless, API-based) | `039891ca` | done |
 | P     | `/demo` + `/audit_repo` REPL commands | `acc03fb4` | done |
 | Q     | Fixed 4 real module import bugs (+3 modules loading) | `0ed81c3f` | done |
+| R     | PHASE_STATUS.md ground-truth report | `b8762b5d` | done |
+| S     | Session stats tracking + /stats + TypeScript build verified | `6d9da3a8` | done |
+| T+U   | /save transcripts + smarter provider error recovery | `674406f0` | done |
+| V+W+X | /tools search + `--health`, `--test`, `--version` CLI flags | this commit | done |
+| Y+Z   | Final compliance audit + phase status update | this commit | done |
 
 ---
 
 ## Current Runtime Snapshot
 
-**agent.py:** ~6,000 lines, single-file Python entry point
+**agent.py:** ~6,100 lines, single-file Python entry point
 **Tools registered:** 136 across 24 categories
 **Modules loaded (this env):** 33/41 tracked, 53/91 discoverable
 **Providers:** 5 (Gemini, Claude, OpenAI, HuggingFace, Ollama)
-**Test suite:** 40/40 automated tests pass
+**Test suite:** 40/40 automated tests pass (via `./devin --test`)
 **Demo:** `tests/demo_workflow.py` — 11-step end-to-end health check
+**TypeScript:** `npx tsc --noEmit` — 0 errors across 38 .ts files
+
+## CLI surface
+
+```
+./devin                             # interactive REPL
+./devin "task description"          # one-shot task
+./devin --provider huggingface ...  # pick a provider
+./devin --model MODEL_ID ...        # pick a model
+./devin --health                    # health check (no AI required)
+./devin --test                      # run 40-test core suite (no AI)
+./devin --version                   # print tools + modules loaded
+```
+
+## REPL slash commands (24 total)
+
+Core: /help /clear /new /exit /quit
+State: /status /providers /provider /model /tools [q] /integrations /repos
+Memory: /memory /remember /forget /history /save /compact
+Actions: /shell /run /screenshot /voice /audit_repo /audit
+Analysis: /think /workflow /pentest /lab /os /debug /demo /stats
 
 ---
 

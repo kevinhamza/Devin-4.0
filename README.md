@@ -106,6 +106,11 @@ cp .env.example .env
 # Specify model
 ./devin --model gemini-2.5-pro "write a detailed tech analysis"
 ./devin --model meta-llama/Meta-Llama-3.1-70B-Instruct "explain this code"
+
+# Health check + tests (no AI needed)
+./devin --health          # platform, tools, providers, Ollama detection
+./devin --test            # runs the 40-test core suite
+./devin --version         # tool + module count
 ```
 
 ---
