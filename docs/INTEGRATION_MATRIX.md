@@ -1,7 +1,47 @@
 # Integration Matrix
 
-**Last Updated:** 2026-09-24  
+**Last Updated:** 2026-09-24 (Phase B–D — model providers + ground-truth re-audit)
 **Total Repositories Audited:** 22
+**Model Providers Wired:** Gemini, Anthropic, OpenAI, Ollama, Hugging Face (new)
+
+## Ground-truth import audit (2026-09-24 evening, venv/bin/python)
+
+Ran a probe that imports `modules.integrations` and reads its `HAS[]` flag map.
+The rows below in the main matrix describe the *intent* of prior integration
+work. The reality at runtime, on this Kali box with the venv installed, is:
+
+| Repository row | `HAS[]` flag | Actual runtime state |
+|---|---|---|
+| AIA (kevinhamza/AIA) | `aia_automation` | ✓ **imports & instantiates** |
+| self-operating-computer | `soc` | ✓ **imports & instantiates** |
+| Jarvis (Concept-Bytes) | `jarvis` | ✓ **imports** |
+| JARVIS-microsoft (HuggingGPT) | `jarvis_ms` | ✓ **imports** |
+| gemini-cli | `google_genai` (SDK) | ✓ **imports** (via `google-genai` package) |
+| OpenDevin | `opendevin` | ✗ **False** — module never resolves |
+| cheetahclaws | `cheetah` | ✗ **False** — module never resolves |
+| vulnerability-analysis | `vuln_analysis` | ✗ **False** — no importable entry point |
+| Responder | `responder` | ✗ **False** (by design — offensive tool, source-only) |
+| Devin-1 / Devin-2.0 / Devin-3.0 | *no flag registered* | ⚠ Row previously marked PARTIAL — but no runtime probe was ever installed. Source is preserved under `external/Devin{,-2.0,-3.0}/`; nothing beyond that has been verified. |
+| claude-code, shannon, hexstrike-ai, openclaw, Holomat, airgorah, nishang, PowerTools, MoltBots, hackability | *no flag* | Source-only. Their TS/Py adapters (`src/integrations/*.ts`, `modules/cheetah_*.py`, etc.) may compile and expose helpers, but there's no runtime `HAS[]` probe for them yet. Cannot claim they are "integrated" in the strong sense used by §1's definition. |
+
+### Corrective ranking
+
+Applying the spec's own §1 definition ("integrated only when the runtime can
+actually invoke it") to the ground-truth column:
+
+- **Strongly integrated:** AIA, self-operating-computer, Jarvis (Concept-Bytes),
+  JARVIS-microsoft, gemini-cli, Hugging Face (new this session).
+- **Source preserved / adapter-level only (do NOT claim VERIFIED):** Devin-1/2/3,
+  OpenDevin, cheetahclaws, claude-code, shannon, hexstrike-ai, openclaw,
+  Holomat, airgorah, PowerTools, MoltBots, hackability, vulnerability-analysis.
+- **Deliberately not exposed via runtime (offensive/authorized-only):**
+  Responder, nishang, metasploit-framework.
+
+The main rows below have NOT been rewritten yet — they describe integration
+intent from prior sessions. This addendum is the source of truth for actual
+runtime state; the rows below should be reconciled against it before any
+"complete" claim.
+
 
 ---
 
@@ -119,6 +159,26 @@
 - **Integration Method:** TypeScript adapter
 - **Runtime Entry Point:** `src/integrations/shannon_integration.ts` → OSINT tools in executor
 - **Connected Tools:** `check_ip_reputation`, `analyze_domain`, `analyze_file_hash`, `osint_lookup`
+
+### 12b. Hugging Face Inference (Phase B addition — 2026-09-24)
+- **Canonical URL:** https://huggingface.co (Inference / Router API)
+- **Architecture:** Cloud HTTP API — OpenAI-compatible chat/completions at `https://router.huggingface.co/v1`
+- **Auth:** `HF_TOKEN` env var (or `HUGGINGFACE_API_KEY` alias). Never hard-coded.
+- **Integration Method:** Native — new provider modules
+- **Runtime Entry Points:**
+  - Python: `modules/hf_provider.py` → `modules.hf_provider.chat()`, hooked into `main.py::_call_gemini_rest` as automatic fallback when Gemini is unconfigured or exhausted.
+  - TypeScript: `src/providers/huggingface.ts` (`HuggingFaceProvider`); registered in `src/providers/multi.ts::PROVIDER_REGISTRY.huggingface`; auto-detected by `detectProvider()` for `Qwen/`, `meta-llama/`, `mistralai/`, `HuggingFaceH4/`, `hf/`, `huggingface/` model prefixes.
+- **Fallback Chain (main.py):** Gemini → Hugging Face → error message. Model list per call: Qwen 2.5 72B → Llama 3.1 70B → Mistral 7B → Zephyr 7B.
+- **Tool-Use Strategy:** Native OpenAI-style `tool_calls` are parsed when the server returns them. When the model doesn't emit them, the provider falls back to prompt-formatted `<tool_use>{...}</tool_use>` blocks, which the dispatcher parses back into standard `ContentBlock.type === 'tool_use'`.
+- **Verification (this session):**
+  - `python3 main.py --test` — Python runtime reports `HAS_HF: True` when `HF_TOKEN` set.
+  - Live ping against `Qwen/Qwen2.5-72B-Instruct` — returned expected text ("pong").
+  - `npm run build` — TypeScript build succeeds; `dist/providers/huggingface.js` produced.
+- **Limitations:**
+  - HF Router streaming is not exposed; the TS `stream()` currently degrades to `chat()` and replays chunks.
+  - Prompt-formatted tool_use fallback is best-effort — not every open model reliably emits the block on first try.
+  - Free-tier rate limits vary per model; the router returns 429/503 and the provider retries the next model in the fallback list.
+- **Security note:** the initial `HF_TOKEN` value used to bring this online was pasted into a public chat and MUST be revoked at https://huggingface.co/settings/tokens before any real work is done with it. `.env` is git-ignored (`.gitignore:81`) so the value never enters git history.
 
 ### 13-22. Security Repositories
 - **Repos:** hexstrike-ai, airgorah, vulnerability-analysis, Responder, nishang, hackability, PowerTools, MoltBots, openclaw

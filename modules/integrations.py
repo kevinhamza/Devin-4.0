@@ -122,25 +122,58 @@ except Exception:
 
 # ── cheetahclaws (multi-agent RL / reasoning) ─────────────────────────────────
 try:
-    sys.path.insert(0, str(_EXT / "cheetahclaws"))
-    from cheetahclaws.agent import Agent as CheetahAgent
+    # cheetahclaws upstream doesn't expose an `Agent` class — the entry points
+    # it does expose are `run()` (the agent loop) plus the AgentState dataclass.
+    # We import those and keep `CheetahAgent` as an alias so existing callers
+    # that reference it don't blow up. Prefer repos/cheetah/ over external/,
+    # which is an empty submodule stub.
+    _cheetah_root = _REPOS_DIR / "cheetah" if (_REPOS_DIR / "cheetah").is_dir() else _EXT / "cheetahclaws"
+    sys.path.insert(0, str(_cheetah_root))
+    from cheetahclaws.agent import run as _cheetah_run, AgentState as CheetahAgentState
+    CheetahAgent = CheetahAgentState  # historical alias
+    cheetah_run = _cheetah_run
     HAS["cheetah"] = True
 except Exception:
     CheetahAgent = None  # type: ignore
+    cheetah_run = None
     HAS["cheetah"] = False
 
 # ── OpenDevin canvas tool ─────────────────────────────────────────────────────
+# The canvas tool file lives at repos/opendevin/tools/canvas_ui_tool.py but it
+# depends on the OpenHands SDK (the renamed OpenDevin), which we don't ship.
+# Rather than fake an import, we set the flag based on whether the file is
+# present so callers can see "source available, runtime not wired".
 try:
-    sys.path.insert(0, str(_EXT / "OpenDevin"))
-    from tools.canvas_ui_tool import CanvasTool
-    HAS["opendevin"] = True
+    _opendevin_canvas = _REPOS_DIR / "opendevin" / "tools" / "canvas_ui_tool.py"
+    if _opendevin_canvas.is_file():
+        HAS["opendevin_source"] = True
+        # Don't attempt the import — it needs the `openhands` SDK we don't have.
+        try:
+            sys.path.insert(0, str(_REPOS_DIR / "opendevin"))
+            from tools.canvas_ui_tool import CanvasTool
+            HAS["opendevin"] = True
+        except Exception:
+            CanvasTool = None  # type: ignore
+            HAS["opendevin"] = False
+    else:
+        CanvasTool = None  # type: ignore
+        HAS["opendevin_source"] = False
+        HAS["opendevin"] = False
 except Exception:
     CanvasTool = None  # type: ignore
+    HAS["opendevin_source"] = False
     HAS["opendevin"] = False
 
 # ── vulnerability-analysis ────────────────────────────────────────────────────
+# NVIDIA's morpheus/pydpkg/json5 stack; morpheus requires a GPU build so we
+# can't just pip-install our way to True on a plain machine. Track source
+# presence separately so the matrix can be honest.
 try:
-    sys.path.insert(0, str(_EXT / "vulnerability-analysis" / "src"))
+    _va_src = _REPOS_DIR / "security" / "vuln_analysis" / "src"
+    if not _va_src.is_dir():
+        _va_src = _EXT / "vulnerability-analysis" / "src"
+    sys.path.insert(0, str(_va_src))
+    HAS["vuln_analysis_source"] = _va_src.is_dir()
     from cve.utils import tools as vuln_tools
     HAS["vuln_analysis"] = True
 except Exception:
@@ -1520,33 +1553,74 @@ def cheetah_code_review(file_path: str) -> Dict[str, Any]:
 
     return result
 
-def cheetah_file_sync(source: str, dest: str, sync_type: str = "copy") -> Dict[str, Any]:
-    """Sync files between directories. [From Cheetah file operations]"""
-    result = {
+def cheetah_file_sync(
+    source: str,
+    dest: str,
+    sync_type: str = "copy",
+    confirm: bool = False,
+    max_files: int = 100,
+) -> Dict[str, Any]:
+    """Sync files between directories. [From Cheetah file operations]
+
+    Safety: dry-run by default. Pass `confirm=True` to actually copy/move. When
+    syncing a directory tree, refuses if the tree contains more than `max_files`
+    files unless the caller raised the limit explicitly. This prevents an LLM or
+    caller from accidentally cloning gigabyte-scale trees.
+    """
+    src_path = Path(source)
+    dry_run = not confirm
+    plan = {
         "source": source,
         "destination": dest,
         "type": sync_type,
+        "dry_run": dry_run,
         "files_processed": 0,
-        "status": "completed"
+        "status": "planned" if dry_run else "completed",
     }
+
+    if not src_path.exists():
+        plan["status"] = "failed"
+        plan["error"] = f"source does not exist: {source}"
+        return plan
+
+    # Count files up front so we can refuse huge silent operations
+    if src_path.is_file():
+        file_count = 1
+    else:
+        file_count = sum(1 for _ in src_path.rglob("*") if _.is_file())
+    plan["files_scanned"] = file_count
+
+    if file_count > max_files:
+        plan["status"] = "refused"
+        plan["error"] = (
+            f"source contains {file_count} files (> max_files={max_files}); refuse to "
+            f"{sync_type} silently. Re-invoke with a higher max_files after confirming."
+        )
+        return plan
+
+    if dry_run:
+        return plan  # nothing copied yet
 
     try:
         import shutil
         if sync_type == "copy":
-            if Path(source).is_file():
+            if src_path.is_file():
                 shutil.copy2(source, dest)
-                result["files_processed"] = 1
+                plan["files_processed"] = 1
             else:
                 shutil.copytree(source, dest, dirs_exist_ok=True)
-                result["files_processed"] = sum(1 for _ in Path(dest).rglob('*') if _.is_file())
+                plan["files_processed"] = sum(1 for _ in Path(dest).rglob('*') if _.is_file())
         elif sync_type == "move":
             shutil.move(source, dest)
-            result["files_processed"] = 1
+            plan["files_processed"] = file_count
+        else:
+            plan["status"] = "failed"
+            plan["error"] = f"unknown sync_type: {sync_type}"
     except Exception as e:
-        result["error"] = str(e)
-        result["status"] = "failed"
+        plan["error"] = str(e)
+        plan["status"] = "failed"
 
-    return result
+    return plan
 
 def advanced_shell_exec(command: str, env_vars: Dict[str, str] = None, capture_output: bool = True) -> Dict[str, Any]:
     """Execute shell command with environment variables. [Enhanced shell]"""

@@ -434,18 +434,34 @@ class AIAgent:
             if response_message.get("tool_calls"):
                 # A single LLM turn can request more than one action (e.g.
                 # several independent reads before it needs their combined
-                # results) -- surface all of them under "tool_calls" rather
-                # than truncating to the first, so the caller can actually
-                # execute a multi-action turn instead of one call at a time.
-                selected_tools = [
-                    {
+                # results) -- surface all of them under "tool_calls" when
+                # there's more than one. For the common single-call case we
+                # return the flat {"tool": ..., "parameters": ...} shape that
+                # the older callers (and the ai_tests suite) rely on.
+                #
+                # `json.loads` is guarded: providers can and do return malformed
+                # arguments (trailing commas, missing quotes). We surface that
+                # as a hard None so the caller knows to skip this response
+                # rather than dispatching against random parameters.
+                selected_tools: List[Dict[str, Any]] = []
+                for call in response_message["tool_calls"]:
+                    try:
+                        params = json.loads(call["function"]["arguments"])
+                    except (json.JSONDecodeError, KeyError, TypeError) as parse_err:
+                        logger.warning(
+                            f"AIAgent ({name}): malformed tool_call arguments "
+                            f"({parse_err}); dropping this turn."
+                        )
+                        return None
+                    selected_tools.append({
                         "tool": call["function"]["name"],
-                        "parameters": json.loads(call["function"]["arguments"]),
-                    }
-                    for call in response_message["tool_calls"]
-                ]
+                        "parameters": params,
+                    })
                 logger.info(f"AIAgent ({name}) selected {len(selected_tools)} tool call(s): {[t['tool'] for t in selected_tools]}")
-                result: Dict[str, Any] = {"tool_calls": selected_tools}
+                if len(selected_tools) == 1:
+                    result: Dict[str, Any] = dict(selected_tools[0])
+                else:
+                    result = {"tool_calls": selected_tools}
                 if response_message.get("thinking"):
                     result["thinking"] = response_message["thinking"]
                 return result

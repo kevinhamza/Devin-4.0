@@ -80,9 +80,9 @@ except ImportError:
 # ── Gemini REST API ───────────────────────────────────────────────────────────
 _GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _GEMINI_MODELS = [
-    "gemini-3.6-flash",      # primary — confirmed working
-    "gemini-3.5-flash",      # fallback — confirmed working
-    "gemini-3.1-flash-lite", # lightweight fallback
+    "gemini-2.5-flash",      # primary — current fast model (Jan 2026)
+    "gemini-2.5-pro",        # higher-quality fallback
+    "gemini-2.0-flash",      # older-gen fallback
     "gemini-flash-latest",   # latest alias
     "gemini-1.5-flash",      # legacy fallback
 ]
@@ -105,17 +105,54 @@ try:
 except Exception:
     HAS_ANTHROPIC = False
 
+# ── Hugging Face (free-tier fallback) ─────────────────────────────────────────
+# Load hf_provider defensively: main.py hand-loads modules.integrations via
+# importlib.util which can interfere with normal `from modules.x import` — so we
+# try the package path first, then a direct file load, then give up.
+_hf_chat = None
+HAS_HF = False
+try:
+    from modules.hf_provider import chat as _hf_chat, has_hf_token as _hf_has_token
+    HAS_HF = _hf_has_token()
+except Exception:
+    try:
+        _hf_path = _ROOT / "modules" / "hf_provider.py"
+        _hf_spec = _ilu.spec_from_file_location("modules.hf_provider", str(_hf_path))
+        _hf_mod = _ilu.module_from_spec(_hf_spec)  # type: ignore
+        _hf_spec.loader.exec_module(_hf_mod)  # type: ignore
+        sys.modules["modules.hf_provider"] = _hf_mod
+        _hf_chat = _hf_mod.chat
+        HAS_HF = _hf_mod.has_hf_token()
+    except Exception:
+        if os.getenv("DEVIN_DEBUG"):
+            import traceback; traceback.print_exc()
+        _hf_chat = None
+        HAS_HF = False
+
 # ── Memory ────────────────────────────────────────────────────────────────────
 _MEMORY_FILE = _ROOT / "data" / "memory.json"
 _MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 def _load_memory() -> Dict:
-    if _MEMORY_FILE.exists():
-        try:
-            return json.loads(_MEMORY_FILE.read_text())
-        except Exception:
-            pass
-    return {"facts": [], "history": []}
+    """Load facts/history dict from data/memory.json. Older Devin versions and
+    the persistent_memory module use different formats (a bare list of history
+    entries); when we see one of those we migrate it in-memory rather than
+    crashing."""
+    default = {"facts": [], "history": []}
+    if not _MEMORY_FILE.exists():
+        return default
+    try:
+        raw = json.loads(_MEMORY_FILE.read_text())
+    except Exception:
+        return default
+    if isinstance(raw, dict):
+        raw.setdefault("facts", [])
+        raw.setdefault("history", [])
+        return raw
+    if isinstance(raw, list):
+        # Treat legacy list-shaped file as pure history; no facts recorded.
+        return {"facts": [], "history": raw}
+    return default
 
 def _save_memory(mem: Dict):
     _MEMORY_FILE.write_text(json.dumps(mem, indent=2))
@@ -135,8 +172,12 @@ def recall(query: str = "") -> str:
     matches = [f["fact"] for f in facts if q in f["fact"].lower()]
     return "\n".join(matches[-10:]) or "No matching memories."
 
-# ── Voice mode ────────────────────────────────────────────────────────────────
+# ── Voice / permission / verbosity mode flags ────────────────────────────────
 VOICE_MODE = False
+# permission_mode: 'default' (confirm dangerous), 'auto' (auto-approve), or
+# 'plan' (describe actions but don't run any tools).
+PERMISSION_MODE = os.environ.get("DEVIN_PERMISSION_MODE", "auto")
+VERBOSE = bool(os.environ.get("DEVIN_VERBOSE") or os.environ.get("DEVIN_DEBUG"))
 
 # ── Print helpers ─────────────────────────────────────────────────────────────
 IS_TTY = sys.stdout.isatty()
@@ -196,7 +237,7 @@ def print_banner():
     if HAS_RICH and console:
         console.print(Rule(style="cyan"))
         console.print(f"[bold cyan]  Devin AGI[/] [dim]v4.0.0  ·  24 repos integrated  ·  {platform.system()}[/]")
-        model_s = _ACTIVE_MODEL or (_GEMINI_MODELS[0] if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else "no AI"))
+        model_s = _ACTIVE_MODEL or (_GEMINI_MODELS[0] if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else ("huggingface" if HAS_HF else "no AI")))
         console.print(f"[dim]  model: {model_s}  ·  tools: {len(TOOL_REGISTRY)}  ·  voice: {'on' if VOICE_MODE else 'off'}[/]")
         console.print(Rule(style="cyan"))
         console.print()
@@ -357,6 +398,153 @@ TOOL_SCHEMAS = [
      }, "required": ["target"]}},
     {"name": "get_screen_size", "description": "Get the screen width and height in pixels.",
      "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"name": "get_mouse_position", "description": "Get the current mouse cursor (x, y) position.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"name": "search_screen", "description": "Find a template image on screen and return the center (x, y). Requires the template file path.",
+     "parameters": {"type": "object", "properties": {
+         "image_template": {"type": "string"}
+     }, "required": ["image_template"]}},
+
+    # ── Code / repo exploration ─────────────────────────────────────────────
+    {"name": "find_files", "description": "Find files under a directory matching a glob pattern (e.g. '*.py', '**/*.md').",
+     "parameters": {"type": "object", "properties": {
+         "directory": {"type": "string"},
+         "pattern": {"type": "string"},
+         "max_results": {"type": "integer"}
+     }, "required": []}},
+    {"name": "grep_files", "description": "Recursively grep for a text pattern in files matching a glob. Returns matches with surrounding context.",
+     "parameters": {"type": "object", "properties": {
+         "directory": {"type": "string"},
+         "pattern": {"type": "string"},
+         "file_pattern": {"type": "string"}
+     }, "required": ["pattern"]}},
+    {"name": "code_analyze", "description": "Analyze a code file and return metrics (lines, functions, classes, imports).",
+     "parameters": {"type": "object", "properties": {
+         "file_path": {"type": "string"}
+     }, "required": ["file_path"]}},
+
+    # ── Git ─────────────────────────────────────────────────────────────────
+    {"name": "git_status", "description": "Show git status of a repository (working-tree changes and staged changes).",
+     "parameters": {"type": "object", "properties": {
+         "repo_path": {"type": "string"}
+     }, "required": []}},
+    {"name": "git_log", "description": "Show recent git commits from a repository.",
+     "parameters": {"type": "object", "properties": {
+         "repo_path": {"type": "string"},
+         "max_commits": {"type": "integer"}
+     }, "required": []}},
+    {"name": "git_diff", "description": "Show git diff for a repository, or for one file if file_path is set.",
+     "parameters": {"type": "object", "properties": {
+         "repo_path": {"type": "string"},
+         "file_path": {"type": "string"}
+     }, "required": []}},
+
+    # ── Vision / text analysis ──────────────────────────────────────────────
+    {"name": "analyze_image", "description": "Ask a vision model about an image file. Useful after take_screenshot to inspect what's on screen.",
+     "parameters": {"type": "object", "properties": {
+         "image_path": {"type": "string"},
+         "question": {"type": "string"}
+     }, "required": ["image_path"]}},
+    {"name": "analyze_text", "description": "Analyze a block of text (summary stats, word count, top words).",
+     "parameters": {"type": "object", "properties": {
+         "text": {"type": "string"},
+         "analysis_type": {"type": "string"}
+     }, "required": ["text"]}},
+    {"name": "extract_urls", "description": "Extract every URL from a block of text.",
+     "parameters": {"type": "object", "properties": {
+         "text": {"type": "string"}
+     }, "required": ["text"]}},
+    {"name": "extract_emails", "description": "Extract every email address from a block of text.",
+     "parameters": {"type": "object", "properties": {
+         "text": {"type": "string"}
+     }, "required": ["text"]}},
+    {"name": "hash_text", "description": "Compute md5/sha1/sha256 of a text string.",
+     "parameters": {"type": "object", "properties": {
+         "text": {"type": "string"},
+         "algorithm": {"type": "string", "enum": ["md5", "sha1", "sha256"]}
+     }, "required": ["text"]}},
+
+    # ── Network / OSINT (authorized use) ────────────────────────────────────
+    {"name": "port_scan", "description": "Scan a small set of common ports on a host (authorized targets only).",
+     "parameters": {"type": "object", "properties": {
+         "host": {"type": "string"},
+         "ports": {"type": "string"}
+     }, "required": ["host"]}},
+    {"name": "dns_lookup", "description": "Resolve a hostname to its IP addresses.",
+     "parameters": {"type": "object", "properties": {
+         "hostname": {"type": "string"}
+     }, "required": ["hostname"]}},
+    {"name": "whois_lookup", "description": "WHOIS lookup for a domain.",
+     "parameters": {"type": "object", "properties": {
+         "domain": {"type": "string"}
+     }, "required": ["domain"]}},
+    {"name": "check_ssl_cert", "description": "Fetch and describe the TLS certificate a domain is serving.",
+     "parameters": {"type": "object", "properties": {
+         "domain": {"type": "string"}
+     }, "required": ["domain"]}},
+    {"name": "web_research", "description": "Search the web for a topic and fetch summaries of the top hits.",
+     "parameters": {"type": "object", "properties": {
+         "topic": {"type": "string"},
+         "num_results": {"type": "integer"}
+     }, "required": ["topic"]}},
+
+    # ── Data / files ────────────────────────────────────────────────────────
+    {"name": "read_pdf", "description": "Extract text from a PDF file. page_range e.g. '1-5' or '1'.",
+     "parameters": {"type": "object", "properties": {
+         "file_path": {"type": "string"},
+         "page_range": {"type": "string"}
+     }, "required": ["file_path"]}},
+    {"name": "read_excel", "description": "Read tabular data from an .xlsx/.xls file.",
+     "parameters": {"type": "object", "properties": {
+         "file_path": {"type": "string"},
+         "sheet": {"type": "string"},
+         "max_rows": {"type": "integer"}
+     }, "required": ["file_path"]}},
+    {"name": "parse_csv", "description": "Parse a CSV file and return a formatted preview.",
+     "parameters": {"type": "object", "properties": {
+         "file_path": {"type": "string"},
+         "max_rows": {"type": "integer"}
+     }, "required": ["file_path"]}},
+    {"name": "extract_metadata", "description": "Extract filesystem + content metadata from a file (size, mtime, mime, hash).",
+     "parameters": {"type": "object", "properties": {
+         "file_path": {"type": "string"}
+     }, "required": ["file_path"]}},
+
+    # ── Planning / long-term memory ─────────────────────────────────────────
+    {"name": "task_decompose", "description": "Break a complex user task into an ordered list of concrete sub-tasks.",
+     "parameters": {"type": "object", "properties": {
+         "task_description": {"type": "string"}
+     }, "required": ["task_description"]}},
+    {"name": "memory_save_persistent", "description": "Save a fact to Devin's persistent memory (survives restart). Categorize with the category arg.",
+     "parameters": {"type": "object", "properties": {
+         "key": {"type": "string"},
+         "value": {"type": "string"},
+         "category": {"type": "string"}
+     }, "required": ["key", "value"]}},
+    {"name": "memory_recall_persistent", "description": "Recall one fact by key from persistent memory. Returns null if not found.",
+     "parameters": {"type": "object", "properties": {
+         "key": {"type": "string"}
+     }, "required": ["key"]}},
+    {"name": "memory_search", "description": "Search persistent memory by substring / keyword. Optionally scoped by category.",
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string"},
+         "category": {"type": "string"},
+         "limit": {"type": "integer"}
+     }, "required": ["query"]}},
+    {"name": "memory_list_persistent", "description": "List facts stored in persistent memory (optionally scoped by category).",
+     "parameters": {"type": "object", "properties": {
+         "category": {"type": "string"},
+         "limit": {"type": "integer"}
+     }, "required": []}},
+    {"name": "memory_stats", "description": "Get persistent-memory statistics (count, categories, last write).",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+
+    # ── System / diagnostics ────────────────────────────────────────────────
+    {"name": "device_info", "description": "Detailed device/system report: platform, release, arch, CPU count, RAM, disk, GPU when available.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+    {"name": "internet_speed_test", "description": "Quick connectivity/latency check to a well-known endpoint. Not a bandwidth benchmark.",
+     "parameters": {"type": "object", "properties": {}, "required": []}},
+
     {"name": "task_complete", "description": "Call when the task is fully completed.",
      "parameters": {"type": "object", "properties": {
          "reason": {"type": "string"}
@@ -511,11 +699,79 @@ def _build_tool_declarations() -> List[Dict]:
         decls.append(decl)
     return decls
 
+def _gemini_contents_to_hf_messages(contents: List[Dict]) -> List[Dict[str, str]]:
+    """Flatten Gemini's role/parts contents into OpenAI-style role/content messages.
+
+    Preserves prior `functionCall` parts as <tool_use>{...}</tool_use> blocks so the
+    HF model sees its own past tool calls in the same format it must emit them in.
+    """
+    out: List[Dict[str, str]] = []
+    for c in contents:
+        role = c.get("role", "user")
+        parts = c.get("parts", []) or []
+        chunks: List[str] = []
+        for p in parts:
+            if not isinstance(p, dict):
+                continue
+            if "text" in p and p["text"]:
+                chunks.append(str(p["text"]))
+            elif "functionCall" in p:
+                fc = p["functionCall"] or {}
+                name = fc.get("name", "")
+                args = fc.get("args", {}) or {}
+                chunks.append(f"<tool_use>{json.dumps({'name': name, 'input': args})}</tool_use>")
+            elif "functionResponse" in p:
+                fr = p["functionResponse"] or {}
+                out_field = (fr.get("response") or {}).get("output", "")
+                # Truncate huge tool outputs so we stay under HF context limits.
+                out_str = str(out_field)
+                if len(out_str) > 4000:
+                    out_str = out_str[:4000] + f" …[truncated {len(out_str) - 4000} chars]"
+                chunks.append(f"[tool_result {fr.get('name','')}] {out_str}")
+            elif "inlineData" in p:
+                chunks.append("[image omitted from HF fallback — this provider is text-only]")
+        content = "\n".join(chunks).strip()
+        if not content:
+            # Never emit an empty message — collapse into a placeholder so the
+            # alternation stays sane on the receiving side.
+            content = " "
+        out.append({"role": "assistant" if role == "model" else "user", "content": content})
+    return out
+
+
+def _hf_response_to_gemini_shape(hf_result: Dict) -> Dict:
+    """Convert HF chat output back into the Gemini candidates/parts shape
+    the agentic loop already knows how to parse."""
+    parts: List[Dict] = []
+    text = hf_result.get("text", "")
+    if text:
+        parts.append({"text": text})
+    for call in hf_result.get("tool_calls", []) or []:
+        parts.append({"functionCall": {"name": call.get("name", ""), "args": call.get("input") or {}}})
+    if not parts:
+        parts.append({"text": " "})
+    return {"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": "STOP"}]}
+
+
 def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
     """Call Gemini REST API directly. Returns parsed JSON response or None.
-    Raises RuntimeError on rate limit so caller can show clear message."""
+    Raises RuntimeError on rate limit so caller can show clear message.
+    Falls through to Hugging Face if Gemini is exhausted or unconfigured."""
     global _ACTIVE_MODEL
+    # If Gemini isn't available at all, try Hugging Face directly.
     if not HAS_GEMINI or not _HAS_REQUESTS or not GEMINI_API_KEY:
+        if HAS_HF and _hf_chat is not None:
+            try:
+                hf_result = _hf_chat(
+                    messages=_gemini_contents_to_hf_messages(contents),
+                    tool_schemas=TOOL_SCHEMAS,
+                    system_prompt=SYSTEM_PROMPT,
+                )
+                _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
+                return _hf_response_to_gemini_shape(hf_result)
+            except Exception as _e:
+                if os.getenv("DEVIN_DEBUG"):
+                    import traceback; traceback.print_exc()
         return None
 
     body: Dict = {
@@ -550,10 +806,58 @@ def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
             continue
         _ACTIVE_MODEL = model
         return r.json()
-    # All models exhausted
+    # All Gemini models exhausted — try Hugging Face fallback before giving up.
+    if HAS_HF and _hf_chat is not None:
+        try:
+            hf_result = _hf_chat(
+                messages=_gemini_contents_to_hf_messages(contents),
+                tool_schemas=TOOL_SCHEMAS,
+                system_prompt=SYSTEM_PROMPT,
+            )
+            _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
+            return _hf_response_to_gemini_shape(hf_result)
+        except Exception as _e:
+            if os.getenv("DEVIN_DEBUG"):
+                import traceback; traceback.print_exc()
     if "rate limit" in last_err or "429" in last_err:
-        raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s or get a paid API key.")
+        raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s, set HF_TOKEN for HF fallback, or use a paid API key.")
     return None
+
+# ── Permission gate (used by /default mode) ──────────────────────────────────
+# Tools that can mutate the host, exfiltrate data, or hit remote services.
+# Anything not in this set is auto-approved even in /default mode.
+_DANGEROUS_TOOLS = {
+    "execute_shell", "execute_python", "advanced_shell_exec",
+    "mouse_click", "mouse_right_click", "mouse_double_click", "mouse_drag", "mouse_scroll",
+    "keyboard_type", "keyboard_press", "keyboard_hotkey",
+    "open_application", "focus_window",
+    "write_file",
+    "git_command",
+    "run_nmap_scan", "port_scan", "check_ssl_cert",
+    "send_telegram_message",
+    "clipboard_set",
+    "open_browser",
+}
+
+
+def _is_dangerous(tool_name: str) -> bool:
+    return tool_name in _DANGEROUS_TOOLS
+
+
+def _confirm_dangerous(tool_name: str, args: Dict) -> bool:
+    """Prompt the user to approve a dangerous tool call. Only reached in
+    /default mode + interactive TTY. Returns True on 'y', False otherwise."""
+    prompt = f"⚠  Approve dangerous tool `{tool_name}` with {args!r}?  [y/N] "
+    if HAS_RICH and console:
+        console.print(f"[bold yellow]{prompt}[/]", end="")
+    else:
+        print(prompt, end="", flush=True)
+    try:
+        answer = input().strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return answer in ("y", "yes")
+
 
 def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[str] = None) -> str:
     """Run the Gemini agentic loop for one user turn. Returns final text response."""
@@ -637,8 +941,8 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             break
 
         if data is None:
-            if not HAS_GEMINI:
-                return "[No AI available — set GEMINI_API_KEY in .env]"
+            if not HAS_GEMINI and not HAS_HF:
+                return "[No AI available — set GEMINI_API_KEY or HF_TOKEN in .env]"
             return "[No AI response — check API key and model availability]"
 
         # Parse response parts
@@ -699,6 +1003,40 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
                 contents.append({"role": "user", "parts": fn_response_parts})
                 return final_text or reason
 
+            if PERMISSION_MODE == "plan":
+                # Describe the call in the response stream, feed a synthetic
+                # result back so the model can keep planning without side
+                # effects. This lets `/plan` produce a full walkthrough.
+                planned = f"[PLANNED — not executed under /plan mode] {t_name}({t_args})"
+                _tool_result(planned, ok=True)
+                fn_response_parts.append({"functionResponse": {
+                    "name": t_name, "response": {"output": planned},
+                }})
+                continue
+
+            if PERMISSION_MODE == "default" and _is_dangerous(t_name):
+                if IS_TTY:
+                    if not _confirm_dangerous(t_name, t_args):
+                        denied = f"[DENIED by user in /default mode] {t_name}({t_args})"
+                        _tool_result(denied, ok=False)
+                        fn_response_parts.append({"functionResponse": {
+                            "name": t_name, "response": {"output": denied},
+                        }})
+                        continue
+                else:
+                    # Non-interactive one-shot: refuse and let the model adapt
+                    # instead of silently running a dangerous call.
+                    denied = (
+                        f"[BLOCKED — {t_name} is a dangerous tool and Devin is running "
+                        f"non-interactively under /default mode. Rerun with --auto (or "
+                        f"DEVIN_PERMISSION_MODE=auto) if you intended to authorize this.]"
+                    )
+                    _tool_result(denied, ok=False)
+                    fn_response_parts.append({"functionResponse": {
+                        "name": t_name, "response": {"output": denied},
+                    }})
+                    continue
+
             result = dispatch_tool(t_name, t_args)
             _tool_result(result[:200])
 
@@ -750,6 +1088,10 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
             "| `/remember <fact>` | Store a fact in memory |\n"
             "| `/shell <cmd>` | Run a shell command |\n"
             "| `/model` | Show current AI model |\n"
+            "| `/plan` | Plan mode (describe actions, don't run them) |\n"
+            "| `/auto` | Auto-approve all tool calls |\n"
+            "| `/default` | Default mode (confirm dangerous actions) |\n"
+            "| `/verbose` | Toggle verbose debug output |\n"
             "| `/exit` | Quit Devin |"
         )
 
@@ -766,7 +1108,7 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
             f"- Platform: {info.get('platform', PLATFORM)}\n"
             f"- CPU: {info.get('cpu_percent', '?')}%  RAM: {info.get('ram_used_gb', '?')}/{info.get('ram_total_gb', '?')} GB\n"
             f"- Active model: {model_s}\n"
-            f"- Gemini: {'✓' if HAS_GEMINI else '✗'}  Anthropic: {'✓' if HAS_ANTHROPIC else '✗'}\n\n"
+            f"- Gemini: {'✓' if HAS_GEMINI else '✗'}  Anthropic: {'✓' if HAS_ANTHROPIC else '✗'}  HuggingFace: {'✓' if HAS_HF else '✗'}\n\n"
             f"**Capabilities**\n```\n{caps}\n```"
         )
 
@@ -814,6 +1156,25 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
     if command == "/model":
         return f"**Active model:** {_ACTIVE_MODEL or 'not detected yet'}"
 
+    if command == "/plan":
+        global PERMISSION_MODE
+        PERMISSION_MODE = "plan"
+        return "**Plan mode:** ON — Devin will describe planned tool calls but not execute them."
+
+    if command == "/auto":
+        PERMISSION_MODE = "auto"
+        return "**Auto mode:** ON — Devin will run tool calls without confirming."
+
+    if command == "/default":
+        PERMISSION_MODE = "default"
+        return "**Default mode:** ON — Devin will prompt before dangerous tool calls."
+
+    if command == "/verbose":
+        global VERBOSE
+        VERBOSE = not VERBOSE
+        os.environ["DEVIN_DEBUG"] = "1" if VERBOSE else ""
+        return f"**Verbose mode:** {'ON' if VERBOSE else 'OFF'}"
+
     return None  # not a known slash command
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -832,7 +1193,12 @@ def main():
     if args.test:
         _print("[Test mode]")
         _print(f"  HAS_GEMINI: {HAS_GEMINI}")
+        _print(f"  HAS_ANTHROPIC: {HAS_ANTHROPIC}")
+        _print(f"  HAS_HF (Hugging Face): {HAS_HF}")
         _print(f"  HAS_RICH: {HAS_RICH}")
+        _print(f"  PERMISSION_MODE: {PERMISSION_MODE}")
+        _print(f"  VERBOSE: {VERBOSE}")
+        _print(f"  TOOL_SCHEMAS exposed: {len(TOOL_SCHEMAS)}")
         _print(f"  pyautogui: {HAS.get('pyautogui')}")
         _print(f"  mss: {HAS.get('mss')}")
         _print(f"  TTS: {HAS.get('tts')}")

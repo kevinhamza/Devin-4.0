@@ -39,11 +39,21 @@ async function buildProvider(config: Config): Promise<BaseProvider> {
     const { OpenAIProvider } = await import('./providers/openai.js');
     return new OpenAIProvider(config.apiKeys.openai!, config.model);
   }
+  const hfKey = process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || '';
+  if (config.provider === 'huggingface' || (!config.provider && hfKey)) {
+    const { HuggingFaceProvider } = await import('./providers/huggingface.js');
+    return new HuggingFaceProvider(hfKey, config.model);
+  }
   // Try multi-provider (deepseek, groq, mistral, ollama, etc.)
   const { buildMultiProvider } = await import('./providers/multi.js');
   const mp = buildMultiProvider(config.model, '');
   if (mp) return mp;
-  // Hard fallback to Gemini free tier
+  // Hard fallback: HF free tier if a token is available, otherwise Gemini free tier
+  if (hfKey) {
+    const { HuggingFaceProvider } = await import('./providers/huggingface.js');
+    printWarning('No primary API key found — using Hugging Face free tier.');
+    return new HuggingFaceProvider(hfKey, 'Qwen/Qwen2.5-72B-Instruct');
+  }
   const { GeminiProvider } = await import('./providers/gemini.js');
   const key = process.env.GEMINI_API_KEY || config.apiKeys.gemini || '';
   printWarning('No primary API key found — using Gemini free tier.');
@@ -475,7 +485,7 @@ async function main(): Promise<void> {
       '    -h, --help              Show this help',
       '    -V, --version           Show version',
       '    -m, --model <name>      Model to use (e.g. gemini-2.5-flash)',
-      '    -p, --provider <p>      Provider: anthropic | gemini | openai | ollama',
+      '    -p, --provider <p>      Provider: anthropic | gemini | openai | ollama | huggingface',
       '    --plan                  Plan mode (describe actions, don\'t run)',
       '    --auto                  Auto-approve all tool calls',
       '    --dangerously           Alias for --auto (no confirmation)',
