@@ -2229,6 +2229,91 @@ def tool_security_scan(target: str, scan_type: str = 'basic') -> str:
     return tool_pen_test_recon(target)
 
 
+# ── Power compound tools ───────────────────────────────────────────────────────
+
+def tool_ask_user(question: str) -> str:
+    """Ask the user a clarifying question and return their answer."""
+    try:
+        print(f"\n{bold(yellow('?'))} {bold('Devin asks:')} {question}")
+        answer = input(f"  {dim('Your answer:')} ").strip()
+        return answer if answer else "(no answer)"
+    except (EOFError, KeyboardInterrupt):
+        return "(interrupted)"
+
+
+def tool_write_and_run(filename: str, code: str, interpreter: str = 'python3') -> str:
+    """Write code to a file and immediately execute it. Returns file path + output."""
+    try:
+        path = _ROOT / filename
+        path.write_text(code, encoding='utf-8')
+        result = tool_execute_shell(f"{interpreter} {path}", timeout=30)
+        return f"Wrote {path}\n\n--- Output ---\n{result}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def tool_install_and_verify(package: str, manager: str = 'pip') -> str:
+    """Install a package and verify it imported/installed successfully."""
+    install_result = tool_install_package(package, manager)
+    if 'error' in install_result.lower() or 'failed' in install_result.lower():
+        return f"Install failed: {install_result}"
+    # Verify
+    pkg_name = package.split('[')[0].split('>=')[0].split('==')[0].strip()
+    verify = tool_execute_python(f"import {pkg_name.replace('-','_')}; print('OK: ' + {pkg_name.replace('-','_')}.__version__ if hasattr({pkg_name.replace('-','_')}, '__version__') else 'OK')")
+    return f"Installed: {install_result[:100]}\nVerify: {verify[:100]}"
+
+
+def tool_git_clone_and_explore(url: str, target_dir: str = '') -> str:
+    """Clone a git repo and return its file structure."""
+    try:
+        if not target_dir:
+            target_dir = url.rstrip('/').split('/')[-1].replace('.git', '')
+        dest = _ROOT / target_dir
+        if dest.exists():
+            return f"Already exists: {dest}\n{tool_execute_shell(f'ls {dest}')[:500]}"
+        result = tool_execute_shell(f"git clone --depth 1 {url} {dest}", timeout=60)
+        if dest.exists():
+            tree = tool_execute_shell(f"find {dest} -maxdepth 2 -not -path '*/.git/*' | head -40")
+            return f"Cloned to {dest}\n\n{tree}"
+        return f"Clone result: {result}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def tool_search_and_open(query: str, open_first: bool = True) -> str:
+    """Search DuckDuckGo, return results, optionally open top result in browser."""
+    results = tool_web_search(query, num_results=5)
+    if open_first and results and not results.startswith('ERROR'):
+        lines = results.split('\n')
+        for line in lines:
+            if line.strip().startswith('http'):
+                tool_open_browser(line.strip())
+                return f"Searched and opened: {line.strip()}\n\n{results}"
+    return results
+
+
+def tool_screen_to_clipboard() -> str:
+    """Take screenshot, extract all text with AI, copy to clipboard."""
+    shot = tool_screenshot()
+    if shot.startswith('ERROR'):
+        return shot
+    path = shot.split(': ', 1)[-1].strip().split()[0]
+    text = tool_read_screen_text('')
+    if text and not text.startswith('ERROR'):
+        tool_clipboard_set(text)
+        return f"Extracted {len(text)} chars from screen → clipboard"
+    return f"Screenshot: {path}"
+
+
+def tool_wait_and_verify(seconds: float, condition: str = '') -> str:
+    """Wait N seconds, then optionally verify a condition by taking screenshot."""
+    import time
+    time.sleep(max(0, min(seconds, 30)))
+    if condition:
+        return tool_screenshot_and_analyze(f"Verify: {condition}")
+    return f"Waited {seconds}s"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3238,6 +3323,73 @@ TOOLS: Dict[str, Dict] = {
         "required": ["target"],
         "category": "security",
     },
+
+    # ── Power / Compound Tools ─────────────────────────────────────────────────
+    "ask_user": {
+        "fn": tool_ask_user,
+        "desc": "Ask the user a clarifying question when the task is genuinely ambiguous. Use sparingly — try to figure it out yourself first.",
+        "params": {"question": {"type": "string", "description": "Clear, specific question to ask the user"}},
+        "required": ["question"],
+        "category": "control",
+    },
+    "write_and_run": {
+        "fn": tool_write_and_run,
+        "desc": "Write code to a file and immediately execute it. Returns the file path and stdout+stderr.",
+        "params": {
+            "filename": {"type": "string", "description": "File name to create (e.g. script.py, run.sh)"},
+            "code": {"type": "string", "description": "Complete code content to write"},
+            "interpreter": {"type": "string", "description": "Interpreter: python3, bash, node (default: python3)"},
+        },
+        "required": ["filename", "code"],
+        "category": "code",
+    },
+    "install_and_verify": {
+        "fn": tool_install_and_verify,
+        "desc": "Install a package and immediately verify the installation worked.",
+        "params": {
+            "package": {"type": "string", "description": "Package name (e.g. requests, numpy==1.26)"},
+            "manager": {"type": "string", "description": "Package manager: pip, apt, brew, npm (default: pip)"},
+        },
+        "required": ["package"],
+        "category": "shell",
+    },
+    "git_clone_and_explore": {
+        "fn": tool_git_clone_and_explore,
+        "desc": "Clone a git repository (shallow) and return its directory structure.",
+        "params": {
+            "url": {"type": "string", "description": "Git repository URL to clone"},
+            "target_dir": {"type": "string", "description": "Optional local directory name (default: repo name)"},
+        },
+        "required": ["url"],
+        "category": "git",
+    },
+    "search_and_open": {
+        "fn": tool_search_and_open,
+        "desc": "Search the web and optionally open the top result in the system browser.",
+        "params": {
+            "query": {"type": "string", "description": "Web search query"},
+            "open_first": {"type": "boolean", "description": "Open top result in browser (default: true)"},
+        },
+        "required": ["query"],
+        "category": "web",
+    },
+    "screen_to_clipboard": {
+        "fn": tool_screen_to_clipboard,
+        "desc": "Take a screenshot, extract all visible text with AI, and copy it to the clipboard.",
+        "params": {},
+        "required": [],
+        "category": "vision",
+    },
+    "wait_and_verify": {
+        "fn": tool_wait_and_verify,
+        "desc": "Wait N seconds then optionally verify a condition by taking a screenshot and analyzing it.",
+        "params": {
+            "seconds": {"type": "number", "description": "Seconds to wait (0-30)"},
+            "condition": {"type": "string", "description": "Optional condition to verify after waiting (e.g. 'Firefox has loaded')"},
+        },
+        "required": ["seconds"],
+        "category": "control",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -3756,34 +3908,81 @@ _DISPLAY_NOTE = ("DISPLAY: AVAILABLE — mouse, keyboard, screenshot, and window
                  "DISPLAY: HEADLESS — GUI tools unavailable. Focus on shell/file/web tasks.")
 
 SYSTEM_PROMPT = f"""\
-You are Devin — a fully autonomous OS-controlling AI agent with {len(TOOLS)} tools.
-You operate exactly like a senior software engineer sitting at a computer.
+You are Devin — a deeply autonomous AI agent that operates a real computer.
+You have {len(TOOLS)} tools and think, plan, and act like a senior engineer at a keyboard.
 {_DISPLAY_NOTE}
 
 ════════════════════════════════════════
-IDENTITY
+WHO YOU ARE
 ════════════════════════════════════════
 You are simultaneously:
-• Expert software engineer (any language, any framework)
-• System administrator (Linux/macOS/Windows, shell, processes, networking)
-• Security researcher (authorized pentesting, vulnerability assessment)
-• Power user (GUI automation, browser, desktop apps)
-• Data analyst (files, databases, APIs, web scraping)
-• AI orchestrator (can chain tools, delegate sub-tasks, and verify outcomes)
+• Expert software engineer who writes real, working code (Python, JS, bash, any language)
+• System administrator who knows Linux/macOS/Windows inside-out
+• Power user who controls the GUI, browser, and desktop like a real human
+• Data analyst, security researcher, web scraper, and AI orchestrator
+• Conversational partner who gives direct, useful answers without filler
+
+You DO NOT:
+• Say "I'll help you with that" — just do it
+• Say "I cannot do that" when any tool path exists
+• Ask for permission for routine actions
+• Stop mid-task or leave work half-finished
+• Claim success without verifying
+• Make the same mistake three times without changing approach
 
 You have a real-time connection to the operating system. Every tool call actually
 executes on the live machine. Your job is to complete tasks completely, not attempt them.
 
 ════════════════════════════════════════
-AUTONOMOUS OPERATION — ABSOLUTE RULES
+THE ONLY RULES THAT MATTER
 ════════════════════════════════════════
-1. NEVER stop mid-task. Always find a way forward.
-2. NEVER say "I cannot do that" when a tool path exists.
-3. NEVER ask permission for routine actions.
-4. NEVER claim success without verifying it actually worked.
-5. ALWAYS complete what was asked — partial completion is failure.
-6. ALWAYS recover from errors using a different approach.
-7. When in doubt: take a screenshot and observe before acting.
+1. Complete the task fully — not partially, not "started it"
+2. Verify every action — a click that missed is a failed click
+3. When something fails: change approach immediately, don't repeat
+4. For GUI: always screenshot→analyze→act, never guess coordinates
+5. For code: write it, run it, read output, fix if needed
+6. For files: write then read back to confirm content
+7. When genuinely blocked: ask_user() — but try hard first
+8. Call task_complete() ONLY after you have verified the outcome
+
+════════════════════════════════════════
+TOOL SELECTION — QUICK GUIDE
+════════════════════════════════════════
+WRITING CODE?
+  → write_and_run(filename, code)          best for scripts you'll run once
+  → write_file + execute_shell             when you need to reuse the file
+  → execute_python(code)                   for quick one-off calculations
+
+SEARCHING THE WEB?
+  → web_search(query)                      text results, no browser
+  → search_and_open(query)                 open top result in browser
+  → browser_navigate(url)                  headless Selenium (reliable)
+  → open_browser(url)                      system browser (GUI sessions)
+
+CONTROLLING THE GUI?
+  → screenshot_and_analyze(prompt)         ALWAYS first — see the screen
+  → click_by_description("Submit button")  click by what you see
+  → open_and_wait(app, seconds)            open application reliably
+  → wait_and_verify(seconds, condition)    wait + confirm it loaded
+  → multi_click(json)                      sequence of clicks+types
+
+RUNNING COMMANDS?
+  → execute_shell(cmd)                     standard shell, captures output
+  → execute_shell_verbose(cmd)             same but labeled STDOUT/STDERR
+  → pipe_commands("cmd1 | cmd2 | cmd3")   shell pipeline
+
+GIT / CODE REPOS?
+  → git_command("status")                  any git subcommand
+  → git_clone_and_explore(url)             clone + show structure
+  → browser_audit_repo(github_url)         full GitHub repo audit
+
+PACKAGE INSTALL?
+  → install_and_verify(package)            install + confirm it works
+
+NEED TO WAIT?
+  → sleep(seconds)                         simple wait
+  → wait_and_verify(seconds, condition)    wait + screenshot verify
+  → wait_for_window(title, timeout)        wait for window to appear
 
 ════════════════════════════════════════
 THE REASONING LOOP (use for EVERY task)
@@ -4013,6 +4212,15 @@ SECURITY (AUTHORIZED ONLY):
   pen_test_recon(target)             — HTTP headers, robots.txt, open ports
   system_security_check()            — local system security audit
 
+POWER / COMPOUND:
+  ask_user(question)                 — ask user when genuinely ambiguous (use sparingly)
+  write_and_run(filename, code)      — write code + run immediately, return output
+  install_and_verify(package)        — install package + verify it works
+  git_clone_and_explore(url)         — clone repo + show structure
+  search_and_open(query)             — web search + open top result in browser
+  screen_to_clipboard()              — screenshot → AI text extraction → clipboard
+  wait_and_verify(seconds, cond)     — wait + screenshot + condition check
+
 CONTROL:
   task_complete(result)              — ONLY call when task is FULLY VERIFIED complete
 """
@@ -4135,6 +4343,11 @@ def run_agent(task: str, provider, max_steps: int = 100,
     _CTX_WARN_CHARS = 60_000    # ~15k tokens — start warning
     _CTX_COMPACT_CHARS = 100_000  # ~25k tokens — auto-compact older messages
 
+    # Anti-loop detection: track (tool_name, arg_fingerprint) → count
+    _tool_call_counts: Dict[str, int] = {}
+    _LOOP_WARN_THRESHOLD = 3   # warn after same tool+args called 3x
+    _LOOP_HARD_THRESHOLD = 5   # inject correction after 5x
+
     if not quiet:
         print()
         print(_box(f"Task: {task[:72]}"))
@@ -4235,9 +4448,24 @@ def run_agent(task: str, provider, max_steps: int = 100,
 
         # Execute tools
         tool_results = []
+        _injected_hint = None  # anti-loop hint to append after tool results
+
         for call in calls:
             name = call["name"]
             args = call["args"]
+
+            # Anti-loop detection
+            fingerprint = f"{name}:{json.dumps(args, sort_keys=True, default=str)[:80]}"
+            _tool_call_counts[fingerprint] = _tool_call_counts.get(fingerprint, 0) + 1
+            loop_count = _tool_call_counts[fingerprint]
+            if loop_count >= _LOOP_HARD_THRESHOLD and not quiet:
+                hint = (f"\n⚠ LOOP DETECTED: '{name}' called {loop_count}x with same args. "
+                        f"You MUST change your approach: try a completely different tool, "
+                        f"use screenshot_and_analyze to re-assess, or call ask_user() if truly stuck.")
+                _injected_hint = hint
+                print(yellow(f"\r  {hint}"))
+            elif loop_count >= _LOOP_WARN_THRESHOLD and not quiet:
+                print(yellow(f"\r  ⚠ '{name}' called {loop_count}x — consider a different approach"))
 
             if not quiet:
                 _print_tool_call(name, args)
@@ -4266,19 +4494,25 @@ def run_agent(task: str, provider, max_steps: int = 100,
 
         # Feed tool results back
         if isinstance(provider, ClaudeProvider):
-            messages.append({"role": "user", "content": [
-                {"type": "tool_result", "tool_use_id": tr["call_id"],
-                 "content": tr["result"]}
+            content_blocks = [
+                {"type": "tool_result", "tool_use_id": tr["call_id"], "content": tr["result"]}
                 for tr in tool_results
-            ]})
+            ]
+            if _injected_hint:
+                content_blocks.append({"type": "text", "text": _injected_hint})
+            messages.append({"role": "user", "content": content_blocks})
         elif isinstance(provider, (OpenAIProvider, HuggingFaceProvider, OllamaProvider)):
             for tr in tool_results:
                 messages.append({"role": "tool",
                                   "tool_call_id": tr["call_id"],
                                   "content": tr["result"]})
+            if _injected_hint:
+                messages.append({"role": "user", "content": _injected_hint})
         else:
             combined = "\n\n".join(
                 f"[Tool: {tr['name']}]\n{tr['result']}" for tr in tool_results)
+            if _injected_hint:
+                combined += f"\n\n{_injected_hint}"
             messages.append({"role": "user", "content": combined})
 
     if not final_result:
@@ -4428,10 +4662,17 @@ def repl(provider_name: str = '', model: str = ''):
         print()
         tips = [
             "open firefox and search for python tutorials",
-            "write a bash script that backs up my home folder",
-            "take a screenshot and describe what's on screen",
+            "write a Python script that monitors CPU usage every 5 seconds",
+            "take a screenshot and describe everything you see",
             "what ports are open on localhost?",
-            "create a Python web server in the current directory",
+            "create a simple HTTP server on port 8080 in this directory",
+            "clone https://github.com/torvalds/linux and show me the top-level structure",
+            "install the requests library and write a script that gets my public IP",
+            "open a terminal, run htop, take a screenshot and describe the processes",
+            "search the web for 'latest AI models 2025' and summarize the top 3 results",
+            "check if Docker is installed, if not install it",
+            "write and run a Python script that generates a fibonacci sequence to 1000",
+            "scan localhost for open ports and tell me what services are running",
         ]
         import random
         print(f"  {dim('Try:')} {italic(random.choice(tips))}")
@@ -4445,10 +4686,31 @@ def repl(provider_name: str = '', model: str = ''):
     # Persistent conversation history
     conv_messages: List[dict] = []
 
+    def _read_input() -> str:
+        """Read user input — supports single-line and multiline paste mode (<<EOF)."""
+        try:
+            line = input(f"{bold(cyan('❯'))} {bold('Devin')} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raise KeyboardInterrupt
+        # Multiline mode: if line ends with \ or starts with <<
+        if line.endswith('\\') or line == '<<':
+            lines = [line.rstrip('\\')]
+            print(dim("  (multiline mode — empty line to finish)"))
+            while True:
+                try:
+                    more = input(f"  {dim('...')} ")
+                except (EOFError, KeyboardInterrupt):
+                    break
+                if more.strip() == '':
+                    break
+                lines.append(more)
+            return '\n'.join(lines).strip()
+        return line
+
     while True:
         try:
-            user_input = input(f"{bold(cyan('❯'))} {bold('Devin-4.0')} ").strip()
-        except (EOFError, KeyboardInterrupt):
+            user_input = _read_input()
+        except KeyboardInterrupt:
             print(dim("\nBye.")); break
 
         if not user_input:
