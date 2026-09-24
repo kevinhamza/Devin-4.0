@@ -41,6 +41,12 @@ def _token() -> str:
 
 
 def _tool_instructions(tool_schemas: List[Dict[str, Any]]) -> str:
+    """Backup textual instructions for models that don't emit native tool_calls.
+
+    We send the tools natively as OpenAI-compat `tools` in the request body too;
+    this block is a belt-and-braces fallback so that if the model ignores the
+    native channel, it can still emit <tool_use> blocks that we parse.
+    """
     if not tool_schemas:
         return ""
     lines = []
@@ -55,12 +61,40 @@ def _tool_instructions(tool_schemas: List[Dict[str, Any]]) -> str:
         )
     schema = "\n".join(lines)
     return (
-        "\n\nYou have these tools. To call a tool, emit exactly one JSON block per turn wrapped "
-        "in <tool_use>...</tool_use>, with no other text:\n"
-        '<tool_use>{"name":"<tool_name>","input":{...}}</tool_use>\n'
-        "When the task is complete, reply with plain text (no <tool_use> block).\n\n"
-        f"Tools:\n{schema}"
+        "\n\nYou have real tools available and MUST use them to make progress. "
+        "Do not describe what you would do — call the tool. The runtime accepts "
+        "TWO tool-call formats:\n"
+        "  1) NATIVE (preferred): the OpenAI-compat function-calling channel — "
+        "when the API returns a tool_call, the runtime dispatches it and gives "
+        "you the result. Just call the function directly.\n"
+        "  2) FALLBACK: if you can't emit a native tool_call, emit exactly ONE "
+        "JSON block wrapped in <tool_use>...</tool_use> at the very end of your "
+        "message, with no trailing text:\n"
+        '     <tool_use>{"name":"<tool_name>","input":{...}}</tool_use>\n'
+        "When the task is fully complete, call the `task_complete` tool. "
+        "Never end a turn with a plan and no tool call — that means nothing runs.\n\n"
+        f"Available tools:\n{schema}"
     )
+
+
+def _to_openai_tools(tool_schemas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert Gemini-shape tool schemas (name/description/parameters) into the
+    OpenAI function-calling shape HF Router expects."""
+    out: List[Dict[str, Any]] = []
+    for t in tool_schemas or []:
+        params = t.get("parameters") or {"type": "object", "properties": {}}
+        # Ensure object type is set (some registrations omit it).
+        params.setdefault("type", "object")
+        params.setdefault("properties", {})
+        out.append({
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t.get("description", ""),
+                "parameters": params,
+            },
+        })
+    return out
 
 
 _TOOL_RE = re.compile(r"<tool_use>([\s\S]*?)</tool_use>")
@@ -118,7 +152,13 @@ def _parse_tool_calls(text: str) -> Tuple[str, List[Dict[str, Any]]]:
     return residual, calls
 
 
-def _post(model: str, messages: List[Dict[str, str]], max_tokens: int = 4096, timeout: int = 60):
+def _post(
+    model: str,
+    messages: List[Dict[str, str]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    max_tokens: int = 4096,
+    timeout: int = 60,
+):
     if not _HAS_REQUESTS:
         raise RuntimeError("requests library not available")
     headers = {
@@ -126,13 +166,16 @@ def _post(model: str, messages: List[Dict[str, str]], max_tokens: int = 4096, ti
         "Authorization": f"Bearer {_token()}",
         "X-Use-Cache": "false",
     }
-    body = {
+    body: Dict[str, Any] = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": 0.7,
         "stream": False,
     }
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = "auto"
     return _requests.post(f"{HF_ROUTER_BASE}/chat/completions", headers=headers, json=body, timeout=timeout)
 
 
@@ -167,10 +210,12 @@ def chat(
         if fm not in models_to_try:
             models_to_try.append(fm)
 
+    openai_tools = _to_openai_tools(tool_schemas or [])
+
     last_error = ""
     for m_id in models_to_try:
         try:
-            resp = _post(m_id, payload_messages, max_tokens=max_tokens)
+            resp = _post(m_id, payload_messages, tools=openai_tools, max_tokens=max_tokens)
         except Exception as e:
             last_error = f"post: {e}"
             continue

@@ -978,6 +978,32 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             final_text = text
 
         if not tool_calls:
+            # If the model responded with text but no tool call AND the text
+            # looks like a "here is my plan" (numbered list, "I will…"),
+            # nudge it once to actually act instead of dropping the turn.
+            # This matters for open-weight models like Qwen that sometimes
+            # slip into chat mode when they should be using tools.
+            plan_shape = re.search(r"(^|\n)\s*(1[.)]|- |First,|Step 1|Here is the plan|I (will|would|plan to)\b)",
+                                    text, flags=re.IGNORECASE)
+            already_nudged = any(
+                isinstance(p, dict) and p.get("text", "").startswith("[[SYSTEM NUDGE]]")
+                for c in contents for p in (c.get("parts") or [])
+            )
+            if plan_shape and not already_nudged and _round < max_rounds - 1:
+                # Append the model's turn, then a synthetic user turn nudging
+                # for real action. One nudge per conversation so we don't loop.
+                contents.append({
+                    "role": "model",
+                    "parts": raw_model_parts if raw_model_parts else [{"text": text or " "}],
+                })
+                nudge = (
+                    "[[SYSTEM NUDGE]] You described a plan but did not call any "
+                    "tool. Call one of the available tools now to make progress. "
+                    "If the task is already complete, call task_complete. Do not "
+                    "describe — act."
+                )
+                contents.append({"role": "user", "parts": [{"text": nudge}]})
+                continue
             break  # no more tool calls — done
 
         # Append model turn (with function calls) to contents

@@ -44,6 +44,10 @@ interface HFChatResponse {
 }
 
 function toolInstructions(tools: ToolDefinition[]): string {
+  // Backup textual instructions for models that don't emit native tool_calls.
+  // We also send the tools natively as OpenAI-compat `tools` in the request
+  // body — this block is a fallback so <tool_use>{...}</tool_use> in the
+  // response text still gets dispatched if the native channel is ignored.
   if (tools.length === 0) return '';
   const schema = tools.map(t => {
     const props = Object.entries(t.input_schema.properties)
@@ -51,12 +55,29 @@ function toolInstructions(tools: ToolDefinition[]): string {
       .join(',\n');
     return `- ${t.name}: ${t.description}\n  args: {\n${props}\n  }`;
   }).join('\n');
-  return `\n\nYou have these tools available. To call a tool, emit exactly one JSON block per turn wrapped in <tool_use>...</tool_use>, no other text:
-<tool_use>{"name":"<tool_name>","input":{...}}</tool_use>
-When the task is done, reply with plain text (no tool_use block).
+  return `\n\nYou have real tools available and MUST use them to make progress. Do not describe what you would do — call the tool. Two accepted formats:
+  1) NATIVE (preferred): the OpenAI-compat function-calling channel. Just call the function; the runtime dispatches it and gives you the result.
+  2) FALLBACK: emit ONE JSON block at the very end of your message, no trailing text:
+     <tool_use>{"name":"<tool_name>","input":{...}}</tool_use>
+When the task is fully complete, call the \`task_complete\` tool. Never end a turn with a plan and no tool call.
 
-Tools:
+Available tools:
 ${schema}`;
+}
+
+function toOpenAITools(tools: ToolDefinition[]): Array<Record<string, unknown>> {
+  return tools.map(t => ({
+    type: 'function',
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: {
+        type: 'object',
+        properties: t.input_schema.properties,
+        required: t.input_schema.required || [],
+      },
+    },
+  }));
 }
 
 function extractJsonObject(blob: string): Record<string, unknown> | null {
@@ -98,8 +119,18 @@ function parseToolCalls(text: string): { text: string; calls: Array<{ name: stri
   return { text: residual, calls };
 }
 
-async function hfPost(apiKey: string, model: string, body: Record<string, unknown>): Promise<Response> {
+async function hfPost(
+  apiKey: string,
+  model: string,
+  body: Record<string, unknown>,
+  tools?: Array<Record<string, unknown>>,
+): Promise<Response> {
   const url = `${HF_ROUTER_BASE}/chat/completions`;
+  const fullBody: Record<string, unknown> = { ...body, model };
+  if (tools && tools.length > 0) {
+    fullBody.tools = tools;
+    fullBody.tool_choice = 'auto';
+  }
   return fetch(url, {
     method: 'POST',
     headers: {
@@ -107,7 +138,7 @@ async function hfPost(apiKey: string, model: string, body: Record<string, unknow
       Authorization: `Bearer ${apiKey}`,
       'X-Use-Cache': 'false',
     },
-    body: JSON.stringify({ ...body, model }),
+    body: JSON.stringify(fullBody),
   });
 }
 
@@ -148,12 +179,13 @@ export class HuggingFaceProvider extends BaseProvider {
       temperature: 0.7,
       stream: false,
     };
+    const openaiTools = toOpenAITools(tools);
     const modelsToTry = [this.model, ...FALLBACK_MODELS.filter(m => m !== this.model)];
     let lastError = '';
     for (const modelId of modelsToTry) {
       let resp: Response;
       try {
-        resp = await hfPost(this.apiKey, modelId, body);
+        resp = await hfPost(this.apiKey, modelId, body, openaiTools);
       } catch (e) {
         lastError = String(e);
         continue;
