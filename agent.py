@@ -2032,6 +2032,124 @@ def tool_browser_audit_repo(repo_url: str) -> str:
     return '\n'.join(results)
 
 
+def tool_github_repo_audit(repo: str, deep: bool = False) -> str:
+    """
+    Comprehensive audit of a public GitHub repository using the GitHub REST
+    API (works headless). Returns structured summary: description, language,
+    size, stars, top-level files, README preview, and (if deep) top contributors.
+
+    repo: 'owner/name' or full URL like 'https://github.com/owner/name'
+    deep: if True, also fetches contributor list and language breakdown
+
+    Use this instead of browser-based audit when you don't need a screenshot,
+    or as a fast first-pass before opening in the browser.
+    """
+    # Normalize repo identifier
+    r = repo.strip()
+    if 'github.com/' in r:
+        r = r.split('github.com/', 1)[1].rstrip('/')
+        if r.endswith('.git'):
+            r = r[:-4]
+    parts = [p for p in r.split('/') if p]
+    if len(parts) < 2:
+        return f"ERROR: repo must be 'owner/name' or a github.com URL, got: {repo!r}"
+    owner, name = parts[0], parts[1]
+
+    base = f"https://api.github.com/repos/{owner}/{name}"
+    hdrs = {'Accept': 'application/vnd.github+json', 'User-Agent': 'Devin-4.0'}
+    # Optional token boost (helps with rate limit; NEVER required)
+    gh_token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if gh_token:
+        hdrs['Authorization'] = f'Bearer {gh_token}'
+
+    lines = [f"=== GitHub Repo Audit: {owner}/{name} ==="]
+
+    def _fetch(url: str) -> Tuple[int, dict]:
+        try:
+            req = urllib.request.Request(url, headers=hdrs)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='replace'))
+                return resp.status, data
+        except urllib.error.HTTPError as e:
+            return e.code, {'error': e.reason, 'body': e.read().decode('utf-8', 'replace')[:500]}
+        except Exception as e:
+            return 0, {'error': str(e)}
+
+    # 1. Repo metadata
+    status, info = _fetch(base)
+    if status != 200:
+        return f"ERROR: GitHub API returned {status}: {info.get('error', info)}"
+
+    lines.append(f"Description  : {info.get('description') or '(none)'}")
+    lines.append(f"Language     : {info.get('language') or 'unknown'}")
+    lines.append(f"Stars        : {info.get('stargazers_count')}")
+    lines.append(f"Forks        : {info.get('forks_count')}")
+    lines.append(f"Open issues  : {info.get('open_issues_count')}")
+    lines.append(f"Size         : {info.get('size')} KB")
+    lines.append(f"Default branch: {info.get('default_branch')}")
+    lines.append(f"License      : {(info.get('license') or {}).get('spdx_id', 'none')}")
+    lines.append(f"Created      : {info.get('created_at')}")
+    lines.append(f"Updated      : {info.get('updated_at')}")
+    lines.append(f"Homepage     : {info.get('homepage') or '(none)'}")
+    lines.append(f"Topics       : {', '.join(info.get('topics') or []) or '(none)'}")
+    lines.append(f"URL          : {info.get('html_url')}")
+
+    default_branch = info.get('default_branch', 'main')
+
+    # 2. Top-level file tree
+    lines.append("\n--- Top-level files ---")
+    status, tree_data = _fetch(f"{base}/contents?ref={default_branch}")
+    if status == 200 and isinstance(tree_data, list):
+        for item in tree_data[:40]:
+            marker = '📁' if item.get('type') == 'dir' else '📄'
+            size = f" ({item.get('size', 0)} b)" if item.get('type') == 'file' else ''
+            lines.append(f"  {marker} {item.get('name')}{size}")
+        if len(tree_data) > 40:
+            lines.append(f"  … +{len(tree_data)-40} more")
+    else:
+        lines.append(f"  (failed to list: HTTP {status})")
+
+    # 3. README preview
+    lines.append("\n--- README preview ---")
+    status, readme = _fetch(f"{base}/readme")
+    if status == 200:
+        try:
+            import base64
+            content = base64.b64decode(readme.get('content', '')).decode('utf-8', errors='replace')
+            lines.append(content[:1500] + ('\n… (truncated)' if len(content) > 1500 else ''))
+        except Exception as e:
+            lines.append(f"  (decode failed: {e})")
+    else:
+        lines.append(f"  (no README or HTTP {status})")
+
+    # 4. Deep audit — languages + contributors
+    if deep:
+        lines.append("\n--- Language breakdown ---")
+        status, langs = _fetch(f"{base}/languages")
+        if status == 200 and isinstance(langs, dict):
+            total = sum(langs.values()) or 1
+            for lang, bytes_ in sorted(langs.items(), key=lambda x: -x[1])[:10]:
+                pct = 100.0 * bytes_ / total
+                lines.append(f"  {lang:20s} {pct:5.1f}%  ({bytes_} bytes)")
+
+        lines.append("\n--- Top contributors ---")
+        status, contribs = _fetch(f"{base}/contributors?per_page=10")
+        if status == 200 and isinstance(contribs, list):
+            for c in contribs[:10]:
+                lines.append(f"  {c.get('login'):20s} {c.get('contributions', 0)} commits")
+
+        lines.append("\n--- Recent releases ---")
+        status, rels = _fetch(f"{base}/releases?per_page=5")
+        if status == 200 and isinstance(rels, list) and rels:
+            for rel in rels[:5]:
+                lines.append(f"  {rel.get('tag_name', '?'):15s} {rel.get('name', '') or rel.get('tag_name', '')}")
+        else:
+            lines.append("  (no releases)")
+
+    lines.append(f"\n=== Audit complete for {owner}/{name} ===")
+    return '\n'.join(lines)
+
+
 def tool_type_and_submit(text: str, submit_key: str = 'Return') -> str:
     """Type text and immediately press a submit key (Enter, Tab, etc.)."""
     r1 = tool_keyboard_type(text)
@@ -3828,6 +3946,16 @@ TOOLS: Dict[str, Dict] = {
         "params": {"repo_url": {"type": "string", "description": "GitHub repository URL"}},
         "required": ["repo_url"],
         "category": "browser",
+    },
+    "github_repo_audit": {
+        "fn": tool_github_repo_audit,
+        "desc": "Comprehensive audit of a public GitHub repo via API (works headless). Returns description, language, size, top-level files, README preview. deep=True adds contributors, languages, releases.",
+        "params": {
+            "repo": {"type": "string", "description": "'owner/name' or github.com URL"},
+            "deep": {"type": "boolean", "description": "Include contributors, language breakdown, releases (default false)"},
+        },
+        "required": ["repo"],
+        "category": "git",
     },
     "pen_test_recon": {
         "fn": tool_pen_test_recon,

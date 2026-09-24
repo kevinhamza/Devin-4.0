@@ -285,6 +285,17 @@ def t_observe_and_plan_headless():
     result = _agent.TOOLS['observe_and_plan']['fn']('test goal in headless env')
     assert 'GOAL' in result or 'OBSERVE' in result or 'PLAN' in result
 
+def t_github_repo_audit_registered():
+    assert 'github_repo_audit' in _agent.TOOLS, "github_repo_audit not registered"
+    spec = _agent.TOOLS['github_repo_audit']
+    assert spec['category'] == 'git'
+    assert 'repo' in spec['params']
+
+def t_github_repo_audit_normalization():
+    # Bad input should return ERROR, not raise
+    r = _agent.tool_github_repo_audit('not-a-repo')
+    assert 'ERROR' in r
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -332,6 +343,8 @@ def main():
     test("observe_and_plan registered", t_tool_observe_and_plan)
     test("write_and_run", t_write_and_run)
     test("observe_and_plan headless", t_observe_and_plan_headless)
+    test("github_repo_audit registered", t_github_repo_audit_registered)
+    test("github_repo_audit normalization", t_github_repo_audit_normalization)
 
     # Phase 5: Intelligence
     print("\n── Phase 5: Agentic Intelligence ──")

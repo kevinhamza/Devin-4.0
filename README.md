@@ -166,10 +166,10 @@ User (CLI / voice)
 │  OpenAIProvider │ HuggingFaceProvider │  │
 │  OllamaProvider                          │
 └────────────────┬─────────────────────────┘
-                 │  tool calls (135 tools)
+                 │  tool calls (136 tools)
                  ▼
 ┌──────────────────────────────────────────┐
-│  TOOL REGISTRY  (135 tools)              │
+│  TOOL REGISTRY  (136 tools)              │
 │  reasoning  web  shell  files  vision    │
 │  mouse  keyboard  windows  apps          │
 │  browser  clipboard  voice  memory       │
@@ -288,14 +288,14 @@ The agent never gives up. Errors are information. If one approach fails, it swit
 
 ---
 
-## Tools (135)
+## Tools (136)
 
 ```
 /tools               — list all tools
 /tools vision        — list tools in category
 ```
 
-135 tools total across all categories. Categories:
+136 tools total across all categories. Categories:
 - **reasoning**: think
 - **web**: web_search, web_fetch, open_browser, http_request, parse_json
 - **shell**: execute_shell, execute_python, list_processes, kill_process, sleep, run_script, install_package
@@ -479,7 +479,7 @@ HF_TOKEN=your_token ./devin --provider huggingface "list files in this directory
 
 Test categories and status:
 - **Syntax / import**: AUTOMATED VERIFIED (38 tests pass, `tests/test_core.py`)
-- **Tool registry (135 tools)**: AUTOMATED VERIFIED
+- **Tool registry (136 tools)**: AUTOMATED VERIFIED
 - **Shell/file/code execution**: AUTOMATED VERIFIED
 - **Memory (SQLite)**: AUTOMATED VERIFIED
 - **Provider/model selection**: AUTOMATED VERIFIED
