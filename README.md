@@ -350,6 +350,8 @@ The agent never gives up. Errors are information. If one approach fails, it swit
 | `/lab [setup]` | Show/setup security lab environment and tools |
 | `/os` | Show OS, platform, display, and tool availability |
 | `/run <cmd>` | Run a shell command directly (alias for /shell) |
+| `/audit_repo <owner/name>` | Audit a public GitHub repo (metadata + README + file tree) |
+| `/demo` | Quick self-check (platform, tools, modules, provider, memory) |
 | `/new` | Start fresh conversation |
 | `/clear` | Clear screen |
 | `/exit` / `/quit` | Exit |
