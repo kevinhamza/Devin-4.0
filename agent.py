@@ -5892,18 +5892,28 @@ def repl(provider_name: str = '', model: str = ''):
 
             elif cmd == '/tools':
                 cats: Dict[str, List[str]] = {}
-                for name, t in TOOLS.items():
-                    cats.setdefault(t.get('category','other'), []).append(name)
-                if arg:
-                    cats = {k: v for k, v in cats.items()
-                            if arg.lower() in k.lower()}
-                if not cats:
-                    print(yellow(f"  No tools in category {arg!r}"))
+                q = arg.lower().strip() if arg else ''
+                if q:
+                    # Match by category, tool name, or description substring
+                    matched = {}
+                    for name, t in TOOLS.items():
+                        cat = t.get('category', 'other')
+                        desc = t.get('desc', '')
+                        if q in cat.lower() or q in name.lower() or q in desc.lower():
+                            matched.setdefault(cat, []).append(name)
+                    cats = matched
+                    if not cats:
+                        print(yellow(f"  No tools match {arg!r} (searched category, name, description)"))
+                else:
+                    for name, t in TOOLS.items():
+                        cats.setdefault(t.get('category', 'other'), []).append(name)
                 for cat in sorted(cats):
-                    print(f"\n  {bold(cat.upper())}")
+                    print(f"\n  {bold(cat.upper())}  ({len(cats[cat])} tool{'s' if len(cats[cat])!=1 else ''})")
                     for name in sorted(cats[cat]):
-                        desc = TOOLS[name]['desc'][:65]
-                        print(f"    {cyan(name):<30} {dim(desc)}")
+                        desc = TOOLS[name]['desc'][:75]
+                        print(f"    {cyan(name):<32} {dim(desc)}")
+                if not q:
+                    print(f"\n  {dim(f'Total: {len(TOOLS)} tools across {len(cats)} categories')}")
                 print()
 
             elif cmd == '/status':
@@ -6183,6 +6193,47 @@ def repl(provider_name: str = '', model: str = ''):
 # ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _cli_health() -> int:
+    """Print core health check and exit. No AI required."""
+    mods = _modules_status()
+    loaded = sum(1 for v in mods.values() if v)
+    print(f"Devin AGI v4.0.0")
+    print(f"  Platform     : {_PLATFORM}")
+    print(f"  Display      : {'yes' if _HAS_DISPLAY else 'headless'}")
+    print(f"  Tools        : {len(TOOLS)}")
+    print(f"  Modules      : {loaded}/{len(mods)} loaded")
+    print(f"  Memory       : {_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts")
+    # Provider keys detected
+    keys = [
+        ('GEMINI_API_KEY', os.environ.get('GEMINI_API_KEY')),
+        ('ANTHROPIC_API_KEY', os.environ.get('ANTHROPIC_API_KEY')),
+        ('OPENAI_API_KEY', os.environ.get('OPENAI_API_KEY')),
+        ('HF_TOKEN', os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_API_KEY')),
+    ]
+    print(f"  Provider keys:")
+    any_key = False
+    for name, val in keys:
+        status = '✓' if val else '✗'
+        print(f"    {status} {name}")
+        if val: any_key = True
+    # Ollama
+    ollama_url = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+    try:
+        req = urllib.request.Request(f"{ollama_url}/api/tags")
+        with urllib.request.urlopen(req, timeout=1) as r:
+            data = json.loads(r.read())
+            models = [m.get('name') for m in data.get('models', [])]
+            print(f"    ✓ Ollama at {ollama_url}: {len(models)} models available")
+            any_key = True
+    except Exception:
+        print(f"    ✗ Ollama at {ollama_url}: not reachable")
+    if not any_key:
+        print()
+        print("  ⚠  No provider available. Add an API key to .env or start Ollama locally.")
+        return 1
+    return 0
+
+
 def main():
     args = sys.argv[1:]
     provider_name = ''
@@ -6200,7 +6251,28 @@ def main():
         elif a.startswith('--model='):
             model = a.split('=',1)[1]; i += 1
         elif a in ('--help', '-h'):
-            print(__doc__); sys.exit(0)
+            print(__doc__ or "Devin AGI v4.0.0")
+            print("  ./devin                             — interactive REPL")
+            print("  ./devin 'task description'          — one-shot task")
+            print("  ./devin --provider huggingface ...  — pick a provider")
+            print("  ./devin --model MODEL_ID ...        — pick a model")
+            print("  ./devin --health                    — health check (no AI)")
+            print("  ./devin --test                      — run test suite (no AI)")
+            print("  ./devin --version                   — print version")
+            sys.exit(0)
+        elif a in ('--version', '-v'):
+            print("Devin AGI 4.0.0")
+            print(f"  {len(TOOLS)} tools, {sum(1 for v in _modules_status().values() if v)} modules loaded")
+            sys.exit(0)
+        elif a == '--health':
+            sys.exit(_cli_health())
+        elif a == '--test':
+            # Run the core test suite
+            test_file = _ROOT / 'tests' / 'test_core.py'
+            if not test_file.exists():
+                print(red(f"Test file missing: {test_file}")); sys.exit(1)
+            r = subprocess.run([sys.executable, str(test_file)])
+            sys.exit(r.returncode)
         elif a == '--chat':
             i += 1  # just drop it, REPL is always conversational
         else:
