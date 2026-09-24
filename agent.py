@@ -5664,6 +5664,8 @@ def _make_help() -> str:
   {cyan('/pentest <target>')}    Run authorized pentest assessment on target
   {cyan('/lab [setup]')}         Show/setup lab environment and available security tools
   {cyan('/os')}                  Show OS/platform info and available tools
+  {cyan('/audit_repo <own/nm>')} Audit a public GitHub repo (metadata + README + tree)
+  {cyan('/demo')}                Quick health check (platform, tools, memory, providers)
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -6059,6 +6061,28 @@ def repl(provider_name: str = '', model: str = ''):
                     print(tool_execute_shell(arg, timeout=60))
                 else:
                     print(yellow("  Usage: /run <shell command>"))
+
+            elif cmd == '/audit_repo':
+                if not arg:
+                    print(yellow("  Usage: /audit_repo <owner/name>  (e.g. /audit_repo torvalds/linux)"))
+                else:
+                    print(f"\n{tool_github_repo_audit(arg, deep=True)}\n")
+
+            elif cmd == '/demo':
+                # Quick end-to-end health check without needing AI
+                print(dim("  Running quick health check…\n"))
+                print(green("  ✓ Platform: ") + _PLATFORM)
+                print(green("  ✓ Display: ") + ('yes' if _HAS_DISPLAY else 'headless'))
+                print(green("  ✓ Tools: ") + str(len(TOOLS)))
+                mods = _modules_status()
+                loaded = sum(1 for v in mods.values() if v)
+                print(green("  ✓ Modules loaded: ") + f"{loaded}/{len(mods)}")
+                print(green("  ✓ Provider: ") + (provider.name if provider else red('none')))
+                print(green("  ✓ Memory: ") + str(_DB.execute('SELECT count(*) FROM memories').fetchone()[0]) + " facts")
+                # Test one tool end-to-end
+                r = tool_execute_python('print(2+2)')
+                print(green("  ✓ execute_python(print(2+2)): ") + r.strip())
+                print(dim("\n  For a full demo, run: python3 tests/demo_workflow.py"))
 
             else:
                 print(yellow(f"  Unknown command: {cmd}. Try /help"))
