@@ -25,7 +25,7 @@ const CONTEXT_LIMITS: Record<string, number> = {
   'claude-sonnet-4-6': 200000,
   'claude-haiku-4-5-20251001': 200000,
   'claude-3-5-sonnet-20241022': 200000,
-  'gemini-3.6-flash': 1000000,
+  'gemini-2.5-flash': 1000000,
   'gemini-2.5-pro': 1000000,
   'gemini-2.0-flash': 1000000,
   'gemini-1.5-pro': 1000000,
