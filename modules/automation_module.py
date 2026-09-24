@@ -346,17 +346,17 @@ class ActionStatus(Enum):
 @dataclass
 class WorkflowStep:
     """Represents a single step in an automated workflow."""
+    action_type: str  # A short, user-friendly name for the action (required)
     step_id: str = field(default_factory=lambda: f"step_{uuid.uuid4().hex[:8]}")
     description: Optional[str] = None
-    action_type: str # A short, user-friendly name for the action
     parameters: Dict[str, Any] = field(default_factory=dict)
     output_variable_name: Optional[str] = None
 
 @dataclass
 class Workflow:
     """Represents a defined workflow consisting of multiple steps."""
+    name: str  # (required)
     workflow_id: str = field(default_factory=lambda: f"wf_{uuid.uuid4().hex[:8]}")
-    name: str
     description: Optional[str] = None
     steps: List[WorkflowStep] = field(default_factory=list)
 
