@@ -1123,7 +1123,10 @@ def tool_browser_navigate(url: str) -> str:
         if r.startswith('ERROR'):
             return r
     try:
-        return _browser_instance.navigate(url)
+        fn = getattr(_browser_instance, 'navigate', None) or getattr(_browser_instance, 'open_url', None)
+        if callable(fn):
+            return str(fn(url))
+        return "ERROR: navigate/open_url not available"
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -1143,7 +1146,10 @@ def tool_browser_type(selector: str, text: str) -> str:
     if _browser_instance is None:
         return "ERROR: browser not started."
     try:
-        return _browser_instance.type_text(selector, text)
+        fn = getattr(_browser_instance, 'type_text', None) or getattr(_browser_instance, 'type_in', None)
+        if callable(fn):
+            return str(fn(selector, text))
+        return "ERROR: type_text/type_in not available"
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -1153,7 +1159,9 @@ def tool_browser_get_text(selector: str = '') -> str:
     if _browser_instance is None:
         return "ERROR: browser not started."
     try:
-        fn = getattr(_browser_instance, 'get_text', None) or getattr(_browser_instance, 'page_source', None)
+        fn = (getattr(_browser_instance, 'get_text', None) or
+              getattr(_browser_instance, 'get_page_text', None) or
+              getattr(_browser_instance, 'page_source', None))
         if callable(fn):
             return str(fn(selector) if selector else fn())[:4000]
         return "ERROR: get_text not available"
