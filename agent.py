@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-Devin Agent — Proper agentic AI CLI
-=====================================
-Self-contained. Zero external dependencies.
-Interactive REPL + one-shot task mode.
-Supports Gemini, Claude, and OpenAI.
+Devin Agent — OS-controlled agentic AI CLI
+==========================================
+Fully self-contained. Zero external dependencies required.
+Full computer control: mouse, keyboard, screen, files, shell, browser, voice.
+Multi-provider AI: Gemini, Claude, OpenAI.
 
 Usage:
-  python agent.py                          # interactive mode
-  python agent.py "search today's AI news" # one-shot task
-  python agent.py --provider claude        # force provider
-  python agent.py --model gemini-2.5-pro   # force model
+  python agent.py                           # interactive REPL
+  python agent.py "open firefox and search for AI news"
+  python agent.py --provider claude "write a hello world script"
+  python agent.py --model gemini-3.6-flash  "task here"
 
 Slash commands (interactive):
-  /help    /tools    /status   /model    /providers
-  /clear   /memory   /forget   /history  /shell <cmd>
-  /exit    /quit
+  /help  /tools  /status  /providers  /model <m>  /provider <p>
+  /clear  /memory [q]  /remember <fact>  /forget  /history
+  /shell <cmd>  /screenshot  /repos  /voice  /exit /quit
 
 API keys (.env or environment):
   GEMINI_API_KEY     https://aistudio.google.com/app/apikey
@@ -24,8 +24,9 @@ API keys (.env or environment):
 """
 
 from __future__ import annotations
-import os, sys, json, time, re, subprocess, html as _html_lib, sqlite3, hashlib
-import urllib.request, urllib.parse, urllib.error, textwrap, shutil, threading
+import os, sys, json, time, re, subprocess, html as _html_lib, sqlite3
+import urllib.request, urllib.parse, urllib.error, textwrap, shutil, base64
+import platform, signal, threading
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -40,26 +41,33 @@ if _ENV.exists():
             _k, _v = _l.split('=', 1)
             os.environ.setdefault(_k.strip(), _v.strip().strip('"\''))
 
+# ── Platform detection ─────────────────────────────────────────────────────────
+_PLATFORM = platform.system()          # 'Linux', 'Darwin', 'Windows'
+_IS_LINUX  = _PLATFORM == 'Linux'
+_IS_MAC    = _PLATFORM == 'Darwin'
+_IS_WIN    = _PLATFORM == 'Windows'
+_HAS_DISPLAY = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+                    or _IS_MAC or _IS_WIN)
+
 # ── Terminal colours ──────────────────────────────────────────────────────────
 _TTY = sys.stdout.isatty()
 def _c(code, t): return f'\033[{code}m{t}\033[0m' if _TTY else t
-cyan   = lambda t: _c('36;1', t)
-green  = lambda t: _c('32;1', t)
-yellow = lambda t: _c('33;1', t)
-red    = lambda t: _c('31;1', t)
-bold   = lambda t: _c('1',    t)
-dim    = lambda t: _c('2',    t)
-blue   = lambda t: _c('34;1', t)
-magenta= lambda t: _c('35;1', t)
-white  = lambda t: _c('37;1', t)
+cyan    = lambda t: _c('36;1', t)
+green   = lambda t: _c('32;1', t)
+yellow  = lambda t: _c('33;1', t)
+red     = lambda t: _c('31;1', t)
+bold    = lambda t: _c('1',    t)
+dim     = lambda t: _c('2',    t)
+blue    = lambda t: _c('34;1', t)
+magenta = lambda t: _c('35;1', t)
 
 def _hr(char='─', width=0):
     w = width or (shutil.get_terminal_size().columns - 1)
     return dim(char * w)
 
-def _box(title: str, char='─'):
+def _box(title: str, char='═'):
     w = shutil.get_terminal_size().columns - 1
-    pad = max(0, w - len(title) - 2)
+    pad = max(0, w - len(re.sub(r'\033\[[^m]+m', '', title)) - 4)
     return dim(char * 2) + ' ' + bold(title) + ' ' + dim(char * pad)
 
 # ── Memory (SQLite) ───────────────────────────────────────────────────────────
@@ -84,18 +92,16 @@ def _remember(fact: str, tags: str = '') -> str:
     _DB.execute('INSERT INTO memories (fact, tags, session) VALUES (?,?,?)',
                 (fact, tags, _SESSION_ID))
     _DB.commit()
-    return f"Remembered: {fact[:80]}"
+    return f"Remembered: {fact[:100]}"
 
-def _recall(query: str = '', n: int = 10) -> str:
+def _recall(query: str = '', n: int = 15) -> str:
     if query:
         rows = _DB.execute(
             "SELECT ts, fact FROM memories WHERE fact LIKE ? ORDER BY id DESC LIMIT ?",
-            (f'%{query}%', n)
-        ).fetchall()
+            (f'%{query}%', n)).fetchall()
     else:
         rows = _DB.execute(
-            "SELECT ts, fact FROM memories ORDER BY id DESC LIMIT ?", (n,)
-        ).fetchall()
+            "SELECT ts, fact FROM memories ORDER BY id DESC LIMIT ?", (n,)).fetchall()
     if not rows:
         return "No memories found."
     return '\n'.join(f"[{r[0]}] {r[1]}" for r in rows)
@@ -105,22 +111,34 @@ def _forget_all() -> str:
     _DB.commit()
     return "All memories cleared."
 
+# ── Optional pyautogui import (graceful) ─────────────────────────────────────
+try:
+    import pyautogui as _pag
+    _pag.FAILSAFE = True
+    _pag.PAUSE = 0.05
+    _HAS_PAG = True
+except Exception:
+    _HAS_PAG = False
+
+def _cmd_exists(cmd: str) -> bool:
+    return shutil.which(cmd) is not None
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# TOOLS
+# TOOLS  — every tool returns a string
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _ua_get(url: str, timeout: int = 20, extra_headers: dict = {}) -> str:
+# ── HTTP helpers ──────────────────────────────────────────────────────────────
+
+def _ua_get(url: str, timeout: int = 20) -> str:
     headers = {
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
         'Accept': 'text/html,application/json,*/*;q=0.9',
-        **extra_headers,
     }
     req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            raw = r.read()
             enc = r.headers.get_content_charset('utf-8')
-            return raw.decode(enc, errors='replace')
+            return r.read().decode(enc, errors='replace')
     except urllib.error.HTTPError as e:
         return f"ERROR:{e.code} {e.reason}"
     except Exception as e:
@@ -134,96 +152,133 @@ def _strip_html(s: str, max_chars: int = 8000) -> str:
     s = re.sub(r'\s{3,}', '\n\n', s)
     return s.strip()[:max_chars]
 
-# ── Tool implementations ──────────────────────────────────────────────────────
+def _http_post(url: str, headers: dict, body: dict, timeout: int = 60) -> dict:
+    data = json.dumps(body).encode()
+    req  = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode())
+
+# ── Reasoning ─────────────────────────────────────────────────────────────────
 
 def tool_think(thought: str) -> str:
-    """Record AI reasoning without side effects."""
-    return f"[thought recorded] {thought[:200]}"
+    return f"[thought recorded] {thought[:300]}"
+
+# ── Web ───────────────────────────────────────────────────────────────────────
 
 def tool_web_search(query: str, num_results: int = 8) -> str:
-    """Search the web via DuckDuckGo (no key needed)."""
-    q = urllib.parse.quote_plus(query)
+    """Search via DuckDuckGo (no API key)."""
+    q    = urllib.parse.quote_plus(query)
     html = _ua_get(f"https://html.duckduckgo.com/html/?q={q}")
     if html.startswith('ERROR:'):
-        # fallback: try Google search
-        html = _ua_get(f"https://www.google.com/search?q={q}&num={num_results}")
+        return f"Web search unavailable in this environment: {html}"
     results = []
-    for m in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>', html, re.S):
+    for m in re.finditer(
+            r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*result__a[^"]*"[^>]*>(.*?)</a>',
+            html, re.S):
         url, title = m.group(1), re.sub('<[^>]+>', '', m.group(2)).strip()
-        if url and title and not url.startswith('//duckduckgo'):
+        if url and title and 'duckduckgo' not in url:
             results.append(f"• {title}\n  {url}")
         if len(results) >= num_results:
             break
     if not results:
-        # generic link extraction fallback
         for m in re.finditer(r'href="(https?://[^"]+)"', html):
             u = m.group(1)
-            if 'duckduckgo' not in u and 'google' not in u:
+            if 'duckduckgo' not in u:
                 results.append(f"• {u}")
             if len(results) >= 5:
                 break
-    return '\n'.join(results) if results else f"No results for: {query}"
+    return '\n'.join(results) if results else \
+           "No results (web search may be blocked in this environment)"
 
 def tool_web_fetch(url: str, max_chars: int = 6000) -> str:
-    """Fetch a web page and return readable text."""
-    raw = _ua_get(url, timeout=20)
+    raw = _ua_get(url, timeout=25)
     if raw.startswith('ERROR:'):
         return raw
     return _strip_html(raw, max_chars)
 
-def tool_execute_shell(command: str, cwd: str = '', timeout: int = 30) -> str:
-    """Run a shell command. Returns stdout+stderr."""
+def tool_open_browser(url: str) -> str:
+    """Open URL in the default browser."""
+    if not _HAS_DISPLAY:
+        return "ERROR: No display. Browser requires a GUI session."
     try:
+        if _IS_MAC:
+            subprocess.Popen(['open', url])
+        elif _IS_WIN:
+            os.startfile(url)  # type: ignore
+        else:
+            subprocess.Popen(['xdg-open', url])
+        return f"Opened browser: {url}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── Shell / process ───────────────────────────────────────────────────────────
+
+def tool_execute_shell(command: str, cwd: str = '', timeout: int = 30,
+                       background: bool = False) -> str:
+    """Run a shell command. Returns combined stdout+stderr."""
+    try:
+        if background:
+            subprocess.Popen(command, shell=True, cwd=cwd or str(_ROOT),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"Started in background: {command[:80]}"
         result = subprocess.run(
             command, shell=True, capture_output=True, text=True,
             timeout=timeout, cwd=cwd or str(_ROOT)
         )
-        out = (result.stdout or '') + (result.stderr or '')
-        return out.strip()[:4000] or '(no output)'
+        return ((result.stdout or '') + (result.stderr or '')).strip()[:4000] or '(no output)'
     except subprocess.TimeoutExpired:
-        return f"ERROR: command timed out after {timeout}s"
+        return f"ERROR: timed out after {timeout}s"
     except Exception as e:
         return f"ERROR: {e}"
 
 def tool_execute_python(code: str, cwd: str = '') -> str:
-    """Execute Python code in a subprocess and return output."""
     import tempfile
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-        f.write(code)
-        fname = f.name
+        f.write(code); fname = f.name
     try:
-        result = subprocess.run(
-            [sys.executable, fname], capture_output=True, text=True,
-            timeout=30, cwd=cwd or str(_ROOT)
-        )
-        out = (result.stdout or '') + (result.stderr or '')
-        return out.strip()[:4000] or '(no output)'
+        r = subprocess.run([sys.executable, fname], capture_output=True, text=True,
+                           timeout=30, cwd=cwd or str(_ROOT))
+        return ((r.stdout or '') + (r.stderr or '')).strip()[:4000] or '(no output)'
     except subprocess.TimeoutExpired:
         return "ERROR: python execution timed out"
     except Exception as e:
         return f"ERROR: {e}"
     finally:
-        try:
-            os.unlink(fname)
-        except Exception:
-            pass
+        try: os.unlink(fname)
+        except Exception: pass
+
+def tool_list_processes(filter_str: str = '') -> str:
+    try:
+        r = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=10)
+        lines = r.stdout.strip().splitlines()
+        if filter_str:
+            lines = [l for l in lines if filter_str.lower() in l.lower()]
+        return '\n'.join(lines[:50])
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_kill_process(pid: int) -> str:
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return f"Sent SIGTERM to PID {pid}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── Files ─────────────────────────────────────────────────────────────────────
 
 def tool_read_file(path: str, offset: int = 0, limit: int = 200) -> str:
-    """Read a file (relative to project root or absolute)."""
     p = Path(path) if Path(path).is_absolute() else _ROOT / path
     try:
         lines = p.read_text(errors='replace').splitlines()
         chunk = lines[offset:offset + limit]
-        total = len(lines)
-        result = '\n'.join(f"{offset+i+1:4}: {l}" for i, l in enumerate(chunk))
-        if total > offset + limit:
-            result += f"\n... ({total - offset - limit} more lines)"
-        return result
+        out   = '\n'.join(f"{offset+i+1:4}: {l}" for i, l in enumerate(chunk))
+        if len(lines) > offset + limit:
+            out += f"\n... ({len(lines) - offset - limit} more lines)"
+        return out
     except Exception as e:
         return f"ERROR: {e}"
 
 def tool_write_file(path: str, content: str) -> str:
-    """Write content to a file."""
     p = Path(path) if Path(path).is_absolute() else _ROOT / path
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -233,130 +288,603 @@ def tool_write_file(path: str, content: str) -> str:
         return f"ERROR: {e}"
 
 def tool_edit_file(path: str, old_string: str, new_string: str) -> str:
-    """Replace old_string with new_string in a file."""
     p = Path(path) if Path(path).is_absolute() else _ROOT / path
     try:
         text = p.read_text(errors='replace')
         if old_string not in text:
             return f"ERROR: old_string not found in {path}"
-        updated = text.replace(old_string, new_string, 1)
-        p.write_text(updated)
+        p.write_text(text.replace(old_string, new_string, 1))
         return f"Patched {path}"
     except Exception as e:
         return f"ERROR: {e}"
 
-def tool_list_files(path: str = '.', pattern: str = '*', recursive: bool = False) -> str:
-    """List files in a directory."""
+def tool_delete_file(path: str) -> str:
+    p = Path(path) if Path(path).is_absolute() else _ROOT / path
+    try:
+        p.unlink()
+        return f"Deleted {p}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_list_files(path: str = '.', pattern: str = '*',
+                    recursive: bool = False) -> str:
     base = Path(path) if Path(path).is_absolute() else _ROOT / path
     try:
-        if recursive:
-            files = list(base.rglob(pattern))
-        else:
-            files = list(base.glob(pattern))
-        files = [f for f in files if not any(p.startswith('.') for p in f.parts[-3:])]
-        files = sorted(files)[:100]
-        return '\n'.join(str(f.relative_to(_ROOT) if f.is_relative_to(_ROOT) else f) for f in files) or "(empty)"
+        files = list(base.rglob(pattern) if recursive else base.glob(pattern))
+        files = sorted(f for f in files
+                       if not any(p.startswith(('.git', '__pycache__', 'node_modules'))
+                                  for p in f.parts))[:100]
+        lines = []
+        for f in files:
+            rel  = str(f.relative_to(_ROOT) if f.is_relative_to(_ROOT) else f)
+            size = f"{f.stat().st_size:>8} B" if f.is_file() else "     dir"
+            lines.append(f"{size}  {rel}")
+        return '\n'.join(lines) or "(empty)"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_create_directory(path: str) -> str:
+    p = Path(path) if Path(path).is_absolute() else _ROOT / path
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+        return f"Created directory: {p}"
     except Exception as e:
         return f"ERROR: {e}"
 
 def tool_search_files(pattern: str, path: str = '.') -> str:
-    """Grep for pattern in files under path."""
     base = Path(path) if Path(path).is_absolute() else _ROOT / path
     try:
-        result = subprocess.run(
+        r = subprocess.run(
             ['grep', '-rl', '--include=*.py', '--include=*.ts', '--include=*.js',
-             pattern, str(base)],
-            capture_output=True, text=True, timeout=15
-        )
-        lines = result.stdout.strip().splitlines()[:30]
+             '--include=*.md', pattern, str(base)],
+            capture_output=True, text=True, timeout=15)
+        lines = r.stdout.strip().splitlines()[:40]
         return '\n'.join(lines) or f"No matches for {pattern!r}"
     except Exception as e:
         return f"ERROR: {e}"
 
-def tool_screenshot(save_path: str = '') -> str:
-    """Take a screenshot (requires display). Returns path or error."""
-    if not save_path:
-        save_path = f"/tmp/devin_shot_{int(time.time())}.png"
-    display = os.environ.get('DISPLAY', '')
-    if not display:
-        return "ERROR: No DISPLAY set — headless environment. Cannot take screenshot."
+def tool_git_command(args: str, cwd: str = '') -> str:
+    """Run a git command. args is the arguments after 'git'."""
     try:
-        r = subprocess.run(['scrot', save_path], capture_output=True, timeout=10)
-        if r.returncode == 0:
-            return f"Screenshot saved: {save_path}"
-        r2 = subprocess.run(['import', '-window', 'root', save_path], capture_output=True, timeout=10)
-        if r2.returncode == 0:
-            return f"Screenshot saved: {save_path}"
-        return "ERROR: No screenshot tool available (scrot, import)"
+        r = subprocess.run(
+            f"git {args}", shell=True, capture_output=True, text=True,
+            timeout=30, cwd=cwd or str(_ROOT))
+        return ((r.stdout or '') + (r.stderr or '')).strip()[:3000] or '(no output)'
     except Exception as e:
         return f"ERROR: {e}"
+
+# ── Screenshot + Vision ───────────────────────────────────────────────────────
+
+def tool_screenshot(save_path: str = '') -> str:
+    """Take a screenshot. Requires display (X11/macOS/Windows)."""
+    if not _HAS_DISPLAY:
+        return "ERROR: No display available (headless environment). Cannot take screenshot."
+    ts = int(time.time())
+    out = save_path or f"/tmp/devin_shot_{ts}.png"
+    try:
+        if _HAS_PAG:
+            img = _pag.screenshot()
+            img.save(out)
+            return f"Screenshot saved: {out}  ({img.size[0]}x{img.size[1]})"
+        if _cmd_exists('scrot'):
+            subprocess.run(['scrot', out], check=True, timeout=10)
+            return f"Screenshot saved: {out}"
+        if _cmd_exists('import'):
+            subprocess.run(['import', '-window', 'root', out], check=True, timeout=10)
+            return f"Screenshot saved: {out}"
+        if _IS_MAC and _cmd_exists('screencapture'):
+            subprocess.run(['screencapture', '-x', out], check=True, timeout=10)
+            return f"Screenshot saved: {out}"
+        return "ERROR: No screenshot tool found (install scrot or pyautogui)"
+    except Exception as e:
+        return f"ERROR taking screenshot: {e}"
+
+def tool_analyze_image(image_path: str,
+                       prompt: str = 'Describe this image in detail.') -> str:
+    """Analyze an image using Gemini Vision. Returns description."""
+    gkey = os.environ.get('GEMINI_API_KEY', '')
+    if not gkey:
+        return "ERROR: GEMINI_API_KEY required for image analysis"
+    p = Path(image_path)
+    if not p.exists():
+        return f"ERROR: File not found: {image_path}"
+    if p.stat().st_size < 100:
+        return "ERROR: Image file is too small or corrupt"
+    try:
+        img_b64 = base64.b64encode(p.read_bytes()).decode()
+        ext     = p.suffix.lower().lstrip('.')
+        mime    = {'jpg':'image/jpeg','jpeg':'image/jpeg','png':'image/png',
+                   'gif':'image/gif','webp':'image/webp','bmp':'image/bmp'}.get(ext, 'image/png')
+        models  = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.0-flash']
+        base_url = "https://generativelanguage.googleapis.com/v1beta"
+        headers  = {"Content-Type": "application/json"}
+        if not gkey.startswith('AI'):
+            headers['X-goog-api-key'] = gkey
+        for model in models:
+            url  = (f"{base_url}/models/{model}:generateContent"
+                    + (f"?key={gkey}" if gkey.startswith('AI') else ""))
+            body = {"contents": [{"role": "user", "parts": [
+                {"inlineData": {"mimeType": mime, "data": img_b64}},
+                {"text": prompt},
+            ]}], "generationConfig": {"maxOutputTokens": 2048}}
+            try:
+                resp = _http_post(url, headers, body, timeout=60)
+                if "error" in resp:
+                    continue
+                parts = resp.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text  = "".join(p.get("text", "") for p in parts if "text" in p)
+                if text.strip():
+                    return text
+            except Exception:
+                continue
+        return "ERROR: Vision analysis failed on all models"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_analyze_screenshot(prompt: str = 'Describe everything visible on screen.') -> str:
+    """Take a screenshot then analyze it with Gemini Vision."""
+    path = f"/tmp/devin_screen_{int(time.time())}.png"
+    result = tool_screenshot(path)
+    if result.startswith('ERROR:'):
+        return result
+    return tool_analyze_image(path, prompt)
+
+# ── Mouse control ─────────────────────────────────────────────────────────────
+
+def _require_display() -> Optional[str]:
+    if not _HAS_DISPLAY:
+        return "ERROR: No display available (headless environment)"
+    return None
+
+def tool_mouse_move(x: int, y: int) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            _pag.moveTo(x, y, duration=0.1)
+            return f"Mouse moved to ({x}, {y})"
+        if _cmd_exists('xdotool'):
+            subprocess.run(['xdotool', 'mousemove', str(x), str(y)], timeout=5)
+            return f"Mouse moved to ({x}, {y})"
+        return "ERROR: No mouse control tool (install pyautogui or xdotool)"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_mouse_click(x: int, y: int, button: str = 'left') -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            btn_map = {'left': 'left', 'right': 'right', 'middle': 'middle'}
+            _pag.click(x, y, button=btn_map.get(button, 'left'))
+            return f"Clicked {button} at ({x}, {y})"
+        if _cmd_exists('xdotool'):
+            btn_num = {'left': '1', 'middle': '2', 'right': '3'}.get(button, '1')
+            subprocess.run(['xdotool', 'mousemove', str(x), str(y),
+                            'click', btn_num], timeout=5)
+            return f"Clicked {button} at ({x}, {y})"
+        return "ERROR: No mouse control tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_mouse_double_click(x: int, y: int) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            _pag.doubleClick(x, y)
+            return f"Double-clicked at ({x}, {y})"
+        if _cmd_exists('xdotool'):
+            subprocess.run(['xdotool', 'mousemove', str(x), str(y),
+                            'click', '--repeat', '2', '1'], timeout=5)
+            return f"Double-clicked at ({x}, {y})"
+        return "ERROR: No mouse control tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_mouse_right_click(x: int, y: int) -> str:
+    return tool_mouse_click(x, y, button='right')
+
+def tool_mouse_drag(x1: int, y1: int, x2: int, y2: int) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            _pag.moveTo(x1, y1, duration=0.1)
+            _pag.dragTo(x2, y2, duration=0.3, button='left')
+            return f"Dragged from ({x1},{y1}) to ({x2},{y2})"
+        if _cmd_exists('xdotool'):
+            subprocess.run([
+                'xdotool', 'mousemove', str(x1), str(y1),
+                'mousedown', '1', 'mousemove', str(x2), str(y2), 'mouseup', '1'
+            ], timeout=5)
+            return f"Dragged from ({x1},{y1}) to ({x2},{y2})"
+        return "ERROR: No drag control tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_mouse_scroll(x: int, y: int, direction: str = 'down', amount: int = 3) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            dy = -amount if direction == 'down' else amount
+            _pag.moveTo(x, y)
+            _pag.scroll(dy)
+            return f"Scrolled {direction} at ({x},{y})"
+        if _cmd_exists('xdotool'):
+            btn = '5' if direction == 'down' else '4'
+            for _ in range(amount):
+                subprocess.run(['xdotool', 'mousemove', str(x), str(y),
+                                'click', btn], timeout=5)
+            return f"Scrolled {direction} at ({x},{y})"
+        return "ERROR: No scroll tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_get_mouse_position() -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            pos = _pag.position()
+            return f"Mouse at ({pos.x}, {pos.y})"
+        if _cmd_exists('xdotool'):
+            r = subprocess.run(['xdotool', 'getmouselocation'], capture_output=True, text=True, timeout=5)
+            return r.stdout.strip()
+        return "ERROR: No position tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── Keyboard control ──────────────────────────────────────────────────────────
+
+def tool_keyboard_type(text: str) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            _pag.typewrite(text, interval=0.02)
+            return f"Typed: {text[:80]}"
+        if _cmd_exists('xdotool'):
+            subprocess.run(['xdotool', 'type', '--clearmodifiers', text], timeout=15)
+            return f"Typed: {text[:80]}"
+        return "ERROR: No keyboard type tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_keyboard_press(key: str) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            _pag.press(key.lower())
+            return f"Pressed key: {key}"
+        if _cmd_exists('xdotool'):
+            # Map common key names
+            key_map = {
+                'Return': 'Return', 'Enter': 'Return', 'Tab': 'Tab',
+                'Escape': 'Escape', 'BackSpace': 'BackSpace', 'Delete': 'Delete',
+                'Up': 'Up', 'Down': 'Down', 'Left': 'Left', 'Right': 'Right',
+                'Home': 'Home', 'End': 'End', 'PageUp': 'Prior', 'PageDown': 'Next',
+                'F1':'F1','F2':'F2','F3':'F3','F4':'F4','F5':'F5','F6':'F6',
+                'F7':'F7','F8':'F8','F9':'F9','F10':'F10','F11':'F11','F12':'F12',
+            }
+            xkey = key_map.get(key, key)
+            subprocess.run(['xdotool', 'key', xkey], timeout=5)
+            return f"Pressed key: {key}"
+        return "ERROR: No keyboard press tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_keyboard_hotkey(keys: List[str]) -> str:
+    """Press a key combination. keys = ['ctrl', 'c'] for Ctrl+C."""
+    err = _require_display()
+    if err: return err
+    try:
+        combo = '+'.join(keys)
+        if _HAS_PAG:
+            _pag.hotkey(*[k.lower() for k in keys])
+            return f"Hotkey: {combo}"
+        if _cmd_exists('xdotool'):
+            xkeys = [{'ctrl': 'ctrl', 'alt': 'alt', 'shift': 'shift',
+                      'super': 'super', 'win': 'super',
+                      'return': 'Return', 'enter': 'Return',
+                      'tab': 'Tab', 'escape': 'Escape',
+                      'backspace': 'BackSpace'}.get(k.lower(), k)
+                     for k in keys]
+            subprocess.run(['xdotool', 'key', '+'.join(xkeys)], timeout=5)
+            return f"Hotkey: {combo}"
+        return "ERROR: No hotkey tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_click_and_type(x: int, y: int, text: str) -> str:
+    r1 = tool_mouse_click(x, y)
+    if r1.startswith('ERROR:'):
+        return r1
+    time.sleep(0.1)
+    r2 = tool_keyboard_type(text)
+    return f"{r1} | {r2}"
+
+# ── Windows & Applications ────────────────────────────────────────────────────
+
+def tool_get_screen_size() -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _HAS_PAG:
+            size = _pag.size()
+            return f"{size.width}x{size.height}"
+        if _cmd_exists('xdpyinfo'):
+            r = subprocess.run(['xdpyinfo'], capture_output=True, text=True, timeout=5)
+            m = re.search(r'dimensions:\s+(\d+x\d+)', r.stdout)
+            return m.group(1) if m else "unknown"
+        if _cmd_exists('xrandr'):
+            r = subprocess.run(['xrandr', '--current'], capture_output=True, text=True, timeout=5)
+            m = re.search(r'(\d+x\d+)\+0\+0', r.stdout)
+            return m.group(1) if m else "unknown"
+        return "unknown"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_list_windows() -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _cmd_exists('wmctrl'):
+            r = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() or "(no windows)"
+        if _cmd_exists('xdotool'):
+            r = subprocess.run(['xdotool', 'search', '--name', ''],
+                               capture_output=True, text=True, timeout=5)
+            wids = r.stdout.strip().splitlines()
+            lines = []
+            for wid in wids[:20]:
+                r2 = subprocess.run(['xdotool', 'getwindowname', wid],
+                                    capture_output=True, text=True, timeout=3)
+                name = r2.stdout.strip()
+                if name:
+                    lines.append(f"{wid} {name}")
+            return '\n'.join(lines) or "(no windows)"
+        return "ERROR: wmctrl or xdotool required to list windows"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_focus_window(title: str) -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _cmd_exists('wmctrl'):
+            subprocess.run(['wmctrl', '-a', title], timeout=5)
+            return f"Focused window: {title}"
+        if _cmd_exists('xdotool'):
+            subprocess.run(['xdotool', 'search', '--name', title,
+                            'windowfocus', '--sync'], timeout=5)
+            return f"Focused window: {title}"
+        return "ERROR: wmctrl or xdotool required"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_maximize_window() -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _cmd_exists('wmctrl'):
+            subprocess.run(['wmctrl', '-r', ':ACTIVE:', '-b', 'add,maximized_vert,maximized_horz'], timeout=5)
+            return "Maximized active window"
+        r = tool_keyboard_hotkey(['super', 'Up'])
+        return r
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_minimize_window() -> str:
+    err = _require_display()
+    if err: return err
+    try:
+        if _cmd_exists('wmctrl'):
+            r = subprocess.run(['xdotool', 'getactivewindow', 'windowminimize'],
+                               timeout=5, capture_output=True)
+            return "Minimized active window"
+        return tool_keyboard_hotkey(['super', 'Down'])
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_open_application(name: str) -> str:
+    """Launch an application by name."""
+    err = _require_display()
+    if err: return err
+    try:
+        subprocess.Popen(name, shell=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(0.5)
+        return f"Launched: {name}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_open_terminal() -> str:
+    """Open a terminal emulator."""
+    err = _require_display()
+    if err: return err
+    for term in ['gnome-terminal', 'xterm', 'konsole', 'xfce4-terminal', 'alacritty', 'kitty']:
+        if _cmd_exists(term):
+            subprocess.Popen([term], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return f"Opened terminal: {term}"
+    return "ERROR: No terminal emulator found"
+
+def tool_close_application(name: str) -> str:
+    try:
+        r = subprocess.run(['pkill', '-f', name], capture_output=True, text=True)
+        return f"Closed application matching: {name}" if r.returncode == 0 else f"No process found: {name}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_alt_tab() -> str:
+    return tool_keyboard_hotkey(['alt', 'Tab'])
+
+# ── Clipboard ─────────────────────────────────────────────────────────────────
 
 def tool_clipboard_get() -> str:
-    """Read the clipboard contents."""
-    try:
-        r = subprocess.run(['xclip', '-o', '-selection', 'clipboard'], capture_output=True, text=True, timeout=5)
-        return r.stdout.strip() or "(empty clipboard)"
-    except Exception:
+    if _IS_MAC:
         try:
-            r = subprocess.run(['xsel', '--clipboard', '--output'], capture_output=True, text=True, timeout=5)
-            return r.stdout.strip() or "(empty clipboard)"
+            r = subprocess.run(['pbpaste'], capture_output=True, text=True, timeout=5)
+            return r.stdout or "(empty)"
         except Exception as e:
             return f"ERROR: {e}"
+    if _IS_WIN:
+        try:
+            import ctypes
+            ctypes.windll.user32.OpenClipboard(0)  # type: ignore
+            handle = ctypes.windll.user32.GetClipboardData(13)  # type: ignore
+            text = ctypes.c_char_p(handle).value
+            ctypes.windll.user32.CloseClipboard()  # type: ignore
+            return (text or b'').decode('utf-8', errors='replace')
+        except Exception as e:
+            return f"ERROR: {e}"
+    for tool, args in [('xclip', ['-o', '-sel', 'clip']),
+                       ('xsel', ['--clipboard', '--output']),
+                       ('wl-paste', [])]:
+        if _cmd_exists(tool):
+            try:
+                r = subprocess.run([tool] + args, capture_output=True, text=True, timeout=5)
+                return r.stdout.strip() or "(empty clipboard)"
+            except Exception:
+                pass
+    return "ERROR: No clipboard tool (install xclip or xsel)"
 
 def tool_clipboard_set(text: str) -> str:
-    """Write to clipboard."""
+    if _IS_MAC:
+        try:
+            subprocess.run(['pbcopy'], input=text.encode(), timeout=5)
+            return "Copied to clipboard."
+        except Exception as e:
+            return f"ERROR: {e}"
+    if _IS_WIN:
+        try:
+            subprocess.run(['clip'], input=text.encode('utf-16'), timeout=5)
+            return "Copied to clipboard."
+        except Exception as e:
+            return f"ERROR: {e}"
+    for tool, args in [('xclip', ['-sel', 'clip']),
+                       ('xsel', ['--clipboard', '--input']),
+                       ('wl-copy', [])]:
+        if _cmd_exists(tool):
+            try:
+                subprocess.run([tool] + args, input=text.encode(), timeout=5)
+                return "Copied to clipboard."
+            except Exception:
+                pass
+    return "ERROR: No clipboard tool (install xclip or xsel)"
+
+# ── Voice ─────────────────────────────────────────────────────────────────────
+
+def tool_speak(text: str) -> str:
+    """Speak text via TTS. Falls back gracefully."""
+    for tts in [
+        lambda: subprocess.run(['espeak', text], timeout=30),
+        lambda: subprocess.run(['festival', '--tts'], input=text.encode(), timeout=30),
+        lambda: subprocess.run(['say', text], timeout=30),  # macOS
+        lambda: subprocess.run(['spd-say', text], timeout=30),
+    ]:
+        try:
+            tts()
+            return f"Spoke: {text[:60]}"
+        except FileNotFoundError:
+            continue
+        except Exception as e:
+            return f"ERROR speaking: {e}"
+    return "ERROR: No TTS engine (install espeak or festival)"
+
+def tool_listen(timeout: int = 10) -> str:
+    """Listen for voice input. Requires microphone and speech_recognition."""
     try:
-        r = subprocess.run(['xclip', '-selection', 'clipboard'],
-                           input=text.encode(), capture_output=True, timeout=5)
-        return "Copied to clipboard." if r.returncode == 0 else "ERROR: xclip failed"
+        import speech_recognition as sr  # type: ignore
+        r = sr.Recognizer()
+        with sr.Microphone() as src:
+            r.adjust_for_ambient_noise(src, duration=0.5)
+            audio = r.listen(src, timeout=timeout, phrase_time_limit=15)
+        text = r.recognize_google(audio)
+        return f"Heard: {text}"
+    except ImportError:
+        return "ERROR: speech_recognition not installed (pip install SpeechRecognition)"
     except Exception as e:
-        return f"ERROR: {e}"
+        return f"ERROR listening: {e}"
+
+# ── Memory ────────────────────────────────────────────────────────────────────
 
 def tool_remember(fact: str, tags: str = '') -> str:
-    """Save a fact to persistent memory."""
     return _remember(fact, tags)
 
 def tool_recall(query: str = '') -> str:
-    """Retrieve memories. Optional query to filter."""
     return _recall(query)
 
+# ── System info ───────────────────────────────────────────────────────────────
+
 def tool_get_system_info() -> str:
-    """Return system info: OS, CPU, RAM, disk."""
-    import platform
     lines = [
-        f"OS:      {platform.system()} {platform.release()} {platform.machine()}",
-        f"Python:  {platform.python_version()}",
+        f"OS:       {platform.system()} {platform.release()} {platform.machine()}",
+        f"Python:   {platform.python_version()}",
+        f"Display:  {'yes ('+os.environ.get('DISPLAY','')+')' if _HAS_DISPLAY else 'headless'}",
+        f"Platform: {_PLATFORM}",
     ]
+    for cmd, label in [('nproc', 'CPUs'), ('hostname', 'Host')]:
+        try:
+            r = subprocess.run([cmd], capture_output=True, text=True, timeout=3)
+            lines.append(f"{label}:     {r.stdout.strip()}")
+        except Exception:
+            pass
     try:
-        cpu = subprocess.run(['nproc'], capture_output=True, text=True).stdout.strip()
-        lines.append(f"CPUs:    {cpu}")
+        r = subprocess.run(['free', '-h'], capture_output=True, text=True, timeout=3)
+        lines.append(f"Memory:\n{r.stdout.strip()}")
     except Exception:
         pass
     try:
-        free = subprocess.run(['free', '-h'], capture_output=True, text=True).stdout
-        lines.append(f"Memory:\n{free.strip()}")
-    except Exception:
-        pass
-    try:
-        df = subprocess.run(['df', '-h', '/'], capture_output=True, text=True).stdout
-        lines.append(f"Disk:\n{df.strip()}")
+        r = subprocess.run(['df', '-h', '/'], capture_output=True, text=True, timeout=3)
+        lines.append(f"Disk:\n{r.stdout.strip()}")
     except Exception:
         pass
     return '\n'.join(lines)
 
+def tool_get_system_metrics() -> str:
+    """CPU, RAM, disk, network usage."""
+    lines = []
+    try:
+        r = subprocess.run(['top', '-bn1'], capture_output=True, text=True, timeout=5)
+        cpu_line = next((l for l in r.stdout.splitlines() if '%Cpu' in l), '')
+        if cpu_line: lines.append(f"CPU: {cpu_line.strip()}")
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(['free', '-m'], capture_output=True, text=True, timeout=3)
+        lines.append(f"RAM:\n{r.stdout.strip()}")
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(['df', '-h'], capture_output=True, text=True, timeout=3)
+        lines.append(f"Disk:\n{r.stdout.strip()}")
+    except Exception:
+        pass
+    return '\n'.join(lines) or tool_get_system_info()
+
+# ── Task completion ───────────────────────────────────────────────────────────
+
 def tool_task_complete(result: str) -> str:
-    """Signal that the task is fully completed."""
     return f"TASK_COMPLETE:{result}"
 
-# ── Tool registry ─────────────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOOL REGISTRY
+# ═══════════════════════════════════════════════════════════════════════════════
 
 TOOLS: Dict[str, Dict] = {
+    # ── Reasoning ──────────────────────────────────────────────────────────────
     "think": {
         "fn": tool_think,
-        "desc": "Record your reasoning or plan a step. No side effects.",
-        "params": {"thought": {"type": "string", "description": "Your thought or reasoning step"}},
+        "desc": "Record a reasoning/planning step. No side effects.",
+        "params": {"thought": {"type": "string", "description": "Your reasoning"}},
         "required": ["thought"],
+        "category": "reasoning",
     },
+
+    # ── Web ────────────────────────────────────────────────────────────────────
     "web_search": {
         "fn": tool_web_search,
         "desc": "Search the web via DuckDuckGo. Returns titles and URLs.",
@@ -365,132 +893,413 @@ TOOLS: Dict[str, Dict] = {
             "num_results": {"type": "integer", "description": "Number of results (default 8)"},
         },
         "required": ["query"],
+        "category": "web",
     },
     "web_fetch": {
         "fn": tool_web_fetch,
-        "desc": "Fetch a web page and return its readable text content.",
+        "desc": "Fetch a web page and return readable text.",
         "params": {
-            "url": {"type": "string", "description": "Full URL to fetch"},
-            "max_chars": {"type": "integer", "description": "Max characters to return (default 6000)"},
+            "url": {"type": "string", "description": "URL to fetch"},
+            "max_chars": {"type": "integer", "description": "Max chars (default 6000)"},
         },
         "required": ["url"],
+        "category": "web",
     },
+    "open_browser": {
+        "fn": tool_open_browser,
+        "desc": "Open a URL in the default browser (requires display).",
+        "params": {"url": {"type": "string", "description": "URL to open"}},
+        "required": ["url"],
+        "category": "browser",
+    },
+
+    # ── Shell / process ────────────────────────────────────────────────────────
     "execute_shell": {
         "fn": tool_execute_shell,
-        "desc": "Run a shell command. Returns stdout and stderr.",
+        "desc": "Run a shell command. Returns stdout+stderr.",
         "params": {
-            "command": {"type": "string", "description": "Shell command to run"},
+            "command": {"type": "string", "description": "Shell command"},
             "cwd": {"type": "string", "description": "Working directory (optional)"},
-            "timeout": {"type": "integer", "description": "Timeout in seconds (default 30)"},
+            "timeout": {"type": "integer", "description": "Timeout seconds (default 30)"},
+            "background": {"type": "boolean", "description": "Run in background (default false)"},
         },
         "required": ["command"],
+        "category": "shell",
     },
     "execute_python": {
         "fn": tool_execute_python,
-        "desc": "Execute Python code and return its output.",
-        "params": {
-            "code": {"type": "string", "description": "Python code to execute"},
-        },
+        "desc": "Execute Python code and return output.",
+        "params": {"code": {"type": "string", "description": "Python code"}},
         "required": ["code"],
+        "category": "shell",
     },
+    "list_processes": {
+        "fn": tool_list_processes,
+        "desc": "List running processes. Optional filter string.",
+        "params": {"filter_str": {"type": "string", "description": "Filter processes by name"}},
+        "required": [],
+        "category": "shell",
+    },
+    "kill_process": {
+        "fn": tool_kill_process,
+        "desc": "Terminate a process by PID.",
+        "params": {"pid": {"type": "integer", "description": "Process ID"}},
+        "required": ["pid"],
+        "category": "shell",
+    },
+
+    # ── Files ──────────────────────────────────────────────────────────────────
     "read_file": {
         "fn": tool_read_file,
-        "desc": "Read a file from the filesystem with line numbers.",
+        "desc": "Read a file with line numbers.",
         "params": {
-            "path": {"type": "string", "description": "File path (relative to project root or absolute)"},
+            "path": {"type": "string", "description": "File path"},
             "offset": {"type": "integer", "description": "Start line (0-indexed)"},
-            "limit": {"type": "integer", "description": "Max lines to read (default 200)"},
+            "limit": {"type": "integer", "description": "Lines to read (default 200)"},
         },
         "required": ["path"],
+        "category": "filesystem",
     },
     "write_file": {
         "fn": tool_write_file,
-        "desc": "Write content to a file (creates parent dirs if needed).",
+        "desc": "Write content to a file.",
         "params": {
             "path": {"type": "string", "description": "File path"},
             "content": {"type": "string", "description": "Content to write"},
         },
         "required": ["path", "content"],
+        "category": "filesystem",
     },
     "edit_file": {
         "fn": tool_edit_file,
-        "desc": "Edit a file by replacing old_string with new_string (first occurrence).",
+        "desc": "Replace old_string with new_string in a file (first occurrence).",
         "params": {
             "path": {"type": "string", "description": "File path"},
             "old_string": {"type": "string", "description": "Text to find"},
             "new_string": {"type": "string", "description": "Replacement text"},
         },
         "required": ["path", "old_string", "new_string"],
+        "category": "filesystem",
+    },
+    "delete_file": {
+        "fn": tool_delete_file,
+        "desc": "Delete a file.",
+        "params": {"path": {"type": "string", "description": "File path"}},
+        "required": ["path"],
+        "category": "filesystem",
     },
     "list_files": {
         "fn": tool_list_files,
         "desc": "List files in a directory.",
         "params": {
-            "path": {"type": "string", "description": "Directory path (default: project root)"},
+            "path": {"type": "string", "description": "Directory (default: project root)"},
             "pattern": {"type": "string", "description": "Glob pattern (default: *)"},
-            "recursive": {"type": "boolean", "description": "Search recursively (default: false)"},
+            "recursive": {"type": "boolean", "description": "Recursive (default false)"},
         },
         "required": [],
+        "category": "filesystem",
+    },
+    "create_directory": {
+        "fn": tool_create_directory,
+        "desc": "Create a directory (mkdir -p).",
+        "params": {"path": {"type": "string", "description": "Directory path"}},
+        "required": ["path"],
+        "category": "filesystem",
     },
     "search_files": {
         "fn": tool_search_files,
-        "desc": "Search file contents for a text pattern (grep).",
+        "desc": "Search file contents with grep.",
         "params": {
-            "pattern": {"type": "string", "description": "Text pattern to search for"},
-            "path": {"type": "string", "description": "Directory to search (default: project root)"},
+            "pattern": {"type": "string", "description": "Text pattern to search"},
+            "path": {"type": "string", "description": "Directory to search (default: root)"},
         },
         "required": ["pattern"],
+        "category": "filesystem",
     },
+    "git_command": {
+        "fn": tool_git_command,
+        "desc": "Run a git command (args after 'git', e.g. 'status' or 'log --oneline').",
+        "params": {
+            "args": {"type": "string", "description": "git arguments"},
+            "cwd": {"type": "string", "description": "Working directory"},
+        },
+        "required": ["args"],
+        "category": "filesystem",
+    },
+
+    # ── Vision / Screenshot ────────────────────────────────────────────────────
     "screenshot": {
         "fn": tool_screenshot,
-        "desc": "Take a screenshot of the current screen (requires display/X11).",
-        "params": {
-            "save_path": {"type": "string", "description": "Where to save the screenshot (default: /tmp/devin_shot_*.png)"},
-        },
+        "desc": "Take a screenshot of the current screen (requires display).",
+        "params": {"save_path": {"type": "string", "description": "Save path (optional)"}},
         "required": [],
+        "category": "vision",
     },
-    "clipboard_get": {
-        "fn": tool_clipboard_get,
-        "desc": "Read the clipboard contents.",
+    "analyze_screenshot": {
+        "fn": tool_analyze_screenshot,
+        "desc": "Take a screenshot and analyze it with Gemini Vision. Use this to understand what's on screen.",
+        "params": {"prompt": {"type": "string", "description": "What to analyze (default: describe everything)"}},
+        "required": [],
+        "category": "vision",
+    },
+    "analyze_image": {
+        "fn": tool_analyze_image,
+        "desc": "Analyze an existing image file with Gemini Vision.",
+        "params": {
+            "image_path": {"type": "string", "description": "Path to image file"},
+            "prompt": {"type": "string", "description": "What to look for"},
+        },
+        "required": ["image_path"],
+        "category": "vision",
+    },
+
+    # ── Mouse ──────────────────────────────────────────────────────────────────
+    "mouse_move": {
+        "fn": tool_mouse_move,
+        "desc": "Move the mouse cursor to coordinates (requires display).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "mouse_click": {
+        "fn": tool_mouse_click,
+        "desc": "Click at coordinates. button: left/right/middle (requires display).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+            "button": {"type": "string", "description": "left/right/middle (default: left)"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "mouse_double_click": {
+        "fn": tool_mouse_double_click,
+        "desc": "Double-click at coordinates (requires display).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "mouse_right_click": {
+        "fn": tool_mouse_right_click,
+        "desc": "Right-click at coordinates (requires display).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "mouse_drag": {
+        "fn": tool_mouse_drag,
+        "desc": "Click-drag from (x1,y1) to (x2,y2) (requires display).",
+        "params": {
+            "x1": {"type": "integer", "description": "Start X"},
+            "y1": {"type": "integer", "description": "Start Y"},
+            "x2": {"type": "integer", "description": "End X"},
+            "y2": {"type": "integer", "description": "End Y"},
+        },
+        "required": ["x1", "y1", "x2", "y2"],
+        "category": "mouse",
+    },
+    "mouse_scroll": {
+        "fn": tool_mouse_scroll,
+        "desc": "Scroll at coordinates (requires display).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+            "direction": {"type": "string", "description": "up or down (default: down)"},
+            "amount": {"type": "integer", "description": "Scroll amount (default: 3)"},
+        },
+        "required": ["x", "y"],
+        "category": "mouse",
+    },
+    "get_mouse_position": {
+        "fn": tool_get_mouse_position,
+        "desc": "Get current mouse cursor position.",
         "params": {},
         "required": [],
+        "category": "mouse",
+    },
+
+    # ── Keyboard ───────────────────────────────────────────────────────────────
+    "keyboard_type": {
+        "fn": tool_keyboard_type,
+        "desc": "Type text character by character (requires display).",
+        "params": {"text": {"type": "string", "description": "Text to type"}},
+        "required": ["text"],
+        "category": "keyboard",
+    },
+    "keyboard_press": {
+        "fn": tool_keyboard_press,
+        "desc": "Press a single key: Return, Tab, Escape, F5, BackSpace, Up, Down, etc.",
+        "params": {"key": {"type": "string", "description": "Key name"}},
+        "required": ["key"],
+        "category": "keyboard",
+    },
+    "keyboard_hotkey": {
+        "fn": tool_keyboard_hotkey,
+        "desc": "Press a key combination. e.g. ['ctrl','c'], ['alt','Tab'], ['ctrl','shift','t']",
+        "params": {"keys": {"type": "string", "description": "Array of key names as JSON, e.g. [\"ctrl\",\"c\"]"}},
+        "required": ["keys"],
+        "category": "keyboard",
+    },
+    "click_and_type": {
+        "fn": tool_click_and_type,
+        "desc": "Click at coordinates then type text (combined GUI input).",
+        "params": {
+            "x": {"type": "integer", "description": "X coordinate"},
+            "y": {"type": "integer", "description": "Y coordinate"},
+            "text": {"type": "string", "description": "Text to type"},
+        },
+        "required": ["x", "y", "text"],
+        "category": "keyboard",
+    },
+
+    # ── Windows & Applications ─────────────────────────────────────────────────
+    "get_screen_size": {
+        "fn": tool_get_screen_size,
+        "desc": "Get screen dimensions in pixels.",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+    "list_windows": {
+        "fn": tool_list_windows,
+        "desc": "List all open windows (requires display + wmctrl/xdotool).",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+    "focus_window": {
+        "fn": tool_focus_window,
+        "desc": "Bring a window to the foreground by title.",
+        "params": {"title": {"type": "string", "description": "Window title (partial match)"}},
+        "required": ["title"],
+        "category": "windows",
+    },
+    "maximize_window": {
+        "fn": tool_maximize_window,
+        "desc": "Maximize the active window.",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+    "minimize_window": {
+        "fn": tool_minimize_window,
+        "desc": "Minimize the active window.",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+    "open_application": {
+        "fn": tool_open_application,
+        "desc": "Launch an application by name (e.g. 'firefox', 'code', 'gnome-terminal').",
+        "params": {"name": {"type": "string", "description": "Application name or command"}},
+        "required": ["name"],
+        "category": "applications",
+    },
+    "open_terminal": {
+        "fn": tool_open_terminal,
+        "desc": "Open a terminal emulator window.",
+        "params": {},
+        "required": [],
+        "category": "applications",
+    },
+    "close_application": {
+        "fn": tool_close_application,
+        "desc": "Close/kill an application by name.",
+        "params": {"name": {"type": "string", "description": "Application name"}},
+        "required": ["name"],
+        "category": "applications",
+    },
+    "alt_tab": {
+        "fn": tool_alt_tab,
+        "desc": "Switch to the previous window (Alt+Tab).",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+
+    # ── Clipboard ──────────────────────────────────────────────────────────────
+    "clipboard_get": {
+        "fn": tool_clipboard_get,
+        "desc": "Read the system clipboard contents.",
+        "params": {},
+        "required": [],
+        "category": "clipboard",
     },
     "clipboard_set": {
         "fn": tool_clipboard_set,
-        "desc": "Write text to the clipboard.",
-        "params": {"text": {"type": "string", "description": "Text to write to clipboard"}},
+        "desc": "Write text to the system clipboard.",
+        "params": {"text": {"type": "string", "description": "Text to copy"}},
         "required": ["text"],
+        "category": "clipboard",
     },
+
+    # ── Voice ──────────────────────────────────────────────────────────────────
+    "speak": {
+        "fn": tool_speak,
+        "desc": "Speak text aloud using TTS (espeak/festival/say).",
+        "params": {"text": {"type": "string", "description": "Text to speak"}},
+        "required": ["text"],
+        "category": "voice",
+    },
+    "listen": {
+        "fn": tool_listen,
+        "desc": "Listen for voice input and return transcript (requires microphone + SpeechRecognition).",
+        "params": {"timeout": {"type": "integer", "description": "Timeout seconds (default 10)"}},
+        "required": [],
+        "category": "voice",
+    },
+
+    # ── Memory ─────────────────────────────────────────────────────────────────
     "remember": {
         "fn": tool_remember,
-        "desc": "Save a fact to persistent memory for future recall.",
+        "desc": "Save a fact to persistent memory.",
         "params": {
             "fact": {"type": "string", "description": "Fact to remember"},
-            "tags": {"type": "string", "description": "Comma-separated tags"},
+            "tags": {"type": "string", "description": "Optional comma-separated tags"},
         },
         "required": ["fact"],
+        "category": "memory",
     },
     "recall": {
         "fn": tool_recall,
-        "desc": "Retrieve memories. Pass a query to filter, or empty for recent.",
-        "params": {
-            "query": {"type": "string", "description": "Optional search query"},
-        },
+        "desc": "Retrieve memories. Optional query to filter.",
+        "params": {"query": {"type": "string", "description": "Search query (optional)"}},
         "required": [],
+        "category": "memory",
     },
+
+    # ── System ─────────────────────────────────────────────────────────────────
     "get_system_info": {
         "fn": tool_get_system_info,
-        "desc": "Get OS, CPU, RAM, and disk information.",
+        "desc": "Get OS, Python, CPU, RAM, disk info.",
         "params": {},
         "required": [],
+        "category": "system",
     },
+    "get_system_metrics": {
+        "fn": tool_get_system_metrics,
+        "desc": "Get real-time CPU, RAM, disk usage.",
+        "params": {},
+        "required": [],
+        "category": "system",
+    },
+
+    # ── Completion ─────────────────────────────────────────────────────────────
     "task_complete": {
         "fn": tool_task_complete,
-        "desc": "Signal that the task is fully completed. Call this ONLY when the task is done.",
-        "params": {
-            "result": {"type": "string", "description": "Final result / summary of what was accomplished"},
-        },
+        "desc": "Signal that the task is fully done. Call ONLY when everything is verified complete.",
+        "params": {"result": {"type": "string", "description": "Summary of what was accomplished"}},
         "required": ["result"],
+        "category": "control",
     },
 }
 
@@ -498,6 +1307,14 @@ def _dispatch_tool(name: str, args: dict) -> str:
     if name not in TOOLS:
         return f"ERROR: unknown tool {name!r}"
     fn = TOOLS[name]["fn"]
+    # keyboard_hotkey passes keys as JSON string sometimes
+    if name == 'keyboard_hotkey' and 'keys' in args:
+        k = args['keys']
+        if isinstance(k, str):
+            try:
+                args['keys'] = json.loads(k)
+            except Exception:
+                args['keys'] = [x.strip() for x in k.split(',')]
     try:
         return str(fn(**args))
     except TypeError as e:
@@ -509,76 +1326,46 @@ def _dispatch_tool(name: str, args: dict) -> str:
 # AI PROVIDERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _http_post(url: str, headers: dict, body: dict, timeout: int = 60) -> dict:
-    data = json.dumps(body).encode()
-    req  = urllib.request.Request(url, data=data, headers=headers, method='POST')
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
-
 def _tool_schema_gemini() -> list:
     props = {}
     for name, t in TOOLS.items():
         p = {}
         for k, v in t["params"].items():
             tp = v["type"]
+            # arrays/lists stay as STRING for Gemini
             gemini_type = {"string": "STRING", "integer": "INTEGER",
                            "boolean": "BOOLEAN", "number": "NUMBER"}.get(tp, "STRING")
             p[k] = {"type": gemini_type, "description": v["description"]}
         props[name] = {
             "name": name,
             "description": t["desc"],
-            "parameters": {
-                "type": "OBJECT",
-                "properties": p,
-                "required": t["required"],
-            },
+            "parameters": {"type": "OBJECT", "properties": p, "required": t["required"]},
         }
     return [{"functionDeclarations": list(props.values())}]
 
 def _tool_schema_claude() -> list:
-    out = []
-    for name, t in TOOLS.items():
-        out.append({
-            "name": name,
-            "description": t["desc"],
-            "input_schema": {
-                "type": "object",
-                "properties": {k: {"type": v["type"], "description": v["description"]}
-                               for k, v in t["params"].items()},
-                "required": t["required"],
-            },
-        })
-    return out
+    return [{"name": n, "description": t["desc"],
+             "input_schema": {
+                 "type": "object",
+                 "properties": {k: {"type": v["type"], "description": v["description"]}
+                                for k, v in t["params"].items()},
+                 "required": t["required"],
+             }} for n, t in TOOLS.items()]
 
 def _tool_schema_openai() -> list:
-    out = []
-    for name, t in TOOLS.items():
-        out.append({
-            "type": "function",
-            "function": {
-                "name": name,
-                "description": t["desc"],
-                "parameters": {
-                    "type": "object",
-                    "properties": {k: {"type": v["type"], "description": v["description"]}
-                                   for k, v in t["params"].items()},
-                    "required": t["required"],
-                },
-            },
-        })
-    return out
+    return [{"type": "function", "function": {
+        "name": n, "description": t["desc"],
+        "parameters": {
+            "type": "object",
+            "properties": {k: {"type": v["type"], "description": v["description"]}
+                           for k, v in t["params"].items()},
+            "required": t["required"],
+        }}} for n, t in TOOLS.items()]
 
 # ─── Gemini ────────────────────────────────────────────────────────────────────
 
 class GeminiProvider:
     BASE = "https://generativelanguage.googleapis.com/v1beta"
-    # Model aliases supported by AI Studio
-    MODEL_ALIASES = {
-        'gemini-flash-latest': 'gemini-3.6-flash',
-        'gemini-pro-latest':   'gemini-2.5-pro',
-        'gemini-flash-lite-latest': 'gemini-3.6-flash',
-    }
-    # Ordered list of models to try (newest first)
     FALLBACK_MODELS = [
         'gemini-3.6-flash',
         'gemini-2.5-flash',
@@ -587,39 +1374,40 @@ class GeminiProvider:
         'gemini-1.5-flash',
     ]
 
-    def __init__(self, api_key: str, model: str = "gemini-3.6-flash"):
-        self.api_key  = api_key
-        self.model    = self.MODEL_ALIASES.get(model, model)
-        self.name     = f"gemini/{self.model}"
+    def __init__(self, api_key: str, model: str = 'gemini-3.6-flash'):
+        self.api_key = api_key
+        self.model   = model
+        self.name    = f"gemini/{model}"
 
     def _url(self, endpoint: str) -> str:
-        # Use header auth for AI Studio tokens (AQ. prefix); URL key for traditional keys
         if self.api_key.startswith('AI'):
             return f"{self.BASE}/models/{self.model}:{endpoint}?key={self.api_key}"
         return f"{self.BASE}/models/{self.model}:{endpoint}"
 
     def _headers(self) -> dict:
-        h = {"Content-Type": "application/json"}
+        h = {"Content-Type": "application/json",
+             "x-goog-api-client": "devin-agent/4.0 gl-python/3"}
         if not self.api_key.startswith('AI'):
-            # AI Studio token — use header auth
             h['X-goog-api-key'] = self.api_key
         return h
 
     def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
-        """Returns (text, tool_calls). tool_calls = [{"name":..,"args":..}]"""
         contents = []
         if system:
-            contents.append({"role": "user", "parts": [{"text": f"[System]: {system}"}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood."}]})
+            contents += [
+                {"role": "user",  "parts": [{"text": f"[System instructions]\n{system}"}]},
+                {"role": "model", "parts": [{"text": "Understood. Ready to help."}]},
+            ]
         for m in messages:
-            role = "model" if m["role"] == "assistant" else "user"
+            role  = "model" if m["role"] == "assistant" else "user"
             parts = []
             if isinstance(m.get("content"), list):
                 for blk in m["content"]:
-                    if blk.get("type") == "tool_result":
-                        parts.append({"text": f"[Tool result: {blk.get('content','')}]"})
-                    elif blk.get("type") == "tool_use":
-                        parts.append({"text": f"[Calling {blk['name']}({json.dumps(blk.get('input',{}))})]"})
+                    t = blk.get("type", "")
+                    if t == "tool_result":
+                        parts.append({"text": f"[Tool result]\n{blk.get('content','')}"})
+                    elif t == "tool_use":
+                        parts.append({"text": f"[Called {blk['name']}({json.dumps(blk.get('input',{}))})]"})
                     else:
                         parts.append({"text": str(blk.get("text", ""))})
             else:
@@ -632,85 +1420,75 @@ class GeminiProvider:
             "tools": _tool_schema_gemini(),
             "generationConfig": {"maxOutputTokens": 8192, "temperature": 0.7},
         }
+
         models_to_try = [self.model] + [m for m in self.FALLBACK_MODELS if m != self.model]
         last_err = ""
         for model_name in models_to_try:
-            orig_model = self.model
             self.model = model_name
             for attempt in range(3):
                 try:
-                    resp = _http_post(
-                        self._url("generateContent"),
-                        self._headers(),
-                        body, timeout=90
-                    )
+                    resp = _http_post(self._url("generateContent"),
+                                      self._headers(), body, timeout=90)
                     if "error" in resp:
                         raise ValueError(resp["error"].get("message", "Gemini error"))
-                    cand = resp.get("candidates", [{}])[0]
+                    cand  = resp.get("candidates", [{}])[0]
                     parts = cand.get("content", {}).get("parts", [])
                     text  = "".join(p.get("text", "") for p in parts if "text" in p)
-                    calls = []
-                    for p in parts:
-                        fc = p.get("functionCall")
-                        if fc:
-                            calls.append({"name": fc["name"], "args": fc.get("args", {})})
+                    calls = [{"name": p["functionCall"]["name"],
+                              "args": p["functionCall"].get("args", {})}
+                             for p in parts if "functionCall" in p]
+                    self.name = f"gemini/{self.model}"
                     return text, calls
                 except urllib.error.HTTPError as e:
                     body_txt = e.read().decode('utf-8', errors='replace')
                     if e.code == 429:
                         wait = 2 ** (attempt + 1)
-                        print(yellow(f"  ⏳ rate limited ({model_name}), retrying in {wait}s…"), flush=True)
-                        time.sleep(wait)
-                        continue
-                    if e.code == 404:
-                        last_err = f"model {model_name} not available"
-                        break  # try next model
+                        print(yellow(f"  ⏳ rate limited ({model_name}), retrying in {wait}s…"),
+                              flush=True)
+                        time.sleep(wait); continue
+                    if e.code in (404, 400):
+                        last_err = f"{model_name}: HTTP {e.code}"
+                        break
                     raise ValueError(f"Gemini HTTP {e.code}: {body_txt[:300]}")
-            self.model = orig_model
-        raise ValueError(f"Gemini: all models exhausted. Last error: {last_err}")
+        raise ValueError(f"Gemini: all models failed. Last: {last_err}")
 
 # ─── Claude ────────────────────────────────────────────────────────────────────
 
 class ClaudeProvider:
     URL = "https://api.anthropic.com/v1/messages"
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
+    def __init__(self, api_key: str, model: str = 'claude-sonnet-4-6'):
         self.api_key = api_key
         self.model   = model
         self.name    = f"claude/{model}"
 
     def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
-        hdrs = {
-            "Content-Type": "application/json",
-            "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
-        }
-        body = {
-            "model": self.model,
-            "max_tokens": 8192,
-            "tools": _tool_schema_claude(),
-            "messages": messages,
-        }
+        hdrs = {"Content-Type": "application/json",
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01"}
+        body: dict = {"model": self.model, "max_tokens": 8192,
+                      "tools": _tool_schema_claude(), "messages": messages}
         if system:
             body["system"] = system
         for attempt in range(4):
             try:
-                resp = _http_post(self.URL, hdrs, body, timeout=90)
+                resp  = _http_post(self.URL, hdrs, body, timeout=90)
                 text  = ""
                 calls = []
                 for blk in resp.get("content", []):
                     if blk.get("type") == "text":
                         text += blk.get("text", "")
                     elif blk.get("type") == "tool_use":
-                        calls.append({"id": blk.get("id"), "name": blk["name"], "args": blk.get("input", {})})
+                        calls.append({"id": blk.get("id"),
+                                      "name": blk["name"],
+                                      "args": blk.get("input", {})})
                 return text, calls
             except urllib.error.HTTPError as e:
                 body_txt = e.read().decode('utf-8', errors='replace')
                 if e.code == 429:
                     wait = 2 ** (attempt + 1)
                     print(yellow(f"  ⏳ rate limited, retrying in {wait}s…"), flush=True)
-                    time.sleep(wait)
-                    continue
+                    time.sleep(wait); continue
                 raise ValueError(f"Claude HTTP {e.code}: {body_txt[:300]}")
         raise ValueError("Claude: max retries exceeded")
 
@@ -719,7 +1497,7 @@ class ClaudeProvider:
 class OpenAIProvider:
     URL = "https://api.openai.com/v1/chat/completions"
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: str, model: str = 'gpt-4o-mini'):
         self.api_key = api_key
         self.model   = model
         self.name    = f"openai/{model}"
@@ -729,28 +1507,15 @@ class OpenAIProvider:
         if system:
             msgs.append({"role": "system", "content": system})
         for m in messages:
-            role = m["role"]
             content = m.get("content", "")
             if isinstance(content, list):
-                text_parts = []
-                for blk in content:
-                    if blk.get("type") == "tool_result":
-                        text_parts.append(f"[Tool result: {blk.get('content','')}]")
-                    else:
-                        text_parts.append(str(blk.get("text", "")))
-                content = " ".join(text_parts)
-            msgs.append({"role": role, "content": content})
+                content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
+            msgs.append({"role": m["role"], "content": content})
 
-        body = {
-            "model": self.model,
-            "max_tokens": 4096,
-            "tools": _tool_schema_openai(),
-            "messages": msgs,
-        }
-        hdrs = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
+        body = {"model": self.model, "max_tokens": 4096,
+                "tools": _tool_schema_openai(), "messages": msgs}
+        hdrs = {"Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"}
         for attempt in range(4):
             try:
                 resp  = _http_post(self.URL, hdrs, body, timeout=90)
@@ -770,8 +1535,7 @@ class OpenAIProvider:
                 if e.code == 429:
                     wait = 2 ** (attempt + 1)
                     print(yellow(f"  ⏳ rate limited, retrying in {wait}s…"), flush=True)
-                    time.sleep(wait)
-                    continue
+                    time.sleep(wait); continue
                 raise ValueError(f"OpenAI HTTP {e.code}: {body_txt[:300]}")
         raise ValueError("OpenAI: max retries exceeded")
 
@@ -782,9 +1546,9 @@ def _pick_provider(name: str = '', model: str = ''):
     ak = os.environ.get('ANTHROPIC_API_KEY', '')
     ok = os.environ.get('OPENAI_API_KEY', '')
 
-    if name == 'gemini':
+    if name in ('gemini', 'google'):
         if not gk: raise ValueError("GEMINI_API_KEY not set")
-        return GeminiProvider(gk, model or 'gemini-2.5-flash')
+        return GeminiProvider(gk, model or 'gemini-3.6-flash')
     if name in ('claude', 'anthropic'):
         if not ak: raise ValueError("ANTHROPIC_API_KEY not set")
         return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
@@ -792,87 +1556,96 @@ def _pick_provider(name: str = '', model: str = ''):
         if not ok: raise ValueError("OPENAI_API_KEY not set")
         return OpenAIProvider(ok, model or 'gpt-4o-mini')
 
-    # auto-select by available key
     if gk: return GeminiProvider(gk, model or 'gemini-3.6-flash')
     if ak: return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
     if ok: return OpenAIProvider(ok, model or 'gpt-4o-mini')
     raise ValueError(
-        "No API key found. Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY "
-        "in .env or environment."
-    )
-
-def _available_providers() -> List[str]:
-    out = []
-    if os.environ.get('GEMINI_API_KEY'):    out.append(green('gemini') + ' ✓')
-    else:                                    out.append(dim('gemini') + ' (no key)')
-    if os.environ.get('ANTHROPIC_API_KEY'): out.append(green('claude') + ' ✓')
-    else:                                    out.append(dim('claude') + ' (no key)')
-    if os.environ.get('OPENAI_API_KEY'):    out.append(green('openai') + ' ✓')
-    else:                                    out.append(dim('openai') + ' (no key)')
-    return out
+        "No API key found.\n"
+        "  Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env\n"
+        "  Free key: https://aistudio.google.com/app/apikey")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SYSTEM PROMPT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT = """\
-You are Devin, an advanced AI agent with real tool-calling capabilities.
-You can search the web, read/write files, execute code, take screenshots,
-manage memory, and complete complex multi-step tasks autonomously.
+_DISPLAY_NOTE = ("Display: AVAILABLE — GUI tools (mouse, keyboard, windows, screenshot) work."
+                 if _HAS_DISPLAY else
+                 "Display: HEADLESS — GUI tools require a display session.")
 
-## How to behave
-1. THINK FIRST — call the `think` tool to reason through the task before acting.
-2. ACT — use the appropriate tools step by step.
-3. VERIFY — check results after each action.
-4. CONTINUE — keep going until the task is done.
-5. COMPLETE — call `task_complete` with a clear result summary when done.
+SYSTEM_PROMPT = f"""\
+You are Devin, an advanced AI agent with FULL computer control.
+You have {len(TOOLS)} tools: shell, files, web, mouse, keyboard, windows,
+screenshots, vision, clipboard, voice, memory, git, and more.
+{_DISPLAY_NOTE}
 
-## Rules
-- Never fabricate tool results — only report what tools actually return.
-- Never stop mid-task unless truly blocked.
-- Use `think` freely to reason, plan, and self-correct.
-- For web tasks: search → fetch the relevant pages → extract info → answer.
-- For code tasks: write → execute → verify output → fix if needed.
-- For file tasks: read first, then edit precisely.
-- Call `task_complete` exactly once when the full task is verified done.
-- If you cannot complete a task, call `task_complete` explaining exactly why.
+## Observe → Understand → Plan → Act → Verify → Complete
 
-## Tool calling
-You have these tools available (use them, don't just describe what you would do):
-think, web_search, web_fetch, execute_shell, execute_python,
-read_file, write_file, edit_file, list_files, search_files,
-screenshot, clipboard_get, clipboard_set,
-remember, recall, get_system_info, task_complete
+### Core rules
+1. THINK FIRST — call `think` to reason before acting.
+2. For GUI tasks: always `analyze_screenshot` BEFORE clicking to get exact coordinates.
+3. After every GUI action, `analyze_screenshot` again to verify it worked.
+4. NEVER fabricate results — only report what tools return.
+5. NEVER stop mid-task. Chain tools until the job is DONE.
+6. For web tasks: search → fetch relevant pages → extract info → answer.
+7. For code tasks: write → execute → verify output → fix if needed.
+8. Call `task_complete` ONLY when the full task is verified done.
+
+### GUI control workflow
+1. `analyze_screenshot("Where is X? Give pixel coordinates.")` — get coords
+2. `mouse_click(x, y)` — click
+3. `analyze_screenshot("Did the click work? What changed?")` — verify
+4. `keyboard_type(text)` or `keyboard_press(key)` — input
+5. Repeat until done
+
+### Available tool categories
+- Reasoning: think
+- Web: web_search, web_fetch, open_browser
+- Shell: execute_shell, execute_python, list_processes, kill_process
+- Files: read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files, git_command
+- Vision: screenshot, analyze_screenshot, analyze_image
+- Mouse: mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
+- Keyboard: keyboard_type, keyboard_press, keyboard_hotkey, click_and_type
+- Windows: get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab
+- Apps: open_application, open_terminal, open_browser, close_application
+- Clipboard: clipboard_get, clipboard_set
+- Voice: speak, listen
+- Memory: remember, recall
+- System: get_system_info, get_system_metrics
+- Control: task_complete
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AGENTIC LOOP
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _fmt_tool_call(name: str, args: dict) -> str:
-    arg_str = ', '.join(f'{k}={repr(v)[:60]}' for k, v in args.items())
-    return f"{cyan(name)}({arg_str})"
+def _fmt_args(args: dict, maxlen: int = 80) -> str:
+    parts = []
+    for k, v in args.items():
+        s = repr(v)
+        if len(s) > maxlen:
+            s = s[:maxlen] + '…'
+        parts.append(f"{k}={s}")
+    return ', '.join(parts)
 
-def run_agent(task: str, provider, max_steps: int = 60, quiet: bool = False) -> str:
-    """
-    Run the agentic loop for a given task.
-    Returns the final result string.
-    """
+def run_agent(task: str, provider, max_steps: int = 80,
+              quiet: bool = False) -> str:
     messages: List[dict] = [{"role": "user", "content": task}]
     final_result = ""
     step = 0
 
     if not quiet:
         print()
-        print(_box(f"Task: {task[:70]}", '═'))
-        print(dim(f"Provider: {provider.name}  |  Max steps: {max_steps}"))
+        print(_box(f"Task: {task[:72]}"))
+        print(dim(f"Provider: {provider.name}  |  Tools: {len(TOOLS)}  |  Max steps: {max_steps}"))
+        if not _HAS_DISPLAY:
+            print(dim("⚠  Headless: GUI tools will return errors (need display)"))
         print(_hr())
 
     while step < max_steps:
         step += 1
-        spinner_chars = ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏']
+
         if not quiet:
-            print(dim(f"\n[step {step}/{max_steps}] thinking…"), end='\r', flush=True)
+            print(dim(f"\r[{step}/{max_steps}] thinking…"), end='', flush=True)
 
         try:
             text, calls = provider.call(messages, system=SYSTEM_PROMPT)
@@ -883,135 +1656,128 @@ def run_agent(task: str, provider, max_steps: int = 60, quiet: bool = False) -> 
 
         # Print assistant text
         if text and text.strip() and not quiet:
-            clean = text.strip()
-            # strip any (acting) artifacts
-            clean = re.sub(r'^\s*\(acting\)\s*', '', clean, flags=re.I)
+            clean = re.sub(r'^\s*\(acting\)\s*', '', text.strip(), flags=re.I)
             if clean:
                 print(f"\n{bold(cyan('Devin'))}  {clean}")
 
-        # Add assistant message
+        # Add to history
         if isinstance(provider, ClaudeProvider):
-            content_blocks: List[dict] = []
+            blocks: List[dict] = []
             if text:
-                content_blocks.append({"type": "text", "text": text})
+                blocks.append({"type": "text", "text": text})
             for c in calls:
-                content_blocks.append({
-                    "type": "tool_use",
-                    "id": c.get("id", f"call_{step}_{c['name']}"),
-                    "name": c["name"],
-                    "input": c["args"],
-                })
-            if content_blocks:
-                messages.append({"role": "assistant", "content": content_blocks})
+                blocks.append({"type": "tool_use",
+                                "id": c.get("id", f"t{step}_{c['name']}"),
+                                "name": c["name"], "input": c["args"]})
+            if blocks:
+                messages.append({"role": "assistant", "content": blocks})
         else:
             messages.append({"role": "assistant", "content": text or ""})
 
         if not calls:
-            # No tool calls — AI is done or stuck
             if text.strip():
                 final_result = text.strip()
             break
 
-        # Execute each tool call
+        # Execute tools
         tool_results = []
         for call in calls:
             name = call["name"]
             args = call["args"]
 
             if not quiet:
-                print(f"\n  {blue('▶')} {_fmt_tool_call(name, args)}")
+                print(f"\n  {blue('▶')} {cyan(name)}({_fmt_args(args)})")
 
             result = _dispatch_tool(name, args)
 
-            # Check for task completion
+            # Task complete?
             if name == "task_complete" or result.startswith("TASK_COMPLETE:"):
                 final_result = result.replace("TASK_COMPLETE:", "").strip()
                 if not quiet:
-                    print(f"  {green('✓')} {dim(result[:200])}")
+                    print(f"  {green('✓')} {dim(str(result)[:200])}")
                     print()
                     print(_hr())
-                    print(green(bold("✅ Task complete")))
+                    print(green(bold("✅  Task complete")))
                     print(final_result)
                 return final_result
 
-            # Display result preview
             if not quiet:
-                preview = result[:300].replace('\n', ' ')
+                preview = str(result)[:400].replace('\n', ' ')
                 print(f"  {dim('←')} {dim(preview)}")
 
             tool_results.append({
-                "call_id": call.get("id", f"call_{step}_{name}"),
-                "name": name,
-                "result": result,
+                "call_id": call.get("id", f"t{step}_{name}"),
+                "name": name, "result": result,
             })
 
-        # Add tool results back to messages
+        # Feed results back
         if isinstance(provider, ClaudeProvider):
-            tool_result_blocks = [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tr["call_id"],
-                    "content": tr["result"],
-                }
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": tr["call_id"],
+                 "content": tr["result"]}
                 for tr in tool_results
-            ]
-            messages.append({"role": "user", "content": tool_result_blocks})
+            ]})
         elif isinstance(provider, OpenAIProvider):
             for tr in tool_results:
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tr["call_id"],
-                    "content": tr["result"],
-                })
+                messages.append({"role": "tool",
+                                  "tool_call_id": tr["call_id"],
+                                  "content": tr["result"]})
         else:
-            # Gemini: pack all results as user turn
             combined = "\n\n".join(
-                f"[Tool: {tr['name']}]\n{tr['result']}" for tr in tool_results
-            )
+                f"[Tool: {tr['name']}]\n{tr['result']}" for tr in tool_results)
             messages.append({"role": "user", "content": combined})
 
     if not final_result:
         final_result = "(task ended without explicit completion)"
-
     if not quiet:
         print()
         print(_hr())
         print(dim(f"Loop ended after {step} steps."))
-
     return final_result
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # INTERACTIVE REPL
 # ═══════════════════════════════════════════════════════════════════════════════
 
-SLASH_HELP = f"""
-{bold('Slash commands')}
-  {cyan('/help')}              Show this help
-  {cyan('/tools')}             List available tools
-  {cyan('/status')}            Show provider, model, key status
-  {cyan('/providers')}         Show all providers and key status
-  {cyan('/model <name>')}      Switch model  (e.g. /model gemini-2.5-pro)
-  {cyan('/provider <name>')}   Switch provider  (gemini | claude | openai)
-  {cyan('/memory')}            Show stored memories
-  {cyan('/remember <fact>')}   Save a fact to memory
-  {cyan('/forget')}            Clear all memories
-  {cyan('/history')}           Show conversation history (current session)
-  {cyan('/shell <cmd>')}       Run a shell command directly
-  {cyan('/clear')}             Clear the screen
-  {cyan('/exit')} / {cyan('/quit')}     Exit Devin
+_HELP = f"""
+{bold('Devin Agent')} — OS-controlled agentic AI
 
 {bold('Usage')}
-  Type a task or question, press Enter.
+  Type a task in natural language and press Enter.
   Devin reasons and uses tools autonomously until the task is done.
 
+{bold('Slash commands')}
+  {cyan('/help')}               This help
+  {cyan('/tools [category]')}   List tools (optional category filter)
+  {cyan('/status')}             Show provider, model, keys, capabilities
+  {cyan('/providers')}          Show all providers and key availability
+  {cyan('/model <name>')}       Switch model
+  {cyan('/provider <name>')}    Switch provider (gemini | claude | openai)
+  {cyan('/memory [query]')}     Show memories (optional search)
+  {cyan('/remember <fact>')}    Save a fact to persistent memory
+  {cyan('/forget')}             Clear all memories
+  {cyan('/history')}            Show this session's memories
+  {cyan('/shell <cmd>')}        Run shell command directly
+  {cyan('/screenshot')}         Take a screenshot
+  {cyan('/voice')}              Listen for voice input then run as task
+  {cyan('/repos')}              List integrated repositories
+  {cyan('/clear')}              Clear screen
+  {cyan('/exit')} | {cyan('/quit')}       Exit
+
 {bold('API keys')}  (.env or environment)
-  GEMINI_API_KEY      https://aistudio.google.com/app/apikey
-  ANTHROPIC_API_KEY   https://console.anthropic.com/
-  OPENAI_API_KEY      https://platform.openai.com/api-keys
+  GEMINI_API_KEY       https://aistudio.google.com/app/apikey  (free)
+  ANTHROPIC_API_KEY    https://console.anthropic.com/
+  OPENAI_API_KEY       https://platform.openai.com/api-keys
+
+{bold('Examples')}
+  open Firefox and search for "Python tutorials"
+  write a Python script that counts lines in all .py files
+  take a screenshot and describe what you see
+  search today's AI news and summarize the top 3 stories
+  remember that my project is in /home/user/my_project
 """
 
 def _banner():
-    w = shutil.get_terminal_size().columns
     lines = [
         "",
         bold(cyan(" ██████╗ ███████╗██╗   ██╗██╗███╗   ██╗")),
@@ -1021,38 +1787,39 @@ def _banner():
         bold(cyan(" ██████╔╝███████╗ ╚████╔╝ ██║██║ ╚████║")),
         bold(cyan(" ╚═════╝ ╚══════╝  ╚═══╝  ╚═╝╚═╝  ╚═══╝")),
         "",
-        dim("  Agentic AI  ·  Self-contained  ·  All providers"),
+        dim(f"  OS-controlled agentic AI  ·  {len(TOOLS)} tools  ·  Gemini | Claude | OpenAI"),
+        dim(f"  Platform: {_PLATFORM}  |  Display: {'✓ available' if _HAS_DISPLAY else '✗ headless'}"),
         "",
     ]
     for l in lines:
         print(l)
 
-def _print_status(provider):
-    print(f"\n  {bold('Provider')}  {green(provider.name)}")
-    keys = []
-    if os.environ.get('GEMINI_API_KEY'):    keys.append(green('gemini ✓'))
-    else:                                    keys.append(dim('gemini ✗'))
-    if os.environ.get('ANTHROPIC_API_KEY'): keys.append(green('claude ✓'))
-    else:                                    keys.append(dim('claude ✗'))
-    if os.environ.get('OPENAI_API_KEY'):    keys.append(green('openai ✓'))
-    else:                                    keys.append(dim('openai ✗'))
-    print(f"  {bold('Keys')}      {' | '.join(keys)}")
-    print(f"  {bold('Memory')}    {_DB_PATH.name}  ({_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts)")
-    print(f"  {bold('Tools')}     {len(TOOLS)} built-in")
+def _status_line(provider):
+    gk = '✓' if os.environ.get('GEMINI_API_KEY')    else '✗'
+    ak = '✓' if os.environ.get('ANTHROPIC_API_KEY') else '✗'
+    ok = '✓' if os.environ.get('OPENAI_API_KEY')    else '✗'
+    cats = {}
+    for t in TOOLS.values():
+        cats.setdefault(t.get('category','other'), 0)
+        cats[t['category']] += 1
+    cat_str = '  '.join(f"{v} {k}" for k, v in sorted(cats.items()))
+    print(f"\n  {bold('Provider')}   {green(provider.name)}")
+    print(f"  {bold('Keys')}       Gemini {(green if gk=='✓' else red)(gk)}  "
+          f"Claude {(green if ak=='✓' else red)(ak)}  "
+          f"OpenAI {(green if ok=='✓' else red)(ok)}")
+    print(f"  {bold('Display')}    {'✓ ' + os.environ.get('DISPLAY','') if _HAS_DISPLAY else dim('✗ headless')}")
+    print(f"  {bold('Memory')}     {_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts  ({_DB_PATH.name})")
+    print(f"  {bold('Tools')}      {len(TOOLS)}  ({cat_str})")
     print()
 
 def repl(provider_name: str = '', model: str = ''):
-    """Interactive REPL."""
     try:
-        import readline
-        history_file = str(_ROOT / '.devin_history')
-        try:
-            readline.read_history_file(history_file)
-        except FileNotFoundError:
-            pass
-        import atexit
-        atexit.register(readline.write_history_file, history_file)
-        readline.set_history_length(500)
+        import readline as _rl
+        hist = str(_ROOT / '.devin_history')
+        try: _rl.read_history_file(hist)
+        except FileNotFoundError: pass
+        import atexit; atexit.register(_rl.write_history_file, hist)
+        _rl.set_history_length(500)
     except ImportError:
         pass
 
@@ -1061,70 +1828,78 @@ def repl(provider_name: str = '', model: str = ''):
     try:
         provider = _pick_provider(provider_name, model)
     except ValueError as e:
-        print(red(f"⚠ {e}"))
-        print(dim("Set an API key in .env to get started. Type /help for info."))
+        print(red(f"⚠  {e}"))
         provider = None
 
     if provider:
-        _print_status(provider)
-        print(dim("Type a task or question. /help for commands. /exit to quit.\n"))
+        _status_line(provider)
+        print(dim("Type a task. /help for commands. /exit to quit.\n"))
     else:
-        print(dim("No provider active. Set an API key and restart, or /help for info.\n"))
+        print(dim("No provider. Add an API key to .env, then restart.\n"))
+
+    cur_pname = provider_name
 
     while True:
         try:
             user_input = input(f"{bold(cyan('you'))} › ").strip()
         except (EOFError, KeyboardInterrupt):
-            print()
-            break
+            print(); break
 
         if not user_input:
             continue
 
-        # ── Slash commands ────────────────────────────────────────────────────
         if user_input.startswith('/'):
             parts = user_input.split(None, 1)
             cmd   = parts[0].lower()
             arg   = parts[1] if len(parts) > 1 else ''
 
             if cmd in ('/exit', '/quit'):
-                print(dim("Bye."))
-                break
+                print(dim("Bye.")); break
 
             elif cmd == '/help':
-                print(SLASH_HELP)
+                print(_HELP)
 
             elif cmd == '/clear':
-                os.system('clear' if os.name != 'nt' else 'cls')
+                os.system('clear' if _PLATFORM != 'Windows' else 'cls')
 
             elif cmd == '/tools':
-                print(f"\n{bold('Available tools')} ({len(TOOLS)}):\n")
+                cats: Dict[str, List[str]] = {}
                 for name, t in TOOLS.items():
-                    print(f"  {cyan(name):30s} {t['desc']}")
+                    cats.setdefault(t.get('category','other'), []).append(name)
+                if arg:
+                    cats = {k: v for k, v in cats.items()
+                            if arg.lower() in k.lower()}
+                for cat in sorted(cats):
+                    print(f"\n{bold(cat.upper())}")
+                    for name in sorted(cats[cat]):
+                        print(f"  {cyan(name):35s} {TOOLS[name]['desc'][:60]}")
                 print()
 
             elif cmd == '/status':
-                if provider:
-                    _print_status(provider)
-                else:
-                    print(red("No provider active."))
+                if provider: _status_line(provider)
+                else: print(red("No provider."))
 
             elif cmd == '/providers':
-                for p in _available_providers():
-                    print(f"  {p}")
+                for p, key_env in [('gemini', 'GEMINI_API_KEY'),
+                                   ('claude', 'ANTHROPIC_API_KEY'),
+                                   ('openai', 'OPENAI_API_KEY')]:
+                    s = green('✓ active') if os.environ.get(key_env) else dim('✗ no key')
+                    print(f"  {bold(p):15s} {s}")
                 print()
 
             elif cmd == '/model':
                 if not arg:
                     print(yellow("Usage: /model <model-name>"))
-                else:
+                elif provider:
                     try:
-                        pname = provider_name or ('gemini' if os.environ.get('GEMINI_API_KEY') else
-                                                   'claude' if os.environ.get('ANTHROPIC_API_KEY') else 'openai')
-                        provider = _pick_provider(pname, arg)
-                        print(green(f"Switched to {provider.name}"))
+                        pn = cur_pname or ('gemini' if os.environ.get('GEMINI_API_KEY') else
+                                           'claude' if os.environ.get('ANTHROPIC_API_KEY') else 'openai')
+                        provider = _pick_provider(pn, arg)
+                        print(green(f"Model: {provider.name}"))
                     except Exception as e:
                         print(red(f"Error: {e}"))
+                else:
+                    print(red("No provider active."))
 
             elif cmd == '/provider':
                 if not arg:
@@ -1132,8 +1907,8 @@ def repl(provider_name: str = '', model: str = ''):
                 else:
                     try:
                         provider = _pick_provider(arg, model)
-                        provider_name = arg
-                        print(green(f"Switched to {provider.name}"))
+                        cur_pname = arg
+                        print(green(f"Provider: {provider.name}"))
                     except Exception as e:
                         print(red(f"Error: {e}"))
 
@@ -1141,40 +1916,60 @@ def repl(provider_name: str = '', model: str = ''):
                 print(_recall(arg))
 
             elif cmd == '/remember':
-                if arg:
-                    print(_remember(arg))
-                else:
-                    print(yellow("Usage: /remember <fact>"))
+                if arg: print(_remember(arg))
+                else: print(yellow("Usage: /remember <fact>"))
 
             elif cmd == '/forget':
                 print(_forget_all())
 
             elif cmd == '/history':
                 rows = _DB.execute(
-                    "SELECT ts, session, fact FROM memories WHERE session=? ORDER BY id",
-                    (_SESSION_ID,)
-                ).fetchall()
+                    "SELECT ts, fact FROM memories WHERE session=? ORDER BY id",
+                    (_SESSION_ID,)).fetchall()
                 if rows:
                     for r in rows:
-                        print(f"  {dim(r[0])} {r[2]}")
+                        print(f"  {dim(r[0])} {r[1]}")
                 else:
                     print(dim("No memories this session."))
 
             elif cmd == '/shell':
-                if arg:
-                    out = tool_execute_shell(arg)
-                    print(out)
+                if arg: print(tool_execute_shell(arg))
+                else: print(yellow("Usage: /shell <command>"))
+
+            elif cmd == '/screenshot':
+                result = tool_screenshot()
+                print(result)
+                if not result.startswith('ERROR:') and provider:
+                    ans = input("Analyze screenshot with AI? [y/N] ").strip().lower()
+                    if ans == 'y':
+                        path = result.split(': ', 1)[-1].strip()
+                        print(tool_analyze_image(path, 'Describe everything visible on screen.'))
+
+            elif cmd == '/voice':
+                text = tool_listen()
+                if text.startswith('Heard:'):
+                    task = text.replace('Heard:', '').strip()
+                    print(dim(f"Voice task: {task}"))
+                    if provider:
+                        run_agent(task, provider)
                 else:
-                    print(yellow("Usage: /shell <command>"))
+                    print(red(text))
+
+            elif cmd == '/repos':
+                for base in [_ROOT / 'external', _ROOT / 'repos']:
+                    if base.exists():
+                        repos = [d.name for d in sorted(base.iterdir()) if d.is_dir()]
+                        if repos:
+                            print(f"\n{bold(base.name+'/'+':')}  {', '.join(repos)}")
+                print()
 
             else:
-                print(yellow(f"Unknown command {cmd!r}. Type /help."))
-
+                print(yellow(f"Unknown command {cmd!r}. /help for commands."))
             continue
 
-        # ── Run agent task ────────────────────────────────────────────────────
+        # Agent task
         if provider is None:
-            print(red("No provider. Set an API key in .env and restart."))
+            print(red("No provider. Add an API key to .env."))
             continue
 
         try:
@@ -1182,52 +1977,45 @@ def repl(provider_name: str = '', model: str = ''):
         except KeyboardInterrupt:
             print(yellow("\n  Interrupted."))
         except Exception as e:
-            print(red(f"\n⚠ Agent error: {e}"))
+            print(red(f"\n⚠  Agent error: {e}"))
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CLI ENTRY POINT
+# ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
     args = sys.argv[1:]
-
-    # Parse flags
     provider_name = ''
     model         = ''
-    task_args     = []
-
+    task_parts    = []
     i = 0
     while i < len(args):
         a = args[i]
         if a in ('--provider', '-p') and i + 1 < len(args):
-            provider_name = args[i + 1]; i += 2
+            provider_name = args[i+1]; i += 2
         elif a in ('--model', '-m') and i + 1 < len(args):
-            model = args[i + 1]; i += 2
+            model = args[i+1]; i += 2
         elif a.startswith('--provider='):
-            provider_name = a.split('=', 1)[1]; i += 1
+            provider_name = a.split('=',1)[1]; i += 1
         elif a.startswith('--model='):
-            model = a.split('=', 1)[1]; i += 1
+            model = a.split('=',1)[1]; i += 1
         elif a in ('--help', '-h'):
-            print(__doc__)
-            sys.exit(0)
+            print(__doc__); sys.exit(0)
         else:
-            task_args.append(a); i += 1
+            task_parts.append(a); i += 1
 
-    if task_args:
-        # One-shot mode
-        task = ' '.join(task_args)
+    if task_parts:
+        task = ' '.join(task_parts)
         try:
             provider = _pick_provider(provider_name, model)
         except ValueError as e:
-            print(red(f"⚠ {e}"))
-            sys.exit(1)
+            print(red(f"⚠  {e}")); sys.exit(1)
         print(dim(f"Provider: {provider.name}"))
         result = run_agent(task, provider)
         if result and not result.startswith("(task ended"):
             print(f"\n{green('Result:')} {result}")
         sys.exit(0)
     else:
-        # Interactive REPL
         repl(provider_name, model)
 
 if __name__ == '__main__':
