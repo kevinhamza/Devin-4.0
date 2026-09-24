@@ -381,27 +381,6 @@ Security tools (nmap, vulnerability scanning, OSINT) require:
 
 ---
 
-## Integrated Repositories
-
-| Repository | Source | Capabilities Used |
-|------------|--------|-------------------|
-| Hugging Face Inference | huggingface.co/router | Free-tier LLM fallback (Qwen 2.5 72B, Llama 3.1 70B, Mistral, Zephyr) |
-| AIA | github.com/kevinhamza/AIA | Automation, voice, ML, social |
-| self-operating-computer | github.com/OthersideAI/self-operating-computer | Vision-based computer control |
-| OpenDevin | github.com/OpenDevin/OpenDevin | Agent framework, canvas UI |
-| cheetahclaws | github.com/OoriData/cheetahclaws | Multi-agent, security analysis |
-| Jarvis (Concept-Bytes) | github.com/Concept-Bytes/Jarvis | Voice assistant, tools |
-| JARVIS-microsoft | github.com/microsoft/JARVIS | HuggingGPT task planning |
-| gemini-cli | github.com/google-gemini/gemini-cli | Gemini CLI patterns |
-| claude-code | (source collection) | Agentic loop patterns |
-| shannon | (integrated) | OSINT, network intelligence |
-| hexstrike-ai | (integrated) | Security tooling |
-| Devin-1/2/3 | Earlier versions | Core architecture |
-
-Full details: see `docs/INTEGRATION_MATRIX.md`
-
----
-
 ## Testing
 
 ```bash
