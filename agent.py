@@ -17,7 +17,7 @@ Usage:
 Slash commands (interactive):
   /help  /tools [cat]  /status  /providers  /model <m>  /provider <p>
   /clear  /memory [q]  /remember <fact>  /forget  /history
-  /shell <cmd>  /screenshot  /repos  /voice  /new  /exit /quit
+  /shell <cmd>  /screenshot  /repos  /voice  /integrations  /new  /exit /quit
 
 API keys (.env or environment):
   GEMINI_API_KEY     https://aistudio.google.com/app/apikey
@@ -146,6 +146,69 @@ except Exception:
 
 def _cmd_exists(cmd: str) -> bool:
     return shutil.which(cmd) is not None
+
+# ── Devin modules integration loader ─────────────────────────────────────────
+# Load optional Devin modules from modules/ for enhanced capabilities.
+# Each is imported gracefully — failures never break core functionality.
+
+_MODULES_DIR = _ROOT / 'modules'
+if str(_MODULES_DIR) not in sys.path:
+    sys.path.insert(0, str(_MODULES_DIR))
+
+# Load voice module (TTS/STT)
+_voice_mod = None
+try:
+    import importlib as _il
+    _voice_mod = _il.import_module('voice')
+except Exception:
+    pass
+
+# Load os_automation module (enhanced OS control)
+_os_auto_mod = None
+try:
+    _os_auto_mod = _il.import_module('os_automation')
+except Exception:
+    pass
+
+# Load persistent_memory module (enhanced memory with categories/tags)
+_pmem_mod = None
+try:
+    _pmem_mod = _il.import_module('persistent_memory')
+    _pmem = _pmem_mod.PersistentMemory() if hasattr(_pmem_mod, 'PersistentMemory') else None
+except Exception:
+    _pmem = None
+
+# Load messaging_gateway module (Telegram/Discord/Slack)
+_msg_mod = None
+try:
+    _msg_mod = _il.import_module('messaging_gateway')
+except Exception:
+    pass
+
+# Load integration_hub (all 24 external repos)
+_hub_mod = None
+try:
+    _hub_mod = _il.import_module('integration_hub')
+except Exception:
+    pass
+
+# Load cheetahclaws_bridge (token tracking, compaction)
+_cc_bridge = None
+try:
+    _ccmod = _il.import_module('cheetahclaws_bridge')
+    _cc_bridge = _ccmod.CheetahClawsBridge() if hasattr(_ccmod, 'CheetahClawsBridge') else None
+except Exception:
+    pass
+
+def _modules_status() -> Dict[str, bool]:
+    return {
+        'voice':             _voice_mod   is not None,
+        'os_automation':     _os_auto_mod is not None,
+        'persistent_memory': _pmem        is not None,
+        'messaging_gateway': _msg_mod     is not None,
+        'integration_hub':   _hub_mod     is not None,
+        'cheetahclaws':      _cc_bridge   is not None,
+    }
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOLS  — every tool returns a string
@@ -949,6 +1012,250 @@ def tool_get_system_metrics() -> str:
 def tool_task_complete(result: str) -> str:
     return f"TASK_COMPLETE:{result}"
 
+# ── HTTP request (generic) ────────────────────────────────────────────────────
+
+def tool_http_request(url: str, method: str = 'GET', headers: str = '',
+                      body: str = '', timeout: int = 30) -> str:
+    """Make a raw HTTP request. headers/body as JSON strings."""
+    try:
+        hdrs = json.loads(headers) if headers.strip() else {}
+        data = body.encode() if body else None
+        req = urllib.request.Request(url, data=data, headers=hdrs, method=method.upper())
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            content = r.read().decode('utf-8', errors='replace')
+            return f"Status: {r.status}\n{content[:4000]}"
+    except urllib.error.HTTPError as e:
+        return f"HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:1000]}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── JSON / data processing ────────────────────────────────────────────────────
+
+def tool_parse_json(text: str, path: str = '') -> str:
+    """Parse JSON text, optionally extract a dot-path value (e.g. 'data.items.0.name')."""
+    try:
+        data = json.loads(text)
+        if not path:
+            return json.dumps(data, indent=2)[:4000]
+        parts = path.split('.')
+        for p in parts:
+            if isinstance(data, list):
+                data = data[int(p)]
+            else:
+                data = data[p]
+        return json.dumps(data, indent=2) if isinstance(data, (dict, list)) else str(data)
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── Code analysis ─────────────────────────────────────────────────────────────
+
+def tool_analyze_code(path: str, question: str = '') -> str:
+    """Read a source file and provide stats: lines, functions, classes, imports."""
+    try:
+        p = Path(path).expanduser()
+        if not p.exists():
+            return f"ERROR: file not found: {path}"
+        code = p.read_text(errors='replace')
+        lines = code.splitlines()
+        funcs   = len(re.findall(r'^\s*def\s+\w+', code, re.M))
+        classes = len(re.findall(r'^\s*class\s+\w+', code, re.M))
+        imports = len(re.findall(r'^(?:import|from)\s+', code, re.M))
+        return (f"File:    {path}\n"
+                f"Lines:   {len(lines)}\n"
+                f"Functions: {funcs}\n"
+                f"Classes:   {classes}\n"
+                f"Imports:   {imports}\n"
+                f"\nFirst 30 lines:\n" +
+                '\n'.join(f"{i+1:4d}  {l}" for i, l in enumerate(lines[:30])))
+    except Exception as e:
+        return f"ERROR: {e}"
+
+# ── Git advanced ──────────────────────────────────────────────────────────────
+
+def tool_git_advanced(subcommand: str, repo_path: str = '') -> str:
+    """Run git subcommands: status, diff, log, branch, stash, rebase, etc."""
+    cwd = repo_path or str(_ROOT)
+    safe_cmds = {'status', 'diff', 'log', 'branch', 'stash', 'show', 'tag',
+                 'remote', 'fetch', 'pull', 'push', 'add', 'commit', 'checkout',
+                 'merge', 'rebase', 'reset', 'clean', 'cherry-pick'}
+    first = subcommand.split()[0] if subcommand.split() else ''
+    if first not in safe_cmds:
+        return f"ERROR: unsupported git subcommand {first!r}"
+    return tool_execute_shell(f"git {subcommand}", cwd=cwd, timeout=60)
+
+# ── Devin module call ─────────────────────────────────────────────────────────
+
+def tool_devin_module(module: str, action: str, params: str = '') -> str:
+    """
+    Call into Devin's built-in modules.
+    module: voice | os_auto | memory | integration_hub
+    action: depends on module (e.g. 'speak', 'take_screenshot', 'save_fact', 'aia.run')
+    params: JSON string of parameters
+    """
+    try:
+        p = json.loads(params) if params.strip() else {}
+    except Exception:
+        p = {'value': params}
+
+    if module == 'voice':
+        if _voice_mod is None:
+            return "voice module not loaded"
+        if action == 'speak':
+            fn = getattr(_voice_mod, 'speak', None)
+            return str(fn(p.get('text', ''))) if fn else "speak not available"
+        if action == 'listen':
+            fn = getattr(_voice_mod, 'listen', None)
+            return str(fn()) if fn else "listen not available"
+        return f"voice: unknown action {action}"
+
+    elif module == 'os_auto':
+        if _os_auto_mod is None:
+            return "os_automation module not loaded"
+        fn = getattr(_os_auto_mod, action, None)
+        if fn is None:
+            return f"os_automation has no function {action!r}"
+        try:
+            return str(fn(**p))
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    elif module == 'memory':
+        if _pmem is None:
+            return "persistent_memory module not loaded"
+        if action == 'save':
+            _pmem.save_fact(p.get('key',''), p.get('value',''),
+                            category=p.get('category','general'))
+            return f"Saved: {p.get('key','')}"
+        if action == 'get':
+            fact = _pmem.get_fact(p.get('key',''))
+            return str(fact) if fact else "Not found"
+        if action == 'search':
+            results = _pmem.search_facts(p.get('query',''))
+            return json.dumps(results[:10], default=str)
+        return f"memory: unknown action {action}"
+
+    elif module == 'integration_hub':
+        if _hub_mod is None:
+            return "integration_hub module not loaded"
+        # Actions: 'aia.run', 'jarvis.execute', 'cheetah.tools', etc.
+        parts = action.split('.', 1)
+        cls_name = parts[0]
+        method   = parts[1] if len(parts) > 1 else ''
+        cls_map = {
+            'aia':     'AIAIntegration',
+            'jarvis':  'JarvisIntegration',
+            'cheetah': 'CheetahClawsIntegration',
+        }
+        cls_name_real = cls_map.get(cls_name, cls_name)
+        cls = getattr(_hub_mod, cls_name_real, None)
+        if cls is None:
+            return f"integration_hub: no class {cls_name_real!r}"
+        instance = cls()
+        fn = getattr(instance, method, None)
+        if fn is None:
+            return f"{cls_name_real} has no method {method!r}"
+        try:
+            arg = p.get('arg', p.get('task', p.get('command', '')))
+            return str(fn(arg) if arg else fn())
+        except Exception as e:
+            return f"ERROR: {e}"
+
+    return f"Unknown module: {module}. Use: voice|os_auto|memory|integration_hub"
+
+# ── List integrations ─────────────────────────────────────────────────────────
+
+def tool_list_integrations() -> str:
+    """List all loaded Devin modules and their status."""
+    status = _modules_status()
+    lines = ["Devin Integration Status:", "─" * 36]
+    for mod, loaded in status.items():
+        icon = '✓' if loaded else '✗'
+        lines.append(f"  {icon} {mod}")
+    # External repos
+    ext_dir = _ROOT / 'external'
+    if ext_dir.exists():
+        repos = [d.name for d in sorted(ext_dir.iterdir()) if d.is_dir()]
+        lines.append(f"\nExternal repos ({len(repos)}): " + ', '.join(repos[:15]))
+    # Module files
+    if _MODULES_DIR.exists():
+        mods = [f.stem for f in sorted(_MODULES_DIR.glob('*.py')) if not f.name.startswith('_')]
+        lines.append(f"\nmodules/ ({len(mods)}): " + ', '.join(mods[:20]))
+    return '\n'.join(lines)
+
+# ── Dynamic module discovery & execution ─────────────────────────────────────
+
+def tool_run_devin_module(module_path: str, function_name: str, args_json: str = '') -> str:
+    """
+    Dynamically load and call any function from any Devin module file.
+    module_path: relative to Devin root (e.g. 'modules/voice.py' or 'integrations/jarvis_tools.py')
+    function_name: function to call in that module
+    args_json: JSON object of keyword arguments (optional)
+    """
+    full_path = _ROOT / module_path
+    if not full_path.exists():
+        # Try modules/ prefix
+        alt = _ROOT / 'modules' / module_path
+        if alt.exists():
+            full_path = alt
+        else:
+            return f"ERROR: module not found: {module_path}"
+    try:
+        import importlib.util as _ilu
+        spec = _ilu.spec_from_file_location('_dyn_mod', str(full_path))
+        mod = _ilu.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        fn = getattr(mod, function_name, None)
+        if fn is None:
+            avail = [n for n in dir(mod) if not n.startswith('_') and callable(getattr(mod,n))]
+            return f"ERROR: {function_name!r} not found. Available: {', '.join(avail[:20])}"
+        kwargs = json.loads(args_json) if args_json.strip() else {}
+        result = fn(**kwargs)
+        return str(result)
+    except Exception as e:
+        return f"ERROR loading/calling {module_path}.{function_name}: {e}"
+
+
+def tool_discover_modules() -> str:
+    """
+    Discover all Python modules and their callable functions across the Devin codebase.
+    Returns a summary of modules and their top-level functions.
+    """
+    summary = []
+    search_dirs = [
+        (_ROOT / 'modules',      'modules/'),
+        (_ROOT / 'integrations', 'integrations/'),
+        (_ROOT / 'ai_integrations', 'ai_integrations/'),
+        (_ROOT / 'ai_core',      'ai_core/'),
+    ]
+    for base, prefix in search_dirs:
+        if not base.exists():
+            continue
+        py_files = sorted(base.glob('*.py'))
+        for f in py_files[:20]:
+            if f.name.startswith('_'): continue
+            try:
+                code = f.read_text(errors='replace')
+                fns = re.findall(r'^def\s+(\w+)', code, re.M)[:8]
+                classes = re.findall(r'^class\s+(\w+)', code, re.M)[:4]
+                summary.append(f"{prefix}{f.name}: funcs=[{', '.join(fns)}]"
+                               + (f" classes=[{', '.join(classes)}]" if classes else ''))
+            except Exception:
+                summary.append(f"{prefix}{f.name}: (unreadable)")
+    if not summary:
+        return "No modules discovered."
+    return f"Discovered {len(summary)} modules:\n" + '\n'.join(summary)
+
+# ── Note taking ───────────────────────────────────────────────────────────────
+
+def tool_take_note(title: str, content: str) -> str:
+    """Save a note to a markdown file in the notes/ directory."""
+    notes_dir = _ROOT / 'notes'
+    notes_dir.mkdir(exist_ok=True)
+    safe = re.sub(r'[^\w\-]', '_', title)[:50]
+    fname = notes_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{safe}.md"
+    fname.write_text(f"# {title}\n\n{content}\n", encoding='utf-8')
+    return f"Note saved: {fname}"
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1407,6 +1714,114 @@ TOOLS: Dict[str, Dict] = {
         "required": ["result"],
         "category": "control",
     },
+
+    # ── Network / HTTP ─────────────────────────────────────────────────────────
+    "http_request": {
+        "fn": tool_http_request,
+        "desc": "Make a raw HTTP request (GET/POST/PUT/DELETE). Returns status + body.",
+        "params": {
+            "url":     {"type": "string", "description": "Full URL"},
+            "method":  {"type": "string", "description": "HTTP method (default GET)"},
+            "headers": {"type": "string", "description": "JSON object of headers (optional)"},
+            "body":    {"type": "string", "description": "Request body string (optional)"},
+            "timeout": {"type": "integer", "description": "Timeout seconds (default 30)"},
+        },
+        "required": ["url"],
+        "category": "network",
+    },
+
+    # ── Data processing ────────────────────────────────────────────────────────
+    "parse_json": {
+        "fn": tool_parse_json,
+        "desc": "Parse JSON and optionally extract a value via dot-path (e.g. 'data.items.0.name').",
+        "params": {
+            "text": {"type": "string", "description": "JSON string to parse"},
+            "path": {"type": "string", "description": "Dot-path to extract (optional)"},
+        },
+        "required": ["text"],
+        "category": "data",
+    },
+
+    # ── Code analysis ──────────────────────────────────────────────────────────
+    "analyze_code": {
+        "fn": tool_analyze_code,
+        "desc": "Analyze a source file: line count, functions, classes, imports, preview.",
+        "params": {
+            "path":     {"type": "string", "description": "Path to source file"},
+            "question": {"type": "string", "description": "Optional question about the code"},
+        },
+        "required": ["path"],
+        "category": "code",
+    },
+
+    # ── Git advanced ───────────────────────────────────────────────────────────
+    "git_advanced": {
+        "fn": tool_git_advanced,
+        "desc": "Run git subcommands: 'log --oneline -10', 'diff HEAD', 'branch -a', 'stash list', etc.",
+        "params": {
+            "subcommand": {"type": "string", "description": "Git subcommand and args"},
+            "repo_path":  {"type": "string", "description": "Repository path (default: Devin root)"},
+        },
+        "required": ["subcommand"],
+        "category": "git",
+    },
+
+    # ── Devin module integration ───────────────────────────────────────────────
+    "devin_module": {
+        "fn": tool_devin_module,
+        "desc": "Call into Devin's built-in modules. module: voice|os_auto|memory|integration_hub. "
+                "Examples: module=voice,action=speak,params={\"text\":\"hello\"} | "
+                "module=integration_hub,action=jarvis.execute,params={\"command\":\"what time is it\"}",
+        "params": {
+            "module": {"type": "string", "description": "Module name: voice|os_auto|memory|integration_hub"},
+            "action": {"type": "string", "description": "Action/method to call"},
+            "params": {"type": "string", "description": "JSON params for the action (optional)"},
+        },
+        "required": ["module", "action"],
+        "category": "integrations",
+    },
+
+    # ── List integrations ──────────────────────────────────────────────────────
+    "list_integrations": {
+        "fn": tool_list_integrations,
+        "desc": "List all loaded Devin modules, external repos, and integration status.",
+        "params": {},
+        "required": [],
+        "category": "integrations",
+    },
+
+    # ── Note taking ────────────────────────────────────────────────────────────
+    "take_note": {
+        "fn": tool_take_note,
+        "desc": "Save a titled note as a markdown file in notes/ directory.",
+        "params": {
+            "title":   {"type": "string", "description": "Note title"},
+            "content": {"type": "string", "description": "Note content (markdown)"},
+        },
+        "required": ["title", "content"],
+        "category": "notes",
+    },
+
+    # ── Dynamic Devin module access ────────────────────────────────────────────
+    "run_devin_module": {
+        "fn": tool_run_devin_module,
+        "desc": "Dynamically load and call any function from any Devin module file. "
+                "E.g. module_path='modules/voice.py', function_name='speak', args_json='{\"text\":\"hello\"}'",
+        "params": {
+            "module_path":   {"type": "string", "description": "Relative path to .py file from Devin root"},
+            "function_name": {"type": "string", "description": "Function name to call"},
+            "args_json":     {"type": "string", "description": "JSON object of keyword arguments (optional)"},
+        },
+        "required": ["module_path", "function_name"],
+        "category": "integrations",
+    },
+    "discover_modules": {
+        "fn": tool_discover_modules,
+        "desc": "Discover all Python modules and their functions across the Devin codebase (modules/, integrations/, ai_integrations/, ai_core/).",
+        "params": {},
+        "required": [],
+        "category": "integrations",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -1763,7 +2178,19 @@ clipboard: clipboard_get, clipboard_set
 voice: speak, listen
 memory: remember, recall
 system: get_system_info, get_system_metrics
+network: http_request
+data: parse_json
+code: analyze_code
+git: git_advanced
+integrations: devin_module, list_integrations, run_devin_module, discover_modules
+notes: take_note
 control: task_complete
+
+## Full Devin codebase access
+Use `discover_modules` to explore all available modules across the Devin codebase.
+Use `run_devin_module` to call ANY function from ANY .py file in Devin's source tree.
+Use `devin_module` for the built-in modules (voice, os_auto, memory, integration_hub).
+Use `list_integrations` to see which modules are currently loaded.
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1979,6 +2406,7 @@ def _make_help() -> str:
   {cyan('/screenshot')}          Take a screenshot
   {cyan('/voice')}               Listen for voice input then run as task
   {cyan('/repos')}               List integrated repositories
+  {cyan('/integrations')}        Show all Devin modules + integration status
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -1992,7 +2420,7 @@ def _make_help() -> str:
   {dim('open Firefox and search for "Python tutorials"')}
   {dim('write a Python script that counts lines in all .py files')}
   {dim('take a screenshot and describe what you see')}
-  {dim('search today\'s AI news and summarize the top 3 stories')}
+  {dim("search today's AI news and summarize the top 3 stories")}
   {dim('what is 2+2')}              ← conversation (no tools needed)
   {dim('remember that my project is in /home/user/my_project')}
 """
@@ -2020,10 +2448,14 @@ def _banner(provider=None):
     disp  = green("✓ " + os.environ.get('DISPLAY','wayland')) if _HAS_DISPLAY else dim("✗ headless")
     facts = _DB.execute('SELECT count(*) FROM memories').fetchone()[0]
 
+    mods = _modules_status()
+    loaded = sum(1 for v in mods.values() if v)
+    mod_str = f"{loaded}/{len(mods)} modules"
+
     print(f"  ╭{'─'*(w-4)}╮")
     print(f"  │  {bold('Devin AGI v4.0.0'):<{w-18}}{' ':>8}│")
     print(f"  │  cwd: {str(_ROOT):<{w-14}}{' ':>2}│")
-    print(f"  │  model: {pname}   display: {disp}   memory: {dim(str(facts)+' facts'):<20}│")
+    print(f"  │  model: {pname}   display: {disp}   memory: {dim(str(facts)+' facts')}   {dim(mod_str+'  '+str(len(TOOLS))+' tools'):<25}│")
     print(f"  ╰{'─'*(w-4)}╯")
     print()
 
@@ -2081,7 +2513,6 @@ def repl(provider_name: str = '', model: str = ''):
         try:
             # Prompt: show provider name
             pname = provider.name.split('/')[-1][:20] if provider else "none"
-            prompt = f"{bold(cyan('❯'))} {bold(f'Devin-{pname}')}{bold(cyan(' ')}"
             user_input = input(f"{bold(cyan('❯'))} ").strip()
         except (EOFError, KeyboardInterrupt):
             print(dim("\nBye.")); break
@@ -2222,6 +2653,9 @@ def repl(provider_name: str = '', model: str = ''):
                 if not found:
                     print(dim("  No external repos found."))
                 print()
+
+            elif cmd == '/integrations':
+                print(f"\n{tool_list_integrations()}\n")
 
             else:
                 print(yellow(f"  Unknown command: {cmd}. Try /help"))
