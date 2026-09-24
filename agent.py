@@ -3407,7 +3407,8 @@ class HuggingFaceProvider:
                 content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
             msgs.append({"role": m["role"], "content": content})
 
-        # First try with native function calling (supported by some HF models)
+        # Use native function calling only for models known to support it
+        use_native_tools = self.model in self.TOOL_CALL_MODELS
         body_with_tools = {
             "model": self.model,
             "messages": msgs,
@@ -3422,22 +3423,22 @@ class HuggingFaceProvider:
 
         for attempt in range(4):
             try:
-                resp = _http_post(self.URL, self._headers(), body_with_tools, timeout=120)
-                if "error" in resp:
-                    # Model may not support tools — fall back to plain completion
-                    resp = _http_post(self.URL, self._headers(), body_plain, timeout=120)
+                if use_native_tools:
+                    resp = _http_post(self.URL, self._headers(), body_with_tools, timeout=120)
                     if "error" in resp:
-                        code = resp["error"].get("status_code", 0) or resp["error"].get("code", 0)
-                        msg  = resp["error"].get("message", str(resp["error"]))
-                        if code == 429:
-                            wait = 5 * (attempt + 1)
-                            print(yellow(f"\r  ⏳ HuggingFace rate-limited, retry in {wait}s…"), flush=True)
-                            time.sleep(wait); continue
-                        raise ValueError(f"HuggingFace error: {msg}")
-                    msg_obj = resp["choices"][0]["message"]
-                    text    = msg_obj.get("content") or ""
-                    clean, calls = self._parse_react_calls(text)
-                    return clean, calls
+                        # Fall back to plain if native tools fail
+                        use_native_tools = False
+                        resp = _http_post(self.URL, self._headers(), body_plain, timeout=120)
+                else:
+                    resp = _http_post(self.URL, self._headers(), body_plain, timeout=120)
+                if "error" in resp:
+                    code = resp["error"].get("status_code", 0) or resp["error"].get("code", 0)
+                    msg  = resp["error"].get("message", str(resp["error"]))
+                    if code == 429:
+                        wait = 5 * (attempt + 1)
+                        print(yellow(f"\r  ⏳ HuggingFace rate-limited, retry in {wait}s…"), flush=True)
+                        time.sleep(wait); continue
+                    raise ValueError(f"HuggingFace error: {msg}")
 
                 msg_obj = resp["choices"][0]["message"]
                 text    = msg_obj.get("content") or ""
@@ -3798,20 +3799,57 @@ def _fmt_args(args: dict, maxlen: int = 100) -> str:
         parts.append(f"{k}={s}")
     return ', '.join(parts)
 
+def _render_markdown(text: str) -> str:
+    """Simple terminal markdown renderer — bold/italic/code/headers."""
+    if not _TTY:
+        return text
+    lines = []
+    in_code = False
+    for line in text.split('\n'):
+        if line.startswith('```'):
+            in_code = not in_code
+            lines.append(dim(line))
+            continue
+        if in_code:
+            lines.append(dim(line))
+            continue
+        # Headers
+        if line.startswith('### '):
+            lines.append(bold(cyan(line[4:])))
+            continue
+        if line.startswith('## '):
+            lines.append(bold(cyan(line[3:])))
+            continue
+        if line.startswith('# '):
+            lines.append(bold(cyan(line[2:])))
+            continue
+        # Bold **text**
+        line = re.sub(r'\*\*(.+?)\*\*', lambda m: bold(m.group(1)), line)
+        # Italic *text*
+        line = re.sub(r'(?<!\*)\*([^*]+?)\*(?!\*)', lambda m: italic(m.group(1)), line)
+        # Inline code `text`
+        line = re.sub(r'`([^`]+)`', lambda m: cyan(m.group(1)), line)
+        # Bullet points
+        if line.startswith('- ') or line.startswith('* '):
+            line = dim('  •') + line[1:]
+        lines.append(line)
+    return '\n'.join(lines)
+
+
 def _print_tool_call(name: str, args: dict):
-    icon = {
-        'think': '💭', 'web_search': '🔍', 'web_fetch': '🌐',
-        'execute_shell': '🖥', 'execute_python': '🐍',
-        'read_file': '📖', 'write_file': '✏️', 'edit_file': '📝',
-        'screenshot': '📷', 'analyze_screenshot': '👁',
-        'find_on_screen': '🔎', 'mouse_click': '🖱', 'mouse_move': '➡',
-        'keyboard_type': '⌨', 'keyboard_press': '⌨', 'keyboard_hotkey': '⌨',
-        'open_application': '🚀', 'open_browser': '🌐',
-        'remember': '🧠', 'recall': '🧠',
-        'task_complete': '✅', 'speak': '🔊', 'listen': '🎤',
-        'git_command': '🔀', 'sleep': '⏱',
-    }.get(name, '▶')
-    print(f"\n  {blue(icon)} {cyan(name)}({_fmt_args(args)})", flush=True)
+    """Print tool call in Claude Code style: ● name(args)"""
+    print(f"\n{bold(blue('●'))} {bold(name)}({_fmt_args(args)})", flush=True)
+
+
+def _print_tool_result(result: str, is_error: bool = False):
+    """Print tool result in Claude Code style: ↳ result"""
+    preview = str(result)[:400]
+    if '\n' in preview:
+        first_line = preview.split('\n')[0]
+        more_lines = preview.count('\n')
+        preview = first_line + (f"  [{more_lines} more lines]" if more_lines > 1 else "")
+    colour = red if is_error else dim
+    print(f"{colour('↳')} {colour(preview)}", flush=True)
 
 def _estimate_chars(msgs: list) -> int:
     """Estimate total character count of a message list."""
@@ -3926,10 +3964,19 @@ def run_agent(task: str, provider, max_steps: int = 100,
         if text and text.strip():
             clean = re.sub(r'^\s*\(acting\)\s*', '', text.strip(), flags=re.I)
             if clean and not quiet:
-                # Print with word wrap for long responses
-                wrapped = textwrap.fill(clean, width=max(60, shutil.get_terminal_size((80,24)).columns - 10),
-                                        subsequent_indent='         ')
-                print(f"\n{bold(cyan('Devin'))}  {wrapped}")
+                rendered = _render_markdown(clean)
+                cols = max(60, shutil.get_terminal_size((80, 24)).columns - 6)
+                # Only word-wrap plain lines (not markdown headers/code)
+                out_lines = []
+                for ln in rendered.split('\n'):
+                    raw_ln = re.sub(r'\033\[[^m]+m', '', ln)
+                    if len(raw_ln) > cols:
+                        wrapped = textwrap.fill(ln, width=cols, subsequent_indent='  ',
+                                                break_long_words=False, break_on_hyphens=False)
+                        out_lines.append(wrapped)
+                    else:
+                        out_lines.append(ln)
+                print(f"\n{bold(cyan('Devin'))}  " + '\n       '.join(out_lines))
 
         # Build assistant message
         if isinstance(provider, ClaudeProvider):
@@ -3970,20 +4017,16 @@ def run_agent(task: str, provider, max_steps: int = 100,
             if name == "task_complete" or result.startswith("TASK_COMPLETE:"):
                 final_result = result.replace("TASK_COMPLETE:", "").strip()
                 if not quiet:
-                    print(f"  {green('←')} {dim(str(result)[:300])}")
+                    _print_tool_result(str(result))
                     print()
                     print(_hr())
-                    print(green(bold("✅  Task complete")))
+                    print(f"{green(bold('✓'))} {bold('Task complete')}")
                     if final_result:
-                        print(textwrap.fill(final_result,
-                                            width=shutil.get_terminal_size((80,24)).columns - 4))
+                        print(f"\n{_render_markdown(final_result)}\n")
                 return final_result
 
             if not quiet:
-                # Preview — first 300 chars, handle multi-line
-                preview = str(result)[:400].replace('\n', ' ↵ ')
-                colour = red if str(result).startswith('ERROR:') else dim
-                print(f"  {dim('←')} {colour(preview)}")
+                _print_tool_result(str(result), is_error=str(result).startswith('ERROR:'))
 
             tool_results.append({
                 "call_id": call.get("id", f"t{step}_{name}"),
@@ -4047,6 +4090,9 @@ def _make_help() -> str:
   {cyan('/voice')}               Listen for voice input then run as task
   {cyan('/repos')}               List integrated repositories
   {cyan('/integrations')}        Show all Devin modules + integration status
+  {cyan('/compact')}             Compress conversation history to save context
+  {cyan('/debug')}               Show context size, provider, and diagnostics
+  {cyan('/audit [target]')}      Run a system/security audit
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -4067,38 +4113,37 @@ def _make_help() -> str:
 """
 
 def _banner(provider=None):
-    lines = [
-        "",
-        bold(cyan("  ██████╗ ███████╗██╗   ██╗██╗███╗   ██╗")),
-        bold(cyan("  ██╔══██╗██╔════╝██║   ██║██║████╗  ██║")),
-        bold(cyan("  ██║  ██║█████╗  ██║   ██║██║██╔██╗ ██║")),
-        bold(cyan("  ██║  ██║██╔══╝  ╚██╗ ██╔╝██║██║╚██╗██║")),
-        bold(cyan("  ██████╔╝███████╗ ╚████╔╝ ██║██║ ╚████║")),
-        bold(cyan("  ╚═════╝ ╚══════╝  ╚═══╝  ╚═╝╚═╝  ╚═══╝")),
-        "",
-    ]
-    for l in lines:
-        print(l)
+    w = max(60, shutil.get_terminal_size((80, 24)).columns - 1)
+    print()
+    print(f"  {bold(cyan('Devin AGI'))}  {dim('v4.0.0')}")
+    print(f"  {dim('─' * (w - 4))}")
 
-    # Status box
-    w = max(60, shutil.get_terminal_size((80,24)).columns - 1)
-    gk  = green('●') if os.environ.get('GEMINI_API_KEY')    else dim('○')
-    ak  = green('●') if os.environ.get('ANTHROPIC_API_KEY') else dim('○')
-    ok  = green('●') if os.environ.get('OPENAI_API_KEY')    else dim('○')
-    hfk = green('●') if (os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_API_KEY')) else dim('○')
-    pname = green(provider.name) if provider else red("no provider — set API key in .env")
-    disp  = green("✓ display") if _HAS_DISPLAY else yellow("headless")
+    # Provider / model line
+    if provider:
+        prov_part = provider.name.split('/')[0] if '/' in provider.name else 'unknown'
+        model_part = provider.name.split('/')[-1] if '/' in provider.name else provider.name
+        # Try to figure out provider type
+        if isinstance(provider, GeminiProvider):   prov_part = 'gemini'
+        elif isinstance(provider, ClaudeProvider): prov_part = 'claude'
+        elif isinstance(provider, OpenAIProvider): prov_part = 'openai'
+        elif isinstance(provider, HuggingFaceProvider): prov_part = 'huggingface'
+        elif isinstance(provider, OllamaProvider): prov_part = 'ollama'
+        p_status = green('✓ Connected to ' + prov_part.capitalize()) + f' ({dim(provider.name)})'
+    else:
+        p_status = red('✗ No provider — set API key in .env')
+
     facts = _DB.execute('SELECT count(*) FROM memories').fetchone()[0]
     mods = _modules_status()
     loaded = sum(1 for v in mods.values() if v)
+    disp   = green('display') if _HAS_DISPLAY else yellow('headless')
 
-    print(f"  ╭{'─'*(w-4)}╮")
-    print(f"  │  {bold('Devin AGI  v4.0')}")
-    print(f"  │  {dim('cwd:')} {str(_ROOT)}")
-    print(f"  │  {dim('model:')} {pname}")
-    print(f"  │  {dim('keys:')} Gemini {gk}  Claude {ak}  OpenAI {ok}  HuggingFace {hfk}")
-    print(f"  │  {dim('os:')} {_PLATFORM}  {disp}  {dim(str(facts)+' memories')}  {dim(str(loaded)+'/'+str(len(mods))+' modules')}  {dim(str(len(TOOLS))+' tools')}")
-    print(f"  ╰{'─'*(w-4)}╯")
+    print(f"  {p_status}")
+    print(f"  {dim('cwd:')}      {str(_ROOT)}")
+    print(f"  {dim('platform:')} {_PLATFORM}  {disp}")
+    print(f"  {dim('tools:')}    {bold(str(len(TOOLS)))}  ·  "
+          f"{dim(str(loaded)+'/'+str(len(mods))+' modules')}  ·  "
+          f"{dim(str(facts)+' memories')}")
+    print(f"  {dim('─' * (w - 4))}")
     print()
 
 def _status_line(provider):
@@ -4148,9 +4193,22 @@ def repl(provider_name: str = '', model: str = ''):
     _banner(provider)
 
     if provider:
-        print(dim("  Talk to Devin — ask a question, give a task, or type /help. (exit to quit)\n"))
+        print(dim("  Talk to Devin — ask anything, give a task, or type /help for commands."))
+        print()
+        tips = [
+            "open firefox and search for python tutorials",
+            "write a bash script that backs up my home folder",
+            "take a screenshot and describe what's on screen",
+            "what ports are open on localhost?",
+            "create a Python web server in the current directory",
+        ]
+        import random
+        print(f"  {dim('Try:')} {italic(random.choice(tips))}")
+        print()
     else:
-        print(dim("  No provider. Add an API key to .env, then restart.\n"))
+        print(red("  ✗ No provider. Add an API key to .env, then restart."))
+        print(dim("    GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or HF_TOKEN"))
+        print()
 
     cur_pname = provider_name
     # Persistent conversation history
@@ -4158,9 +4216,7 @@ def repl(provider_name: str = '', model: str = ''):
 
     while True:
         try:
-            # Prompt: show provider name
-            pname = provider.name.split('/')[-1][:20] if provider else "none"
-            user_input = input(f"{bold(cyan('❯'))} ").strip()
+            user_input = input(f"{bold(cyan('❯'))} {bold('Devin-4.0')} ").strip()
         except (EOFError, KeyboardInterrupt):
             print(dim("\nBye.")); break
 
@@ -4314,6 +4370,30 @@ def repl(provider_name: str = '', model: str = ''):
 
             elif cmd == '/integrations':
                 print(f"\n{tool_list_integrations()}\n")
+
+            elif cmd == '/compact':
+                before = len(conv_messages)
+                compacted = _compact_messages(list(conv_messages))
+                conv_messages.clear()
+                conv_messages.extend(compacted)
+                print(green(f"  ✓ Compacted {before} → {len(conv_messages)} messages"))
+
+            elif cmd == '/audit':
+                target = arg or 'local'
+                print(f"\n{bold('Running system audit…')}")
+                result = run_agent(f"Perform a comprehensive audit of: {target}. "
+                                   "Include: running processes, open ports, disk usage, "
+                                   "installed tools, current user/permissions. "
+                                   "Format results in clean sections.",
+                                   provider, conv_messages=conv_messages)
+
+            elif cmd == '/debug':
+                print(f"\n  {bold('Context')}: {_estimate_chars(conv_messages)//1000}k chars  "
+                      f"{len(conv_messages)} messages")
+                print(f"  {bold('Provider')}: {provider.name if provider else 'none'}")
+                print(f"  {bold('Tools')}: {len(TOOLS)}")
+                print(f"  {bold('Display')}: {'yes' if _HAS_DISPLAY else 'headless'}")
+                print(f"  {bold('Platform')}: {_PLATFORM}\n")
 
             else:
                 print(yellow(f"  Unknown command: {cmd}. Try /help"))
