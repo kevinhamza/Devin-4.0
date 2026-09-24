@@ -44,54 +44,92 @@ Done. Firefox is open showing python tutorial search results.
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+ (for TypeScript CLI)
-- Linux/macOS/Windows
-- A display server (X11 on Linux, native on macOS/Windows)
-- API key for at least one model provider
+- Python 3.10+ (tested with 3.13 in this repo)
+- Node.js 18+ (tested with 24) — only needed for the TypeScript CLI
+- Linux (verified) / macOS (implemented, not verified) / Windows (implemented, not verified)
+- A display server if you want GUI automation (X11 on Linux; native elsewhere)
+- One of: `HF_TOKEN` (free tier — verified), `ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`, or `OPENAI_API_KEY`
+
+### Cold-clone install (what's verified this session)
 
 ```bash
-# Clone the repository
+# 1. Clone and enter the tree
 git clone https://github.com/kevinhamza/Devin-4.0
 cd Devin-4.0
 
-# Set your API key (never commit this file)
-cp api_keys.yaml.example .env
-# Edit .env and add your keys:
-echo "GEMINI_API_KEY=your_key_here" > .env
-```
+# 2. Python venv + pinned deps (requirements.lock is the reproducible set;
+#    requirements.txt is the loose human-editable one)
+python3 -m venv venv
+venv/bin/pip install -r requirements.lock
 
-### Python CLI (Recommended for first run)
-
-```bash
-# Activate the virtual environment
-source venv/bin/activate
-
-# Interactive mode
-python main.py
-
-# One-shot (non-interactive)
-python main.py "open a terminal and run ls -la"
-
-# Voice mode
-python main.py --voice
-
-# Smoke test
-python main.py --test
-```
-
-### TypeScript CLI (Full-featured)
-
-```bash
-npm install
+# 3. Node deps + TypeScript build.
+#    --legacy-peer-deps is needed once: the pinned eslint 9 + @typescript-eslint 7
+#    combination has an unresolvable peer-dep conflict that npm 9+ refuses by default.
+npm install --legacy-peer-deps
 npm run build
+
+# 4. Environment file (never commit .env — it's in .gitignore already)
+cp .env.example .env
+# Then edit .env and set at least one of:
+#   HF_TOKEN=hf_...           (free tier at https://huggingface.co/settings/tokens)
+#   ANTHROPIC_API_KEY=sk-...
+#   GEMINI_API_KEY=...
+#   OPENAI_API_KEY=sk-...
+```
+
+### Python CLI
+
+```bash
+# Smoke test — should print 91 tools, 63 schemas, HAS flags for available providers
+venv/bin/python main.py --test
+
+# One-shot
+venv/bin/python main.py "open youtube and search for mark rober"
+
+# Interactive REPL
+venv/bin/python main.py
+
+# Voice mode (needs a working mic + pyttsx3/SpeechRecognition — both installed by requirements.lock)
+venv/bin/python main.py --voice
+```
+
+### TypeScript CLI
+
+```bash
 ./devin                              # Interactive mode
-./devin "take a screenshot"          # One-shot
-./devin --provider anthropic         # Use Claude
+./devin --print "take a screenshot"  # One-shot
+./devin --provider anthropic         # Force Claude (needs ANTHROPIC_API_KEY)
+./devin --provider huggingface       # Force HF (needs HF_TOKEN)
 ./devin --plan                       # Plan mode (describe, don't run)
 ./devin --auto                       # Auto-approve all actions
 ./devin --web --port 3000            # Web UI
 ```
+
+The `./devin` launcher prefers the compiled `dist/cli.js` when it exists,
+otherwise it falls back to `venv/bin/python main.py`. Both entry points
+route through the same tool registry.
+
+### Full pytest suite
+
+```bash
+venv/bin/python -m pytest tests/ --ignore=tests/performance -q
+# Expected on this branch: 102 passed, 9 skipped, 0 failed
+```
+
+### Troubleshooting
+
+- **`npm install` fails with `ERESOLVE`** — use `--legacy-peer-deps`. The
+  eslint-9 vs @typescript-eslint-7 pinning is a pre-existing conflict.
+- **`main.py` prints `[LLM unavailable — Hugging Face free-tier credits are used up…]`** —
+  either the HF token hit its monthly cap (rotate, subscribe to PRO, or add
+  another provider key), or the token is stale.
+- **Screenshots produce ~3 KB PNGs** — the screen is highly uniform (e.g., a
+  locked screen or a mostly-black terminal); the capture path is fine.
+- **`pyautogui` / `mss` refuse to import on a fresh Kali/Debian** — install
+  `sudo apt install python3-tk python3-dev libxcb-xtest0 libxcb-xtest0-dev` (or
+  the distro equivalent). The Python bindings are in `requirements.lock`
+  already; the system libraries are separate.
 
 ---
 
