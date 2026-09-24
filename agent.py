@@ -23,6 +23,7 @@ API keys (.env or environment):
   GEMINI_API_KEY     https://aistudio.google.com/app/apikey
   ANTHROPIC_API_KEY  https://console.anthropic.com/
   OPENAI_API_KEY     https://platform.openai.com/api-keys
+  HF_TOKEN           https://huggingface.co/settings/tokens  (free)
 """
 
 from __future__ import annotations
@@ -2338,12 +2339,205 @@ class OpenAIProvider:
                 raise ValueError(f"OpenAI HTTP {e.code}: {body_txt[:300]}")
         raise ValueError("OpenAI: max retries exceeded")
 
+# ─── Ollama (local) ───────────────────────────────────────────────────────────
+
+class OllamaProvider:
+    """Local LLM via Ollama (https://ollama.com). No API key required."""
+
+    def __init__(self, base_url: str = '', model: str = 'llama3.2'):
+        self.base_url = (base_url or os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')).rstrip('/')
+        self.model    = model
+        self.name     = f"ollama/{model}"
+
+    def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
+        msgs: List[dict] = []
+        if system:
+            msgs.append({"role": "system", "content": system})
+        for m in messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
+            msgs.append({"role": m["role"], "content": content})
+
+        body = {"model": self.model, "messages": msgs, "stream": False,
+                "options": {"num_predict": 4096}}
+        hdrs = {"Content-Type": "application/json"}
+        url  = f"{self.base_url}/api/chat"
+
+        for attempt in range(3):
+            try:
+                resp = _http_post(url, hdrs, body, timeout=120)
+                msg  = resp.get("message", {})
+                text = msg.get("content", "")
+                # Ollama doesn't support native tool calling — use ReAct parsing
+                pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
+                calls = []
+                for m in pattern.finditer(text):
+                    try:
+                        obj = json.loads(m.group(1).strip())
+                        if isinstance(obj, dict) and 'name' in obj:
+                            calls.append({'name': obj['name'],
+                                          'args': obj.get('args', {})})
+                    except Exception:
+                        pass
+                clean = pattern.sub('', text).strip()
+                return clean, calls
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(2); continue
+                raise ValueError(f"Ollama error: {e}")
+        raise ValueError("Ollama: max retries exceeded")
+
+# ─── HuggingFace ──────────────────────────────────────────────────────────────
+
+class HuggingFaceProvider:
+    """
+    HuggingFace Inference API provider using the OpenAI-compatible endpoint.
+    Supports function calling for capable models (LLaMA-3, Qwen, Mixtral).
+    Falls back to ReAct-style text parsing for models without native tool support.
+    """
+    URL = "https://api-inference.huggingface.co/v1/chat/completions"
+    MODELS = [
+        'meta-llama/Meta-Llama-3.1-70B-Instruct',
+        'Qwen/Qwen2.5-72B-Instruct',
+        'mistralai/Mixtral-8x7B-Instruct-v0.1',
+        'meta-llama/Meta-Llama-3.1-8B-Instruct',
+        'mistralai/Mistral-7B-Instruct-v0.3',
+        'microsoft/Phi-3.5-mini-instruct',
+    ]
+    # ReAct-style tool call markers for text-parsing fallback
+    _CALL_OPEN  = '<tool_call>'
+    _CALL_CLOSE = '</tool_call>'
+
+    def __init__(self, api_key: str, model: str = ''):
+        self.api_key = api_key
+        self.model   = model or self.MODELS[0]
+        self.name    = f"huggingface/{self.model.split('/')[-1]}"
+
+    def _headers(self) -> dict:
+        return {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+    def _react_system_suffix(self) -> str:
+        return (
+            "\n\nWhen you need to use a tool, output ONLY this JSON block on its own line "
+            "and nothing else after it:\n"
+            f"{self._CALL_OPEN}{{\"name\": \"tool_name\", \"args\": {{\"key\": \"value\"}}}}{self._CALL_CLOSE}\n"
+            "Wait for the tool result before continuing.\n"
+            "When the task is done, output your final answer without any tool_call block."
+        )
+
+    def _parse_react_calls(self, text: str) -> Tuple[str, List[dict]]:
+        """Extract tool calls embedded in model text output."""
+        calls = []
+        clean = text
+        pattern = re.compile(
+            re.escape(self._CALL_OPEN) + r'(.*?)' + re.escape(self._CALL_CLOSE),
+            re.DOTALL
+        )
+        for m in pattern.finditer(text):
+            raw = m.group(1).strip()
+            try:
+                obj = json.loads(raw)
+                if isinstance(obj, dict) and 'name' in obj:
+                    calls.append({'name': obj['name'],
+                                  'args': obj.get('args', obj.get('input', obj.get('arguments', {})))})
+            except Exception:
+                pass
+        clean = pattern.sub('', text).strip()
+        return clean, calls
+
+    def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
+        msgs: List[dict] = []
+        sys_content = system + self._react_system_suffix() if system else self._react_system_suffix()
+        msgs.append({"role": "system", "content": sys_content})
+        for m in messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
+            msgs.append({"role": m["role"], "content": content})
+
+        # First try with native function calling (supported by some HF models)
+        body_with_tools = {
+            "model": self.model,
+            "messages": msgs,
+            "max_tokens": 4096,
+            "tools": _tool_schema_openai(),
+        }
+        body_plain = {
+            "model": self.model,
+            "messages": msgs,
+            "max_tokens": 4096,
+        }
+
+        for attempt in range(4):
+            try:
+                resp = _http_post(self.URL, self._headers(), body_with_tools, timeout=120)
+                if "error" in resp:
+                    # Model may not support tools — fall back to plain completion
+                    resp = _http_post(self.URL, self._headers(), body_plain, timeout=120)
+                    if "error" in resp:
+                        code = resp["error"].get("status_code", 0) or resp["error"].get("code", 0)
+                        msg  = resp["error"].get("message", str(resp["error"]))
+                        if code == 429:
+                            wait = 5 * (attempt + 1)
+                            print(yellow(f"\r  ⏳ HuggingFace rate-limited, retry in {wait}s…"), flush=True)
+                            time.sleep(wait); continue
+                        raise ValueError(f"HuggingFace error: {msg}")
+                    msg_obj = resp["choices"][0]["message"]
+                    text    = msg_obj.get("content") or ""
+                    clean, calls = self._parse_react_calls(text)
+                    return clean, calls
+
+                msg_obj = resp["choices"][0]["message"]
+                text    = msg_obj.get("content") or ""
+                # Native tool calls
+                native_calls = []
+                for tc in (msg_obj.get("tool_calls") or []):
+                    fn = tc.get("function", {})
+                    try:
+                        args = json.loads(fn.get("arguments", "{}"))
+                    except Exception:
+                        args = {}
+                    native_calls.append({
+                        "id":   tc.get("id", f"hf_{fn.get('name','')}"),
+                        "name": fn.get("name"),
+                        "args": args,
+                    })
+                if native_calls:
+                    return text or "", native_calls
+                # Try ReAct-style parsing even on plain response
+                clean, react_calls = self._parse_react_calls(text)
+                if react_calls:
+                    return clean, react_calls
+                return text or "", []
+
+            except urllib.error.HTTPError as e:
+                body_txt = e.read().decode('utf-8', errors='replace')
+                if e.code == 429:
+                    wait = 5 * (attempt + 1)
+                    print(yellow(f"\r  ⏳ HuggingFace rate limited, retry in {wait}s…"), flush=True)
+                    time.sleep(wait); continue
+                if e.code == 503:
+                    wait = 8 * (attempt + 1)
+                    print(yellow(f"\r  ⏳ HuggingFace model loading ({self.model}), retry in {wait}s…"), flush=True)
+                    time.sleep(wait); continue
+                raise ValueError(f"HuggingFace HTTP {e.code}: {body_txt[:300]}")
+            except Exception as exc:
+                if attempt < 3:
+                    time.sleep(3); continue
+                raise
+        raise ValueError(f"HuggingFace: max retries exceeded for model {self.model}")
+
 # ─── Provider selector ────────────────────────────────────────────────────────
 
 def _pick_provider(name: str = '', model: str = ''):
-    gk = os.environ.get('GEMINI_API_KEY', '')
-    ak = os.environ.get('ANTHROPIC_API_KEY', '')
-    ok = os.environ.get('OPENAI_API_KEY', '')
+    gk  = os.environ.get('GEMINI_API_KEY', '')
+    ak  = os.environ.get('ANTHROPIC_API_KEY', '')
+    ok  = os.environ.get('OPENAI_API_KEY', '')
+    hfk = os.environ.get('HF_TOKEN', '') or os.environ.get('HUGGINGFACE_API_KEY', '')
 
     if name in ('gemini', 'google'):
         if not gk: raise ValueError("GEMINI_API_KEY not set")
@@ -2354,14 +2548,24 @@ def _pick_provider(name: str = '', model: str = ''):
     if name == 'openai':
         if not ok: raise ValueError("OPENAI_API_KEY not set")
         return OpenAIProvider(ok, model or 'gpt-4o-mini')
+    if name in ('huggingface', 'hf', 'hface'):
+        if not hfk: raise ValueError("HF_TOKEN not set (get one free at huggingface.co/settings/tokens)")
+        return HuggingFaceProvider(hfk, model or '')
+    if name in ('ollama', 'local'):
+        return OllamaProvider(model=model or 'llama3.2')
 
-    if gk: return GeminiProvider(gk, model or 'gemini-3.6-flash')
-    if ak: return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
-    if ok: return OpenAIProvider(ok, model or 'gpt-4o-mini')
+    if gk:  return GeminiProvider(gk, model or 'gemini-3.6-flash')
+    if ak:  return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
+    if ok:  return OpenAIProvider(ok, model or 'gpt-4o-mini')
+    if hfk: return HuggingFaceProvider(hfk, model or '')
     raise ValueError(
         "No API key found.\n"
-        "  Set GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY in .env\n"
-        "  Free key: https://aistudio.google.com/app/apikey")
+        "  Set one of these in .env:\n"
+        "    GEMINI_API_KEY      — https://aistudio.google.com/app/apikey  (free)\n"
+        "    ANTHROPIC_API_KEY   — https://console.anthropic.com/\n"
+        "    OPENAI_API_KEY      — https://platform.openai.com/api-keys\n"
+        "    HF_TOKEN            — https://huggingface.co/settings/tokens  (free)"
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SYSTEM PROMPT
@@ -2372,92 +2576,125 @@ _DISPLAY_NOTE = ("DISPLAY: AVAILABLE — mouse, keyboard, screenshot, and window
                  "DISPLAY: HEADLESS — GUI tools unavailable. Focus on shell/file/web tasks.")
 
 SYSTEM_PROMPT = f"""\
-You are Devin, an advanced OS-controlling AI agent.
-You have {len(TOOLS)} tools: shell, files, web, mouse, keyboard, windows, apps,
-screenshots, vision, clipboard, voice, memory, git, and more.
+You are Devin, an advanced autonomous AI agent that fully controls the operating system.
+You have {len(TOOLS)} tools covering every aspect of computer control.
 {_DISPLAY_NOTE}
 
-## Core operating principle
-You NEVER stop mid-task. You complete what you start or clearly explain what
-is blocking completion. You are like a senior engineer: persistent, methodical,
-and thorough.
+## Identity and capabilities
+You are an expert software engineer, system administrator, security researcher, and
+power user combined. You can:
+- Control the entire OS like a human user (mouse, keyboard, screen, windows, apps)
+- Write, run, and debug code in any language
+- Automate complex multi-step workflows
+- Browse the web and interact with web applications
+- Manage files, processes, and system resources
+- Perform authorized security assessments (with explicit permission only)
+- Remember facts and context across sessions
+- Communicate by voice when speakers/microphone are available
 
-## Conversation behavior
-- In conversation (no tools needed): respond directly and helpfully, like a brilliant
-  colleague. Be concise, informative, and natural.
-- When given a task: execute it autonomously using tools until fully done.
-- You can ask clarifying questions when requirements are genuinely ambiguous.
-- Remember context from earlier in the conversation.
+## Autonomous execution mandate
+You NEVER stop mid-task unless physically impossible to continue.
+You NEVER say "I cannot do that" when tools are available.
+You NEVER ask "should I proceed?" for routine tasks.
+You complete tasks exactly like a skilled engineer sitting at the keyboard.
+You are persistent: errors, retries, and alternative approaches are expected — not failures.
 
-## Task execution loop
-1. THINK — call `think` to plan the approach before acting
-2. OBSERVE — use `analyze_screenshot` or `read_file` to understand current state
-3. ACT — call the appropriate tool
-4. VERIFY — check the result was what you expected
-5. CONTINUE — keep going until task is fully complete
-6. COMPLETE — call `task_complete` with a clear summary
+## Thinking and planning
+- For complex tasks: call `think` first to reason through the approach step by step.
+- Break large tasks into clear sequential sub-goals.
+- Use `remember` to store intermediate state if the task is long.
+- When you encounter unexpected state, re-observe before re-acting.
 
-## Error recovery rules
-- If a tool returns ERROR: try an alternative approach. NEVER give up.
-- If web_search fails: try web_fetch on a known URL directly.
-- If a GUI action fails: take a screenshot first, then try again with correct coords.
-- If an app isn't responding: check with list_windows, use sleep to wait.
-- If a model fails: the system will auto-retry with a different model.
-- Errors are INFORMATION, not stopping points.
+## Conversation mode (no tools needed)
+When the user asks a question or wants to chat:
+- Answer directly, completely, and helpfully, like a brilliant senior colleague.
+- Be concise but thorough. Use examples when they help.
+- Remember everything from the conversation — you have full context.
+- No need to call tools unless the question requires current information.
 
-## GUI control workflow (when display available)
-1. `open_application("firefox")` + `sleep(2)` — launch and wait
-2. `analyze_screenshot("Where is the address bar? Give exact pixel coordinates.")` — observe
-3. `mouse_click(x, y)` — click address bar
-4. `keyboard_hotkey(["ctrl","a"])` then `keyboard_type("url")` — type
-5. `keyboard_press("Return")` — submit
-6. `sleep(2)` + `analyze_screenshot("Did it navigate? What do I see?")` — verify
+## The core execution loop (for every task)
+1. THINK   — reason about the plan (think tool or internal)
+2. OBSERVE — understand current state (screenshot, read_file, get_system_info)
+3. PLAN    — determine exact sequence of actions
+4. ACT     — execute the first action
+5. VERIFY  — confirm the action had the expected effect (screenshot, check output)
+6. LOOP    — continue to next action or recover if wrong
+7. COMPLETE — only call task_complete when the outcome is verified, not just attempted
 
-## Tool categories
-reasoning: think
-web: web_search, web_fetch, open_browser
-shell: execute_shell, execute_python, list_processes, kill_process, sleep
-files: read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files, git_command
-vision: screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window
-mouse: mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
-keyboard: keyboard_type, keyboard_press, keyboard_hotkey, click_and_type
-windows: get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab
-apps: open_application, open_terminal, close_application
-browser: browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
-clipboard: clipboard_get, clipboard_set
-voice: speak, listen
-memory: remember, recall
-system: get_system_info, get_system_metrics
-network: http_request
-data: parse_json
-code: analyze_code
-git: git_advanced
-integrations: devin_module, list_integrations, run_devin_module, discover_modules
-notes: take_note
-control: task_complete
+## Error recovery (NEVER give up)
+- Tool returns ERROR → try an alternative approach immediately
+- GUI click missed → take screenshot, re-analyze coordinates, retry
+- App not responding → check list_windows, sleep, try keyboard shortcut
+- Network/web fails → try a different URL or approach
+- Shell command fails → inspect the error, fix the command or environment
+- Permission denied → try with sudo or check file permissions first
+- IMPORTANT: 3 failed attempts with same approach → switch to a completely different strategy
 
-## OS automation workflow (real user simulation)
-For any GUI task, always follow: OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY
-Example — open Firefox and search:
-1. open_application("firefox") + sleep(2)
-2. screenshot() + analyze_screenshot("where is address bar? give exact X,Y coords")
-3. mouse_click(x, y) + keyboard_hotkey(["ctrl","a"]) + keyboard_type("https://google.com") + keyboard_press("Return")
-4. sleep(2) + screenshot() + analyze_screenshot("what loaded? was it successful?")
-5. task_complete("searched for X in Firefox")
+## Real OS control workflow (GUI tasks)
+ALWAYS follow: OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY
+Never click blind coordinates. Always verify with screenshot first.
 
-## Browser automation workflow (Selenium/Playwright)
-For headless or programmatic browser tasks:
-1. browser_start() [or browser_navigate(url) which auto-starts]
-2. browser_navigate("https://example.com")
-3. browser_click("#search") + browser_type("#search", "query") + browser_execute_js("document.forms[0].submit()")
-4. browser_get_text() → parse results
+Standard GUI workflow:
+1. open_application("appname") + sleep(2)         ← launch, wait for load
+2. screenshot() → analyze_screenshot("describe UI, list coordinates of: address bar, buttons, inputs")
+3. mouse_click(x, y) [from analysis]              ← precise click
+4. keyboard_hotkey(["ctrl","a"]) + keyboard_type("text")  ← type
+5. keyboard_press("Return") or mouse_click(submit_x, submit_y)
+6. sleep(1) + screenshot() → analyze_screenshot("verify: did it work?")
+7. If verified: task_complete / continue to next step
+8. If wrong: re-observe, diagnose, retry with corrected approach
+
+## Browser automation (Selenium/Playwright — headless capable)
+1. browser_navigate("https://url.com")  ← auto-starts browser
+2. browser_get_text() → understand page structure
+3. browser_click("selector") + browser_type("selector", "text")
+4. browser_execute_js("return document.title")  ← verify
 5. browser_close()
 
-## Full Devin codebase access
-Use `discover_modules` to explore all available modules across the Devin codebase.
-Use `run_devin_module` to call ANY function from ANY .py file in Devin's source tree.
-Use `devin_module` for the built-in modules (voice, os_auto, memory, integration_hub).
-Use `list_integrations` to see which modules are currently loaded.
+## Security and authorized testing
+For authorized penetration testing and security research:
+- Always verify explicit authorization before any security tool use
+- Use execute_shell to run nmap, burpsuite, metasploit, etc. with AUTHORIZED targets only
+- Document findings with write_file
+- Use web_fetch to research CVEs and techniques
+- For lab environments (HackTheBox, TryHackMe, DVWA, etc.) — proceed with tools
+
+## Multi-step autonomous workflow example
+Task: "Test the webapp on localhost:8080 for SQL injection"
+1. think("Plan: check if server is running, find login/input forms, test each")
+2. execute_shell("curl -s http://localhost:8080/ | head -50") → observe structure
+3. web_fetch("http://localhost:8080/login") → identify form fields
+4. execute_shell("sqlmap -u 'http://localhost:8080/login' --data='user=test&pass=test' --batch")
+5. write_file("security_report.txt", results) → document findings
+6. task_complete("SQL injection test complete. Results saved to security_report.txt")
+
+## Full Devin codebase integration
+- `discover_modules` — find all capabilities across 103+ modules and 24+ repos
+- `run_devin_module` — call ANY function from ANY Python file in the codebase
+- `devin_module` — invoke built-in modules (voice, os_automation, integration_hub, etc.)
+- `list_integrations` — see currently loaded integration status
+- All of Devin's modules, external repos, and tools are available to you.
+
+## Tool reference (all {len(TOOLS)} tools)
+reasoning:    think
+web:          web_search, web_fetch, open_browser, http_request, parse_json
+shell:        execute_shell, execute_python, list_processes, kill_process, sleep
+files:        read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files
+git:          git_command, git_advanced
+vision:       screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window
+mouse:        mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
+keyboard:     keyboard_type, keyboard_press, keyboard_hotkey, click_and_type
+windows:      get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab
+apps:         open_application, open_terminal, close_application
+browser:      browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
+clipboard:    clipboard_get, clipboard_set
+voice:        speak, listen
+memory:       remember, recall
+system:       get_system_info, get_system_metrics
+code:         analyze_code
+integrations: devin_module, list_integrations, run_devin_module, discover_modules
+notes:        take_note
+control:      task_complete
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2624,7 +2861,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
                  "content": tr["result"]}
                 for tr in tool_results
             ]})
-        elif isinstance(provider, OpenAIProvider):
+        elif isinstance(provider, (OpenAIProvider, HuggingFaceProvider, OllamaProvider)):
             for tr in tool_results:
                 messages.append({"role": "tool",
                                   "tool_call_id": tr["call_id"],
@@ -2664,7 +2901,7 @@ def _make_help() -> str:
   {cyan('/status')}              Show provider, model, keys, capabilities
   {cyan('/providers')}           Show all providers and API key status
   {cyan('/model <name>')}        Switch model (e.g. /model gemini-2.5-pro)
-  {cyan('/provider <name>')}     Switch provider (gemini | claude | openai)
+  {cyan('/provider <name>')}     Switch provider (gemini | claude | openai | huggingface | ollama)
   {cyan('/memory [query]')}      Show memories (optional search)
   {cyan('/remember <fact>')}     Save a fact to persistent memory
   {cyan('/forget')}              Clear all memories (with confirmation)
@@ -2682,6 +2919,7 @@ def _make_help() -> str:
   GEMINI_API_KEY       https://aistudio.google.com/app/apikey  (free)
   ANTHROPIC_API_KEY    https://console.anthropic.com/
   OPENAI_API_KEY       https://platform.openai.com/api-keys
+  HF_TOKEN             https://huggingface.co/settings/tokens  (free, LLaMA/Mixtral/Qwen)
 
 {bold('Examples')}
   {dim('open Firefox and search for "Python tutorials"')}
@@ -2707,43 +2945,49 @@ def _banner(provider=None):
         print(l)
 
     # Status box
-    w = shutil.get_terminal_size((80,24)).columns
-    gk = '✓' if os.environ.get('GEMINI_API_KEY')    else '✗'
-    ak = '✓' if os.environ.get('ANTHROPIC_API_KEY') else '✗'
-    ok = '✓' if os.environ.get('OPENAI_API_KEY')    else '✗'
-    pname = green(provider.name) if provider else dim("no provider")
-    disp  = green("✓ " + os.environ.get('DISPLAY','wayland')) if _HAS_DISPLAY else dim("✗ headless")
+    w = max(60, shutil.get_terminal_size((80,24)).columns - 1)
+    gk  = green('●') if os.environ.get('GEMINI_API_KEY')    else dim('○')
+    ak  = green('●') if os.environ.get('ANTHROPIC_API_KEY') else dim('○')
+    ok  = green('●') if os.environ.get('OPENAI_API_KEY')    else dim('○')
+    hfk = green('●') if (os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_API_KEY')) else dim('○')
+    pname = green(provider.name) if provider else red("no provider — set API key in .env")
+    disp  = green("✓ display") if _HAS_DISPLAY else yellow("headless")
     facts = _DB.execute('SELECT count(*) FROM memories').fetchone()[0]
-
     mods = _modules_status()
     loaded = sum(1 for v in mods.values() if v)
-    mod_str = f"{loaded}/{len(mods)} modules"
 
     print(f"  ╭{'─'*(w-4)}╮")
-    print(f"  │  {bold('Devin AGI v4.0.0'):<{w-18}}{' ':>8}│")
-    print(f"  │  cwd: {str(_ROOT):<{w-14}}{' ':>2}│")
-    print(f"  │  model: {pname}   display: {disp}   memory: {dim(str(facts)+' facts')}   {dim(mod_str+'  '+str(len(TOOLS))+' tools'):<25}│")
+    print(f"  │  {bold('Devin AGI  v4.0')}")
+    print(f"  │  {dim('cwd:')} {str(_ROOT)}")
+    print(f"  │  {dim('model:')} {pname}")
+    print(f"  │  {dim('keys:')} Gemini {gk}  Claude {ak}  OpenAI {ok}  HuggingFace {hfk}")
+    print(f"  │  {dim('os:')} {_PLATFORM}  {disp}  {dim(str(facts)+' memories')}  {dim(str(loaded)+'/'+str(len(mods))+' modules')}  {dim(str(len(TOOLS))+' tools')}")
     print(f"  ╰{'─'*(w-4)}╯")
     print()
 
 def _status_line(provider):
-    gk = '✓' if os.environ.get('GEMINI_API_KEY')    else '✗'
-    ak = '✓' if os.environ.get('ANTHROPIC_API_KEY') else '✗'
-    ok = '✓' if os.environ.get('OPENAI_API_KEY')    else '✗'
+    gk  = '✓' if os.environ.get('GEMINI_API_KEY')    else '✗'
+    ak  = '✓' if os.environ.get('ANTHROPIC_API_KEY') else '✗'
+    ok  = '✓' if os.environ.get('OPENAI_API_KEY')    else '✗'
+    hfk = '✓' if (os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_API_KEY')) else '✗'
     cats: Dict[str, int] = {}
     for t in TOOLS.values():
         c = t.get('category','other')
         cats[c] = cats.get(c, 0) + 1
     cat_str = '  '.join(f"{v} {k}" for k, v in sorted(cats.items()))
-    print(f"\n  {bold('Provider')}   {green(provider.name)}")
-    print(f"  {bold('Keys')}       "
+    mods = _modules_status()
+    loaded = sum(1 for v in mods.values() if v)
+    print(f"\n  {bold('Provider')}    {green(provider.name)}")
+    print(f"  {bold('Keys')}        "
           f"Gemini {(green if gk=='✓' else red)(gk)}  "
           f"Claude {(green if ak=='✓' else red)(ak)}  "
-          f"OpenAI {(green if ok=='✓' else red)(ok)}")
-    print(f"  {bold('Display')}    {'✓ ' + os.environ.get('DISPLAY','') if _HAS_DISPLAY else dim('✗ headless')}")
-    print(f"  {bold('Memory')}     {_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts  "
-          f"({_DB_PATH.name})")
-    print(f"  {bold('Tools')}      {len(TOOLS)}  ({cat_str})")
+          f"OpenAI {(green if ok=='✓' else red)(ok)}  "
+          f"HuggingFace {(green if hfk=='✓' else red)(hfk)}")
+    print(f"  {bold('Display')}     {'✓ ' + (os.environ.get('DISPLAY') or 'available') if _HAS_DISPLAY else dim('✗ headless (GUI tools unavailable)')}")
+    print(f"  {bold('Platform')}    {_PLATFORM}  ({'GUI capable' if _HAS_DISPLAY else 'headless'})")
+    print(f"  {bold('Memory')}      {_DB.execute('SELECT count(*) FROM memories').fetchone()[0]} facts  ({_DB_PATH.name})")
+    print(f"  {bold('Modules')}     {loaded}/{len(mods)} loaded")
+    print(f"  {bold('Tools')}       {len(TOOLS)}  ({cat_str})")
     print()
 
 def repl(provider_name: str = '', model: str = ''):
@@ -2826,11 +3070,22 @@ def repl(provider_name: str = '', model: str = ''):
                 else: print(red("  No provider."))
 
             elif cmd == '/providers':
-                for p, key_env in [('gemini', 'GEMINI_API_KEY'),
-                                   ('claude', 'ANTHROPIC_API_KEY'),
-                                   ('openai', 'OPENAI_API_KEY')]:
-                    s = green('✓ available') if os.environ.get(key_env) else dim('✗ no key')
-                    print(f"  {bold(p):<15} {s}")
+                entries = [
+                    ('gemini',       'GEMINI_API_KEY',       'gemini-3.6-flash (default)',        True),
+                    ('claude',       'ANTHROPIC_API_KEY',    'claude-sonnet-4-6 (default)',        True),
+                    ('openai',       'OPENAI_API_KEY',       'gpt-4o-mini (default)',              True),
+                    ('huggingface',  'HF_TOKEN',             'Meta-Llama-3.1-70B (free tier)',     True),
+                    ('ollama',       '',                     'llama3.2 (local, no key required)', False),
+                ]
+                for p, key_env, note, needs_key in entries:
+                    if not needs_key:
+                        s = dim('local (no key)')
+                    else:
+                        has_key = bool(os.environ.get(key_env) or
+                                       (p == 'huggingface' and os.environ.get('HUGGINGFACE_API_KEY')))
+                        s = green('✓ available') if has_key else dim('✗ no key')
+                    print(f"  {bold(p):<16} {s}  {dim(note)}")
+                print(f"\n  {dim('Use /provider <name> to switch. Add keys to .env')}")
                 print()
 
             elif cmd == '/model':
@@ -2849,12 +3104,12 @@ def repl(provider_name: str = '', model: str = ''):
 
             elif cmd == '/provider':
                 if not arg:
-                    print(yellow("  Usage: /provider gemini|claude|openai"))
+                    print(yellow("  Usage: /provider gemini|claude|openai|huggingface|ollama"))
                 else:
                     try:
                         provider = _pick_provider(arg, model)
                         cur_pname = arg
-                        print(green(f"  Provider: {provider.name}"))
+                        print(green(f"  ✓ Provider: {provider.name}"))
                     except Exception as e:
                         print(red(f"  Error: {e}"))
 
