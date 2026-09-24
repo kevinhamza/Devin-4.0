@@ -336,6 +336,7 @@ The agent never gives up. Errors are information. If one approach fails, it swit
 | `/remember <fact>` | Save a fact |
 | `/forget` | Clear all memories (with confirmation) |
 | `/history` | Show conversation history |
+| `/save [file]` | Save the conversation transcript to a Markdown file |
 | `/shell <cmd>` | Run shell command directly |
 | `/screenshot` | Take screenshot, optionally analyze with AI |
 | `/voice` | Listen for voice then run as task |
