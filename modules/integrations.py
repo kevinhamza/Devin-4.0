@@ -686,8 +686,18 @@ def execute_python(code: str) -> Dict[str, Any]:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
 
+def _norm_path(p: str) -> str:
+    """Expand ~, $HOME, environment variables, and normalize path separators
+    so tool callers can use natural strings like '~/', '$HOME/Downloads',
+    '~/Documents' without the LLM having to spell out /home/kevin/…"""
+    if not p:
+        return p
+    return os.path.expandvars(os.path.expanduser(p))
+
+
 def read_file(path: str) -> str:
     """Read file and return its content."""
+    path = _norm_path(path)
     try:
         return Path(path).read_text(errors="replace")
     except FileNotFoundError:
@@ -697,6 +707,7 @@ def read_file(path: str) -> str:
 
 def write_file(path: str, content: str) -> bool:
     """Write content to file."""
+    path = _norm_path(path)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(content)
     return True
@@ -704,6 +715,7 @@ def write_file(path: str, content: str) -> bool:
 def list_files(directory: str = ".", pattern: str = "*", max_results: int = None) -> List[str]:
     """List files in directory matching pattern."""
     import fnmatch
+    directory = _norm_path(directory)
     result = []
     for root, dirs, files in os.walk(directory):
         if max_results and len(result) >= max_results:
@@ -1089,6 +1101,7 @@ def run_security_scan(target: str, scan_type: str = "basic") -> Dict[str, Any]:
 
 def find_files(directory: str = ".", pattern: str = "*", max_results: int = 100) -> List[str]:
     """Find files in directory matching pattern. Returns list of file paths."""
+    directory = _norm_path(directory)
     results = []
     try:
         for root, dirs, files in os.walk(directory):
@@ -1108,6 +1121,7 @@ def find_files(directory: str = ".", pattern: str = "*", max_results: int = 100)
 
 def grep_files(directory: str = ".", pattern: str = "", file_pattern: str = "*.py") -> List[Dict]:
     """Search for text pattern in files. Returns matches with context."""
+    directory = _norm_path(directory)
     results = []
     try:
         import re
