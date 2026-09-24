@@ -5486,8 +5486,19 @@ def run_agent(task: str, provider, max_steps: int = 100,
                     print(red("  Max consecutive errors reached. Stopping."))
                 break
 
-            # Exponential backoff before retry
-            wait = 2 ** consecutive_errors
+            # Try context compaction on first error if context is large
+            if consecutive_errors == 1 and _estimate_chars(messages) > _CTX_WARN_CHARS:
+                if not quiet:
+                    print(dim("  Auto-compacting messages before retry…"))
+                if conv_messages is not None:
+                    compacted = _compact_messages(list(messages))
+                    messages.clear()
+                    messages.extend(compacted)
+                else:
+                    messages = _compact_messages(messages)
+
+            # Exponential backoff before retry (capped at 30s)
+            wait = min(30, 2 ** consecutive_errors)
             if not quiet:
                 print(dim(f"  Retrying in {wait}s…"))
             time.sleep(wait)
@@ -5675,6 +5686,7 @@ def _make_help() -> str:
   {cyan('/remember <fact>')}     Save a fact to persistent memory
   {cyan('/forget')}              Clear all memories (with confirmation)
   {cyan('/history')}             Show this session's conversation
+  {cyan('/save [filename]')}     Save conversation transcript to a file
   {cyan('/shell <cmd>')}         Run shell command directly (alias: /run)
   {cyan('/run <cmd>')}           Run shell command directly
   {cyan('/screenshot')}          Take and optionally analyze a screenshot
@@ -5969,6 +5981,30 @@ def repl(provider_name: str = '', model: str = ''):
                         preview = str(content)[:120].replace('\n',' ')
                         print(f"  {colour(label)}: {dim(preview)}")
                 print()
+
+            elif cmd == '/save':
+                # Save current conversation to a file
+                if not conv_messages:
+                    print(yellow("  Nothing to save — conversation is empty."))
+                else:
+                    fname = arg or f"devin_transcript_{_SESSION_ID}.md"
+                    fp = _ROOT / fname if not os.path.isabs(fname) else Path(fname)
+                    lines = [f"# Devin session transcript — {datetime.now().isoformat(timespec='seconds')}",
+                             f"# Session ID: {_SESSION_ID}",
+                             f"# Provider: {provider.name if provider else 'none'}", ""]
+                    for m in conv_messages:
+                        role = m.get('role', '?')
+                        content = m.get('content', '')
+                        if isinstance(content, list):
+                            content = '\n'.join(
+                                str(b.get('text','') or b.get('content','') or b.get('input',''))
+                                for b in content
+                            )
+                        lines.append(f"## {role}")
+                        lines.append(str(content))
+                        lines.append("")
+                    fp.write_text('\n'.join(lines))
+                    print(green(f"  ✓ Saved {len(conv_messages)} messages → {fp}"))
 
             elif cmd == '/shell':
                 if arg: print(tool_execute_shell(arg))
