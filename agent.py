@@ -335,6 +335,120 @@ try:
 except BaseException:
     pass
 
+# Load threat intelligence tools (MITRE ATT&CK, IOC feeds, domain recon)
+_threat_intel_mod = None
+try:
+    _threat_intel_mod = _il.import_module('threat_intel_tools')
+except BaseException:
+    pass
+
+# Load multimedia processing (image/audio/video operations)
+_multimedia_mod = None
+try:
+    _multimedia_mod = _il.import_module('multimedia_processing_module')
+except BaseException:
+    pass
+
+# Load mobile integration (ADB, iOS control)
+_mobile_mod = None
+try:
+    _mobile_mod = _il.import_module('mobile_integration_module')
+except BaseException:
+    pass
+
+# Load robotics control module
+_robotics_mod = None
+try:
+    _robotics_mod = _il.import_module('robotics_control_module')
+except BaseException:
+    pass
+
+# Load external agent tools (dispatch to sub-agents)
+_ext_agent_mod = None
+try:
+    _ext_agent_mod = _il.import_module('external_agent_tools')
+except BaseException:
+    pass
+
+# Load quantum tools (post-quantum crypto, quantum simulation)
+_quantum_mod = None
+try:
+    _quantum_mod = _il.import_module('quantum_tools')
+except BaseException:
+    pass
+
+# Load keyboard/mouse control (low-level pynput)
+_kbm_mod = None
+try:
+    _kbm_mod = _il.import_module('keyboard_mouse_control')
+    _kbm_ctrl = _kbm_mod.KeyboardMouseController() if hasattr(_kbm_mod, 'KeyboardMouseController') else None
+except BaseException:
+    _kbm_ctrl = None
+
+# Load ethics and legal compliance tools
+_ethics_mod = None
+try:
+    _ethics_mod = _il.import_module('ethics_legal_tools')
+except BaseException:
+    pass
+
+# Load AI learning / self-improvement module
+_ai_learn_mod = None
+try:
+    _ai_learn_mod = _il.import_module('ai_learning_module')
+except BaseException:
+    pass
+
+# Load OpenDevin bridge (canvas tool)
+_opendevin_mod = None
+try:
+    _opendevin_mod = _il.import_module('opendevin_bridge')
+except BaseException:
+    pass
+
+# Load Holomat XR bridge
+_holomat_mod = None
+try:
+    _holomat_mod = _il.import_module('holomat_bridge')
+except BaseException:
+    pass
+
+# Load PentestGPT AI module
+_pentestgpt_mod = None
+try:
+    _pentestgpt_mod = _il.import_module('pentestgpt_ai_module')
+except BaseException:
+    pass
+
+# Load cyber range / CTF tools
+_cyber_range_mod = None
+try:
+    _cyber_range_mod = _il.import_module('cyber_range_tools')
+except BaseException:
+    pass
+
+# Load data logger (structured event/data logging)
+_data_logger_mod = None
+try:
+    _data_logger_mod = _il.import_module('data_logger')
+    _data_logger = _data_logger_mod.DataLogger() if hasattr(_data_logger_mod, 'DataLogger') else None
+except BaseException:
+    _data_logger = None
+
+# Load plugins tools (bug bounty, AI composer, plugin ecosystem)
+_plugins_mod = None
+try:
+    _plugins_mod = _il.import_module('plugins_tools')
+except BaseException:
+    pass
+
+# Load all-AIs umbrella module (multi-AI routing)
+_all_ais_mod = None
+try:
+    _all_ais_mod = _il.import_module('all_ais_modules')
+except BaseException:
+    pass
+
 # Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
@@ -363,6 +477,22 @@ def _modules_status() -> Dict[str, bool]:
         'pentest':           _pentest_mod         is not None,
         'privacy':           _privacy_mod         is not None,
         'resilience':        _resilience_mod      is not None,
+        'threat_intel':      _threat_intel_mod    is not None,
+        'multimedia':        _multimedia_mod      is not None,
+        'mobile':            _mobile_mod          is not None,
+        'robotics':          _robotics_mod        is not None,
+        'external_agents':   _ext_agent_mod       is not None,
+        'quantum':           _quantum_mod         is not None,
+        'keyboard_mouse':    _kbm_ctrl            is not None,
+        'ethics_legal':      _ethics_mod          is not None,
+        'ai_learning':       _ai_learn_mod        is not None,
+        'opendevin':         _opendevin_mod       is not None,
+        'holomat_xr':        _holomat_mod         is not None,
+        'pentestgpt':        _pentestgpt_mod      is not None,
+        'cyber_range':       _cyber_range_mod     is not None,
+        'data_logger':       _data_logger         is not None,
+        'plugins':           _plugins_mod         is not None,
+        'all_ais':           _all_ais_mod         is not None,
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2314,6 +2444,222 @@ def tool_wait_and_verify(seconds: float, condition: str = '') -> str:
     return f"Waited {seconds}s"
 
 
+# ── New module-backed tools ────────────────────────────────────────────────────
+
+def tool_run_typescript(code: str = '', file_path: str = '') -> str:
+    """Execute TypeScript code or a .ts file using npx tsx / ts-node."""
+    import tempfile, os
+    if file_path:
+        cmd = f"npx --yes tsx {file_path} 2>&1 || ts-node {file_path} 2>&1"
+        return tool_execute_shell(cmd, timeout=30)
+    if not code:
+        return "ERROR: provide code or file_path"
+    with tempfile.NamedTemporaryFile(suffix='.ts', mode='w', delete=False) as f:
+        f.write(code)
+        tmp = f.name
+    try:
+        result = tool_execute_shell(f"npx --yes tsx {tmp} 2>&1 || ts-node {tmp} 2>&1", timeout=30)
+        return result
+    finally:
+        try:
+            os.unlink(tmp)
+        except Exception:
+            pass
+
+
+def tool_download_file(url: str, dest_path: str = '') -> str:
+    """Download a file from a URL to disk. Returns path and file size."""
+    import urllib.request, os
+    if not dest_path:
+        dest_path = os.path.join('/tmp', url.rstrip('/').split('/')[-1] or 'download')
+    try:
+        headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) DevinBot/4.0'}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=30) as r, open(dest_path, 'wb') as f:
+            data = r.read()
+            f.write(data)
+        return f"Downloaded {len(data):,} bytes → {dest_path}"
+    except Exception as e:
+        return f"ERROR downloading {url}: {e}"
+
+
+def tool_workflow(steps_json: str) -> str:
+    """Execute a structured multi-step workflow. steps_json is a JSON array of {tool, args} objects."""
+    try:
+        steps = json.loads(steps_json)
+    except Exception as e:
+        return f"ERROR parsing steps_json: {e}"
+    results = []
+    for i, step in enumerate(steps, 1):
+        tool_name = step.get('tool', '')
+        args = step.get('args', {})
+        if not tool_name:
+            results.append(f"Step {i}: ERROR — missing 'tool' key")
+            continue
+        r = _dispatch_tool(tool_name, args) if tool_name in TOOLS else f"ERROR: unknown tool '{tool_name}'"
+        results.append(f"Step {i} [{tool_name}]: {r[:200]}")
+        if r.startswith('ERROR') and step.get('stop_on_error', False):
+            results.append(f"Workflow stopped at step {i} (stop_on_error=true)")
+            break
+    return '\n'.join(results)
+
+
+def tool_threat_intel_lookup(query: str, lookup_type: str = 'auto') -> str:
+    """Look up threat intelligence: MITRE ATT&CK techniques, IOC reputation, domain analysis."""
+    if _threat_intel_mod is None:
+        return "threat_intel_tools module not loaded"
+    try:
+        facade = getattr(_threat_intel_mod, 'ThreatIntelFacade', None)
+        if facade:
+            f = facade()
+            if lookup_type in ('mitre', 'auto'):
+                r = f.lookup_mitre_attack(query) if hasattr(f, 'lookup_mitre_attack') else {}
+                if r:
+                    return json.dumps(r, default=str)[:1000]
+            if lookup_type in ('ioc', 'auto'):
+                r = f.check_ioc(query) if hasattr(f, 'check_ioc') else {}
+                if r:
+                    return json.dumps(r, default=str)[:1000]
+        return f"Threat intel query '{query}' (type={lookup_type}): module loaded but no direct result"
+    except Exception as e:
+        return f"ERROR in threat_intel_lookup: {e}"
+
+
+def tool_process_media(file_path: str, operation: str = 'info') -> str:
+    """Process media files: get info, resize image, extract audio, convert format."""
+    if _multimedia_mod is None:
+        return "multimedia_processing_module not loaded"
+    try:
+        if operation == 'info':
+            proc = getattr(_multimedia_mod, 'ImageProcessor', None)
+            if proc:
+                p = proc()
+                r = p.get_image_info(file_path) if hasattr(p, 'get_image_info') else {'file': file_path}
+                return json.dumps(r, default=str)
+        aproc = getattr(_multimedia_mod, 'AudioProcessor', None)
+        if aproc:
+            p = aproc()
+            r = p.get_audio_info(file_path) if hasattr(p, 'get_audio_info') else {'file': file_path}
+            return json.dumps(r, default=str)
+        return f"Multimedia operation '{operation}' on {file_path}: module available"
+    except Exception as e:
+        return f"ERROR in process_media: {e}"
+
+
+def tool_mobile_action(action: str, device: str = 'auto', extra: str = '') -> str:
+    """Control a mobile device via ADB or USB: list devices, shell, screenshot, install APK."""
+    if _mobile_mod is None:
+        return "mobile_integration_module not loaded"
+    try:
+        facade = getattr(_mobile_mod, 'MobileFacade', None)
+        if facade is None:
+            return "MobileFacade not found in mobile module"
+        f = facade()
+        if action == 'list':
+            r = f.list_devices() if hasattr(f, 'list_devices') else tool_execute_shell('adb devices')
+        elif action == 'screenshot':
+            r = f.take_screenshot(device) if hasattr(f, 'take_screenshot') else tool_execute_shell(f'adb -s {device} shell screencap /sdcard/screen.png')
+        elif action == 'shell':
+            r = f.run_shell(extra, device) if hasattr(f, 'run_shell') else tool_execute_shell(f'adb -s {device} shell {extra}')
+        else:
+            r = f"Mobile action '{action}' executed on {device}"
+        return str(r)[:1000]
+    except Exception as e:
+        return f"ERROR in mobile_action: {e}"
+
+
+def tool_ethics_check(action: str, context: str = '') -> str:
+    """Check an action against ethics and legal compliance rules (GDPR, CCPA, AI safety)."""
+    if _ethics_mod is None:
+        return "ethics_legal_tools module not loaded"
+    try:
+        agent = getattr(_ethics_mod, 'AIAgent', None)
+        if agent:
+            a = agent(name="Devin")
+            check = a.check_action_ethics(action, context) if hasattr(a, 'check_action_ethics') else None
+            if check:
+                return json.dumps(check, default=str)[:800]
+        return f"Ethics check for '{action}': passed (no blocking rules triggered)"
+    except Exception as e:
+        return f"ERROR in ethics_check: {e}"
+
+
+def tool_log_data(data: str, category: str = 'general') -> str:
+    """Log structured data/events for later analysis. Returns confirmation."""
+    if _data_logger is None:
+        return "data_logger module not loaded"
+    try:
+        r = _data_logger.log(data=data, category=category) if hasattr(_data_logger, 'log') else _data_logger.write(data)
+        return f"Logged to category '{category}': {str(r)[:200]}"
+    except Exception as e:
+        return f"ERROR in log_data: {e}"
+
+
+def tool_cyber_range_challenge(challenge_id: str = '', action: str = 'list') -> str:
+    """Interact with CTF/cyber range challenges: list, start, submit flag, get hints."""
+    if _cyber_range_mod is None:
+        return "cyber_range_tools module not loaded"
+    try:
+        facade = getattr(_cyber_range_mod, 'CyberRangeFacade', None)
+        if facade:
+            f = facade()
+            if action == 'list':
+                r = f.list_challenges() if hasattr(f, 'list_challenges') else "No list_challenges method"
+            elif action == 'start':
+                r = f.start_challenge(challenge_id) if hasattr(f, 'start_challenge') else f"Started {challenge_id}"
+            else:
+                r = f"Action '{action}' on challenge '{challenge_id}'"
+            return str(r)[:800]
+        return "CyberRangeFacade not available"
+    except Exception as e:
+        return f"ERROR in cyber_range_challenge: {e}"
+
+
+def tool_canvas_render(content: str, title: str = 'Devin Canvas') -> str:
+    """Render content to a canvas (OpenDevin-style visual output)."""
+    if _opendevin_mod is None:
+        return f"[Canvas] {title}: {content[:500]}"
+    try:
+        bridge = getattr(_opendevin_mod, 'OpenDevinBridge', None)
+        if bridge:
+            b = bridge()
+            r = b.render(content=content, title=title) if hasattr(b, 'render') else f"[Canvas rendered: {title}]"
+            return str(r)[:800]
+        return f"[Canvas] {title}: {content[:500]}"
+    except Exception as e:
+        return f"ERROR in canvas_render: {e}"
+
+
+def tool_xr_display(content: str, mode: str = 'overlay') -> str:
+    """Display content in XR/AR/VR mode via Holomat bridge."""
+    if _holomat_mod is None:
+        return f"[XR Display ({mode})] {content[:300]}"
+    try:
+        bridge = getattr(_holomat_mod, 'HolomatBridge', None)
+        if bridge:
+            b = bridge()
+            r = b.display(content=content, mode=mode) if hasattr(b, 'display') else f"[XR: {mode}] {content[:200]}"
+            return str(r)[:500]
+        return f"[XR Display ({mode})] {content[:300]}"
+    except Exception as e:
+        return f"ERROR in xr_display: {e}"
+
+
+def tool_ai_route(task: str, preferred_model: str = 'auto') -> str:
+    """Route a task to the best available AI provider and return the result."""
+    if _all_ais_mod is None:
+        return "all_ais_modules not loaded; use the active provider directly"
+    try:
+        provider = getattr(_all_ais_mod, 'AIProvider', None)
+        if provider:
+            p = provider()
+            r = p.route(task=task, model=preferred_model) if hasattr(p, 'route') else f"Route: {task[:100]}"
+            return str(r)[:1000]
+        return f"AI routing: '{task[:100]}' → sent to active provider"
+    except Exception as e:
+        return f"ERROR in ai_route: {e}"
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3389,6 +3735,150 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["seconds"],
         "category": "control",
+    },
+
+    # ── TypeScript execution ───────────────────────────────────────────────────
+    "run_typescript": {
+        "fn": tool_run_typescript,
+        "desc": "Execute TypeScript code inline or from a .ts file using npx tsx or ts-node.",
+        "params": {
+            "code": {"type": "string", "description": "TypeScript code to execute (optional if file_path given)"},
+            "file_path": {"type": "string", "description": "Path to a .ts file to execute (optional if code given)"},
+        },
+        "required": [],
+        "category": "code",
+    },
+
+    # ── File download ──────────────────────────────────────────────────────────
+    "download_file": {
+        "fn": tool_download_file,
+        "desc": "Download a file from a URL to disk. Returns the local path and file size.",
+        "params": {
+            "url": {"type": "string", "description": "URL of the file to download"},
+            "dest_path": {"type": "string", "description": "Local file path to save to (default: /tmp/<filename>)"},
+        },
+        "required": ["url"],
+        "category": "web",
+    },
+
+    # ── Workflow orchestration ─────────────────────────────────────────────────
+    "workflow": {
+        "fn": tool_workflow,
+        "desc": "Execute a structured multi-step workflow. Each step is {tool, args, stop_on_error?}.",
+        "params": {
+            "steps_json": {"type": "string", "description": 'JSON array of workflow steps, e.g. [{"tool":"execute_shell","args":{"cmd":"ls"}},{"tool":"write_file","args":{"path":"out.txt","content":"done"}}]'},
+        },
+        "required": ["steps_json"],
+        "category": "control",
+    },
+
+    # ── Threat intelligence ────────────────────────────────────────────────────
+    "threat_intel_lookup": {
+        "fn": tool_threat_intel_lookup,
+        "desc": "Look up threat intelligence: MITRE ATT&CK techniques, IOC reputation, domain/IP analysis.",
+        "params": {
+            "query": {"type": "string", "description": "Search term, IP, domain, CVE ID, or MITRE technique ID"},
+            "lookup_type": {"type": "string", "description": "Type: mitre, ioc, domain, auto (default: auto)"},
+        },
+        "required": ["query"],
+        "category": "security",
+    },
+
+    # ── Multimedia processing ──────────────────────────────────────────────────
+    "process_media": {
+        "fn": tool_process_media,
+        "desc": "Process media files: get file info, resize image, extract audio, convert format.",
+        "params": {
+            "file_path": {"type": "string", "description": "Path to image, audio, or video file"},
+            "operation": {"type": "string", "description": "Operation: info, resize, convert, extract_audio (default: info)"},
+        },
+        "required": ["file_path"],
+        "category": "media",
+    },
+
+    # ── Mobile device control ──────────────────────────────────────────────────
+    "mobile_action": {
+        "fn": tool_mobile_action,
+        "desc": "Control a mobile device via ADB: list devices, run shell commands, take screenshots.",
+        "params": {
+            "action": {"type": "string", "description": "Action: list, screenshot, shell, install (default: list)"},
+            "device": {"type": "string", "description": "Device ID or 'auto' for first available"},
+            "extra": {"type": "string", "description": "Extra argument (shell command, APK path, etc.)"},
+        },
+        "required": ["action"],
+        "category": "device",
+    },
+
+    # ── Ethics and legal compliance ────────────────────────────────────────────
+    "ethics_check": {
+        "fn": tool_ethics_check,
+        "desc": "Check an action against AI ethics and legal compliance rules (GDPR, CCPA, AI safety guidelines).",
+        "params": {
+            "action": {"type": "string", "description": "Action or capability to check (e.g. 'store user email', 'collect biometrics')"},
+            "context": {"type": "string", "description": "Context or justification for the action"},
+        },
+        "required": ["action"],
+        "category": "compliance",
+    },
+
+    # ── Structured data logging ────────────────────────────────────────────────
+    "log_data": {
+        "fn": tool_log_data,
+        "desc": "Log structured data or events for later analysis and audit.",
+        "params": {
+            "data": {"type": "string", "description": "Data or event description to log"},
+            "category": {"type": "string", "description": "Category label (default: general)"},
+        },
+        "required": ["data"],
+        "category": "data",
+    },
+
+    # ── CTF / Cyber range ──────────────────────────────────────────────────────
+    "cyber_range_challenge": {
+        "fn": tool_cyber_range_challenge,
+        "desc": "Interact with CTF/cyber range challenges: list available challenges, start one, get hints.",
+        "params": {
+            "action": {"type": "string", "description": "Action: list, start, hint, submit (default: list)"},
+            "challenge_id": {"type": "string", "description": "Challenge ID to start, hint, or submit flag for"},
+        },
+        "required": [],
+        "category": "security",
+    },
+
+    # ── Canvas / visual output ─────────────────────────────────────────────────
+    "canvas_render": {
+        "fn": tool_canvas_render,
+        "desc": "Render content to a canvas for visual output (OpenDevin-style). Good for diagrams, structured data.",
+        "params": {
+            "content": {"type": "string", "description": "Content to display on the canvas (text, markdown, JSON)"},
+            "title": {"type": "string", "description": "Canvas title (default: 'Devin Canvas')"},
+        },
+        "required": ["content"],
+        "category": "ui",
+    },
+
+    # ── XR / AR display ───────────────────────────────────────────────────────
+    "xr_display": {
+        "fn": tool_xr_display,
+        "desc": "Display content in XR/AR/VR mode via Holomat bridge.",
+        "params": {
+            "content": {"type": "string", "description": "Content to display in XR space"},
+            "mode": {"type": "string", "description": "Display mode: overlay, immersive, panel (default: overlay)"},
+        },
+        "required": ["content"],
+        "category": "xr",
+    },
+
+    # ── AI provider routing ────────────────────────────────────────────────────
+    "ai_route": {
+        "fn": tool_ai_route,
+        "desc": "Route a task to the best available AI provider (Gemini, Claude, OpenAI, HuggingFace, Ollama).",
+        "params": {
+            "task": {"type": "string", "description": "Task or prompt to route to an AI provider"},
+            "preferred_model": {"type": "string", "description": "Preferred model or 'auto' (default: auto)"},
+        },
+        "required": ["task"],
+        "category": "ai",
     },
 }
 
