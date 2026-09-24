@@ -928,9 +928,76 @@ def git_command(args: str, cwd: str = ".") -> str:
     return result["output"]
 
 def analyze_image(image_path: str, question: str = "What do you see?") -> str:
-    """Analyze an image using available vision API."""
-    # This will be handled by the main Gemini loop with vision
-    return f"[Image analysis of {image_path}: {question}]"
+    """Analyze an image using an available vision API.
+
+    Tries Anthropic Claude vision first (best quality), then Gemini vision,
+    then reports "no vision provider" honestly. Path is expanduser'd first.
+    """
+    import base64
+    real_path = _norm_path(image_path)
+    p = Path(real_path)
+    if not p.is_file():
+        return f"[analyze_image error: file not found: {real_path}]"
+    try:
+        data = p.read_bytes()
+    except Exception as e:
+        return f"[analyze_image error: read failed: {e}]"
+    if len(data) < 200:
+        return f"[analyze_image error: file too small ({len(data)} bytes) — probably not a real image]"
+
+    b64 = base64.b64encode(data).decode()
+    ext = p.suffix.lower().lstrip(".")
+    media_type = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                  "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp"}.get(ext, "image/png")
+
+    # 1) Try Anthropic Claude vision (best for describing UIs / screens).
+    ak = os.getenv("ANTHROPIC_API_KEY", "")
+    if ak:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=ak)
+            for model in ["claude-opus-4-5", "claude-sonnet-4-5", "claude-3-5-sonnet-20241022"]:
+                try:
+                    resp = client.messages.create(
+                        model=model,
+                        max_tokens=1024,
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                                {"type": "text", "text": question},
+                            ],
+                        }],
+                    )
+                    for block in resp.content:
+                        if getattr(block, "type", None) == "text":
+                            return getattr(block, "text", "") or ""
+                    return ""
+                except Exception:
+                    continue
+        except ImportError:
+            pass
+
+    # 2) Try Gemini vision.
+    gk = os.getenv("GEMINI_API_KEY", "")
+    if gk and HAS.get("requests") and requests:
+        for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            headers = {"Content-Type": "application/json", "x-goog-api-key": gk,
+                       "x-goog-api-client": "google-genai-sdk/2.19.0"}
+            body = {"contents": [{"role": "user", "parts": [
+                {"inlineData": {"mimeType": media_type, "data": b64}},
+                {"text": question},
+            ]}], "generationConfig": {"maxOutputTokens": 1024}}
+            try:
+                r = requests.post(url, headers=headers, json=body, timeout=60)
+                if r.status_code == 200:
+                    parts = ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                    return "".join(p.get("text", "") for p in parts).strip()
+            except Exception:
+                continue
+
+    return f"[analyze_image: no vision provider available. Set ANTHROPIC_API_KEY or GEMINI_API_KEY. Image was {len(data)} bytes, {media_type}.]"
 
 def search_screen(image_template: str) -> Optional[tuple]:
     """Find an image on screen, return (x, y) center or None."""

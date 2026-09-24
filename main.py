@@ -627,6 +627,12 @@ Before every action, run through this loop:
 5. NEVER fabricate results — only report what tools actually returned.
 6. NEVER output "(acting)" as text. Just call tools.
 7. If a tool fails, try an alternative — never repeat the same failing call.
+8. When a tool returns a path (e.g. take_screenshot returned "/tmp/devin_xyz.png"),
+   USE THAT EXACT PATH in follow-up tool calls that need it. Do not invent
+   generic names like "screenshot.png" — they will not exist.
+9. If you need to describe user intent from casual/misspelled input ("gimme",
+   "vedios", "chekc"), interpret charitably and act. Never ask for a rewording
+   when the intent is obvious.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOOL REFERENCE
@@ -753,12 +759,214 @@ def _hf_response_to_gemini_shape(hf_result: Dict) -> Dict:
     return {"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": "STOP"}]}
 
 
+def _anthropic_tools_from_schemas() -> List[Dict]:
+    """Convert TOOL_SCHEMAS (Gemini shape) into Anthropic input_schema shape."""
+    out = []
+    for t in TOOL_SCHEMAS:
+        params = t.get("parameters", {"type": "object", "properties": {}}) or {}
+        params.setdefault("type", "object")
+        params.setdefault("properties", {})
+        out.append({
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "input_schema": params,
+        })
+    return out
+
+
+def _gemini_contents_to_anthropic_messages(contents: List[Dict]) -> List[Dict]:
+    """Convert Gemini-shape parts to Anthropic content-block shape.
+
+    Assigns synthetic tool_use_ids by walking contents in order so that
+    tool_result blocks in subsequent user turns can reference the matching
+    tool_use. Preserves inline images (screenshots) as base64 image blocks.
+    """
+    result: List[Dict] = []
+    pending_ids: List[Dict[str, str]] = []  # list of {"name": ..., "id": ...} for the most recent model turn
+    id_counter = 0
+
+    for c in contents:
+        role = c.get("role", "user")
+        parts = c.get("parts", []) or []
+        blocks: List[Dict] = []
+        if role in ("user",):
+            # Convert functionResponse parts back to Anthropic tool_result blocks.
+            fresh_pending = list(pending_ids)
+            for p in parts:
+                if not isinstance(p, dict):
+                    continue
+                if "functionResponse" in p:
+                    fr = p["functionResponse"] or {}
+                    name = fr.get("name", "")
+                    output = str((fr.get("response") or {}).get("output", ""))
+                    matched_id = None
+                    for i, entry in enumerate(fresh_pending):
+                        if entry["name"] == name:
+                            matched_id = entry["id"]
+                            fresh_pending.pop(i)
+                            break
+                    if matched_id is None:
+                        matched_id = f"tu_synthetic_{id_counter}"
+                        id_counter += 1
+                    blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": matched_id,
+                        "content": output[:8000],
+                    })
+                elif "text" in p and p["text"]:
+                    blocks.append({"type": "text", "text": str(p["text"])})
+                elif "inlineData" in p:
+                    inl = p["inlineData"] or {}
+                    blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": inl.get("mimeType", "image/png"),
+                            "data": inl.get("data", ""),
+                        },
+                    })
+            if blocks:
+                result.append({"role": "user", "content": blocks})
+            pending_ids = []
+        elif role in ("model", "assistant"):
+            # Convert functionCall parts to tool_use blocks.
+            turn_pending: List[Dict[str, str]] = []
+            for p in parts:
+                if not isinstance(p, dict):
+                    continue
+                if "functionCall" in p:
+                    fc = p["functionCall"] or {}
+                    fname = fc.get("name", "")
+                    fid = f"tu_{id_counter}"
+                    id_counter += 1
+                    turn_pending.append({"name": fname, "id": fid})
+                    blocks.append({
+                        "type": "tool_use",
+                        "id": fid,
+                        "name": fname,
+                        "input": fc.get("args") or {},
+                    })
+                elif "text" in p and p["text"]:
+                    blocks.append({"type": "text", "text": str(p["text"])})
+            if blocks:
+                result.append({"role": "assistant", "content": blocks})
+            pending_ids = turn_pending
+    return result
+
+
+def _anthropic_response_to_gemini_shape(response) -> Dict:
+    """Convert an Anthropic messages.create response into Gemini shape so the
+    existing agentic loop can consume it unchanged."""
+    parts: List[Dict] = []
+    for block in response.content:
+        btype = getattr(block, "type", None)
+        if btype == "text":
+            text = getattr(block, "text", "") or ""
+            if text:
+                parts.append({"text": text})
+        elif btype == "tool_use":
+            parts.append({
+                "functionCall": {
+                    "name": getattr(block, "name", ""),
+                    "args": getattr(block, "input", {}) or {},
+                }
+            })
+    if not parts:
+        parts.append({"text": " "})
+    return {"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": getattr(response, "stop_reason", "STOP") or "STOP"}]}
+
+
+_ANTHROPIC_MODELS = [
+    "claude-opus-4-5",
+    "claude-sonnet-4-5",
+    "claude-3-5-sonnet-20241022",
+    "claude-3-5-haiku-20241022",
+]
+
+
+def _classify_anthropic_error(err: BaseException) -> str:
+    s = str(err)
+    lower = s.lower()
+    if "401" in s or "authentication" in lower or "invalid x-api-key" in lower:
+        return "Anthropic API key rejected (401). Check ANTHROPIC_API_KEY."
+    if "429" in s or "rate_limit" in lower:
+        return "Anthropic rate-limited (429). Waiting and falling through to next provider."
+    if "402" in s or "credit" in lower or "billing" in lower:
+        return "Anthropic billing issue (402). Falling through to next provider."
+    if "404" in s or "not_found" in lower:
+        return "Anthropic: no model in the fallback list was accepted."
+    return f"Anthropic call failed: {s[:250]}"
+
+
+def _call_anthropic(contents: List[Dict]) -> Optional[Dict]:
+    """Call Claude via the anthropic SDK. Returns Gemini-shape data or None."""
+    global _ACTIVE_MODEL, _LAST_LLM_ERROR
+    if not HAS_ANTHROPIC or _anthropic_client is None:
+        return None
+    tools = _anthropic_tools_from_schemas()
+    messages = _gemini_contents_to_anthropic_messages(contents)
+    if not messages:
+        return None  # nothing to send; skip
+
+    for model_id in _ANTHROPIC_MODELS:
+        try:
+            response = _anthropic_client.messages.create(
+                model=model_id,
+                max_tokens=8192,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                tools=tools,
+            )
+            _ACTIVE_MODEL = f"anthropic:{model_id}"
+            return _anthropic_response_to_gemini_shape(response)
+        except Exception as e:
+            msg = str(e)
+            _LAST_LLM_ERROR = _classify_anthropic_error(e)
+            if os.getenv("DEVIN_DEBUG"):
+                import traceback; traceback.print_exc()
+            if "404" in msg or "not_found" in msg.lower():
+                continue  # try the next model id
+            break  # non-model error — no point trying more models
+    return None
+
+
+def _classify_hf_error(err: BaseException) -> str:
+    """Turn an HF exception into a specific, actionable one-line message."""
+    s = str(err)
+    lower = s.lower()
+    if "402" in s or "depleted" in lower or "monthly included credits" in lower:
+        return (
+            "Hugging Face free-tier credits are used up for this token. "
+            "Options: (1) subscribe to HF PRO for 20× the quota, (2) wait for "
+            "the monthly reset, or (3) add ANTHROPIC_API_KEY / GEMINI_API_KEY "
+            "so Devin can use them instead."
+        )
+    if "401" in s or "invalid" in lower and "token" in lower:
+        return "Hugging Face token rejected (401). Check HF_TOKEN in .env."
+    if "429" in s or "rate" in lower or "quota exceeded" in lower:
+        return "Hugging Face rate-limited (429). Wait a minute or provide another provider key."
+    if "404" in s or "not_found" in lower or "model not found" in lower:
+        return f"Hugging Face: no model in the fallback list was available. Raw: {s[:200]}"
+    return f"Hugging Face call failed: {s[:250]}"
+
+
+_LAST_LLM_ERROR: Optional[str] = None
+
+
 def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
-    """Call Gemini REST API directly. Returns parsed JSON response or None.
-    Raises RuntimeError on rate limit so caller can show clear message.
-    Falls through to Hugging Face if Gemini is exhausted or unconfigured."""
-    global _ACTIVE_MODEL
-    # If Gemini isn't available at all, try Hugging Face directly.
+    """Call the model chain: Anthropic (if configured) → Gemini → Hugging Face.
+    Name kept for backward compatibility with the loop that calls it."""
+    global _ACTIVE_MODEL, _LAST_LLM_ERROR
+    _LAST_LLM_ERROR = None
+
+    # 1) Anthropic first — native tool_use, most reliable for agentic work.
+    if HAS_ANTHROPIC and _anthropic_client is not None:
+        result = _call_anthropic(contents)
+        if result is not None:
+            return result
+        # else fall through; _LAST_LLM_ERROR already set by _call_anthropic
+
+    # 2) If Gemini isn't available at all, try Hugging Face directly.
     if not HAS_GEMINI or not _HAS_REQUESTS or not GEMINI_API_KEY:
         if HAS_HF and _hf_chat is not None:
             try:
@@ -770,8 +978,14 @@ def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
                 _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
                 return _hf_response_to_gemini_shape(hf_result)
             except Exception as _e:
+                _LAST_LLM_ERROR = _classify_hf_error(_e)
                 if os.getenv("DEVIN_DEBUG"):
                     import traceback; traceback.print_exc()
+        elif not HAS_HF:
+            _LAST_LLM_ERROR = (
+                "No AI provider configured. Set at least one of "
+                "GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, HF_TOKEN in .env."
+            )
         return None
 
     body: Dict = {
@@ -817,8 +1031,12 @@ def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
             _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
             return _hf_response_to_gemini_shape(hf_result)
         except Exception as _e:
+            _LAST_LLM_ERROR = _classify_hf_error(_e)
             if os.getenv("DEVIN_DEBUG"):
                 import traceback; traceback.print_exc()
+    # Both Gemini and HF failed. Record the most useful last error we've seen.
+    if not _LAST_LLM_ERROR and last_err:
+        _LAST_LLM_ERROR = f"Gemini: {last_err}"
     if "rate limit" in last_err or "429" in last_err:
         raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s, set HF_TOKEN for HF fallback, or use a paid API key.")
     return None
@@ -941,6 +1159,8 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             break
 
         if data is None:
+            if _LAST_LLM_ERROR:
+                return f"[LLM unavailable — {_LAST_LLM_ERROR}]"
             if not HAS_GEMINI and not HAS_HF:
                 return "[No AI available — set GEMINI_API_KEY or HF_TOKEN in .env]"
             return "[No AI response — check API key and model availability]"
