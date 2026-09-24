@@ -275,14 +275,14 @@ async function runConversation(
 }
 
 // ── Slash command handler ─────────────────────────────────────────────────────
-function handleSlashCommand(
+async function handleSlashCommand(
   input: string,
   config: Config,
   history: Message[],
   memory: LocalMemory
-): boolean {
-  const cmd = input.trim().toLowerCase();
+): Promise<boolean> {
   const parts = input.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
   const sub = parts[1] || '';
 
   switch (cmd) {
@@ -383,13 +383,56 @@ function handleSlashCommand(
       printSuccess(`Verbose ${config.verbose ? 'on' : 'off'}.`);
       return true;
 
-    default:
-      // /subagent <task>
-      if (parts[0] === '/subagent' && parts.length > 1) {
+    case '/voice':
+      config.useVoice = !config.useVoice;
+      printSuccess(`Voice mode: ${config.useVoice ? 'ON' : 'OFF'}`);
+      return true;
+
+    case '/screenshot': {
+      const { executeTool } = await import('./tools/executor.js');
+      const result = await executeTool('take_screenshot', {}, config);
+      if (result.isError) {
+        printError(`Screenshot failed: ${result.content}`);
+      } else {
+        printSuccess(`Screenshot saved: ${result.content}`);
+      }
+      return true;
+    }
+
+    case '/remember': {
+      if (parts.length > 1) {
+        const fact = parts.slice(1).join(' ');
+        memory.add(fact, ['user', 'remember']);
+        printSuccess(`Remembered: ${fact}`);
+      } else {
+        printInfo('Usage: /remember <fact>');
+      }
+      return true;
+    }
+
+    case '/shell': {
+      if (parts.length > 1) {
+        const shellCmd = parts.slice(1).join(' ');
+        const { executeTool } = await import('./tools/executor.js');
+        const result = await executeTool('execute_shell', { command: shellCmd }, config);
+        if (result.isError) printError(result.content);
+        else printInfo(result.content.slice(0, 2000));
+      } else {
+        printInfo('Usage: /shell <command>');
+      }
+      return true;
+    }
+
+    case '/subagent': {
+      if (parts.length > 1) {
         const task = parts.slice(1).join(' ');
         history.push({ role: 'user', content: `[SUBAGENT TASK] ${task}` });
         return false; // Let main loop handle it
       }
+      return false;
+    }
+
+    default:
       return false;
   }
 }
@@ -568,7 +611,7 @@ async function main(): Promise<void> {
     }
 
     if (input.startsWith('/')) {
-      if (!handleSlashCommand(input, config, history, memory)) {
+      if (!await handleSlashCommand(input, config, history, memory)) {
         if (!input.startsWith('/subagent')) {
           printWarning(`Unknown command: ${input}. Type /help.`);
           continue;
