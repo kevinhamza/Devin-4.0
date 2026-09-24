@@ -1445,6 +1445,246 @@ def tool_take_note(title: str, content: str) -> str:
     fname.write_text(f"# {title}\n\n{content}\n", encoding='utf-8')
     return f"Note saved: {fname}"
 
+# ── Window control extras ─────────────────────────────────────────────────────
+
+def tool_get_active_window() -> str:
+    """Return the title of the currently active/focused window."""
+    try:
+        if _cmd_exists('xdotool'):
+            r = subprocess.run(['xdotool', 'getactivewindow', 'getwindowname'],
+                               capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() or "(unknown)"
+        if _IS_MAC:
+            script = 'tell application "System Events" to get name of first application process whose frontmost is true'
+            r = subprocess.run(['osascript', '-e', script],
+                               capture_output=True, text=True, timeout=5)
+            return r.stdout.strip() or "(unknown)"
+        if _IS_WIN:
+            try:
+                import ctypes
+                hwnd = ctypes.windll.user32.GetForegroundWindow()  # type: ignore
+                buf = ctypes.create_unicode_buffer(512)
+                ctypes.windll.user32.GetWindowTextW(hwnd, buf, 512)  # type: ignore
+                return buf.value or "(unknown)"
+            except Exception as e:
+                return f"ERROR: {e}"
+        return "ERROR: No tool to get active window"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_resize_window(width: int, height: int, title: str = '') -> str:
+    """Resize a window. If title is empty, resizes the active window."""
+    try:
+        if _cmd_exists('wmctrl'):
+            if title:
+                cmd = ['wmctrl', '-r', title, '-e', f'0,-1,-1,{width},{height}']
+            else:
+                cmd = ['wmctrl', '-r', ':ACTIVE:', '-e', f'0,-1,-1,{width},{height}']
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            return f"Resized to {width}x{height}" if r.returncode == 0 else f"ERROR: {r.stderr.strip()}"
+        if _cmd_exists('xdotool'):
+            wid = ''
+            if title:
+                r = subprocess.run(['xdotool', 'search', '--name', title],
+                                   capture_output=True, text=True, timeout=5)
+                wid = r.stdout.strip().split('\n')[0]
+            else:
+                r = subprocess.run(['xdotool', 'getactivewindow'],
+                                   capture_output=True, text=True, timeout=5)
+                wid = r.stdout.strip()
+            if wid:
+                subprocess.run(['xdotool', 'windowsize', wid, str(width), str(height)], timeout=5)
+                return f"Resized window {wid} to {width}x{height}"
+        return "ERROR: wmctrl or xdotool required for window resize"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_move_window(x: int, y: int, title: str = '') -> str:
+    """Move a window to position (x, y). If title is empty, moves the active window."""
+    try:
+        if _cmd_exists('wmctrl'):
+            ref = title if title else ':ACTIVE:'
+            r = subprocess.run(['wmctrl', '-r', ref, '-e', f'0,{x},{y},-1,-1'],
+                               capture_output=True, text=True, timeout=5)
+            return f"Moved window to ({x},{y})" if r.returncode == 0 else f"ERROR: {r.stderr.strip()}"
+        if _cmd_exists('xdotool'):
+            if title:
+                r = subprocess.run(['xdotool', 'search', '--name', title],
+                                   capture_output=True, text=True, timeout=5)
+                wid = r.stdout.strip().split('\n')[0]
+            else:
+                r = subprocess.run(['xdotool', 'getactivewindow'],
+                                   capture_output=True, text=True, timeout=5)
+                wid = r.stdout.strip()
+            if wid:
+                subprocess.run(['xdotool', 'windowmove', wid, str(x), str(y)], timeout=5)
+                return f"Moved window to ({x},{y})"
+        return "ERROR: wmctrl or xdotool required"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_send_notification(title: str, body: str) -> str:
+    """Send a desktop notification."""
+    try:
+        if _cmd_exists('notify-send'):
+            subprocess.run(['notify-send', title, body], timeout=5)
+            return f"Notification sent: {title}"
+        if _IS_MAC:
+            script = f'display notification "{body}" with title "{title}"'
+            subprocess.run(['osascript', '-e', script], timeout=5)
+            return f"Notification sent: {title}"
+        if _IS_WIN:
+            # PowerShell toast notification
+            ps = (f'[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, '
+                  f'ContentType = WindowsRuntime] | Out-Null; '
+                  f'$template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02; '
+                  f'$xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template); '
+                  f'$xml.GetElementsByTagName("text")[0].InnerText = "{title}"; '
+                  f'$xml.GetElementsByTagName("text")[1].InnerText = "{body}"; '
+                  f'$notif = [Windows.UI.Notifications.ToastNotification]::new($xml); '
+                  f'[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Devin").Show($notif)')
+            subprocess.run(['powershell', '-Command', ps], capture_output=True, timeout=10)
+            return f"Notification sent: {title}"
+        return "ERROR: No notification tool available"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+def tool_type_text_at(x: int, y: int, text: str) -> str:
+    """Click at (x,y) then immediately type text — single compound operation."""
+    click_result = tool_mouse_click(x, y)
+    if click_result.startswith('ERROR:'):
+        return click_result
+    time.sleep(0.1)
+    return tool_keyboard_type(text)
+
+def tool_press_key_at(x: int, y: int, key: str) -> str:
+    """Click at (x,y) then press a key. Useful for form submission."""
+    click_result = tool_mouse_click(x, y)
+    if click_result.startswith('ERROR:'):
+        return click_result
+    time.sleep(0.1)
+    return tool_keyboard_press(key)
+
+def tool_select_all_copy() -> str:
+    """Select all text in the focused element and copy to clipboard."""
+    tool_keyboard_hotkey(['ctrl', 'a'])
+    time.sleep(0.05)
+    tool_keyboard_hotkey(['ctrl', 'c'])
+    time.sleep(0.1)
+    return tool_clipboard_get()
+
+def tool_right_click_menu(x: int, y: int, option_text: str = '') -> str:
+    """Right-click at (x,y) then optionally click a menu item by text."""
+    result = tool_mouse_right_click(x, y)
+    if result.startswith('ERROR:'):
+        return result
+    if option_text:
+        time.sleep(0.3)
+        # Try to find and click the option via screenshot analysis
+        shot = tool_screenshot()
+        if shot.startswith('ERROR:'):
+            return f"Right-clicked at ({x},{y}). Could not find menu item '{option_text}' (no screenshot)."
+        return f"Right-clicked at ({x},{y}). Menu should be open — use find_on_screen('{option_text}') then click it."
+    return result
+
+def tool_scroll_to_element(element_description: str) -> str:
+    """Take screenshot, locate an element, scroll until visible, then click."""
+    shot = tool_screenshot()
+    if shot.startswith('ERROR:'):
+        return shot
+    path = shot.split(': ')[-1].strip().split()[0]
+    analysis = tool_analyze_image(path, f"Is '{element_description}' visible on screen? If yes, give its exact (x,y) pixel coordinates. If not visible, say NOT_VISIBLE.")
+    if 'NOT_VISIBLE' in analysis.upper():
+        tool_mouse_scroll(960, 540, 'down', 5)
+        return f"Scrolled down — '{element_description}' was not visible. Take another screenshot to check."
+    return analysis
+
+def tool_wait_and_click(element_description: str, timeout: int = 10) -> str:
+    """Wait for an element to appear on screen, then click it."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        result = tool_find_on_screen(element_description)
+        if not result.startswith('ERROR:') and 'not found' not in result.lower():
+            # Parse coordinates from result
+            m = re.search(r'(\d+)[,\s]+(\d+)', result)
+            if m:
+                x, y = int(m.group(1)), int(m.group(2))
+                return tool_mouse_click(x, y)
+        time.sleep(1)
+    return f"ERROR: '{element_description}' not found on screen after {timeout}s"
+
+def tool_run_script(script_path: str, interpreter: str = '') -> str:
+    """Run a script file (.sh, .py, .js, .ps1, .bat) with the appropriate interpreter."""
+    p = Path(script_path)
+    if not p.exists():
+        return f"ERROR: File not found: {script_path}"
+    ext = p.suffix.lower()
+    interp_map = {
+        '.py':  ['python3'],
+        '.sh':  ['bash'],
+        '.js':  ['node'],
+        '.ps1': ['powershell', '-ExecutionPolicy', 'Bypass', '-File'],
+        '.bat': ['cmd', '/c'],
+        '.rb':  ['ruby'],
+        '.pl':  ['perl'],
+    }
+    if interpreter:
+        cmd = [interpreter, str(p)]
+    else:
+        interp = interp_map.get(ext)
+        if not interp:
+            return f"ERROR: Unknown script type {ext}. Pass interpreter= explicitly."
+        cmd = interp + [str(p)]
+    return tool_execute_shell(' '.join(cmd), cwd=str(p.parent), timeout=60)
+
+def tool_network_info() -> str:
+    """Get network interfaces, IP addresses, and connectivity info."""
+    results = []
+    if _IS_WIN:
+        r = tool_execute_shell('ipconfig /all', timeout=10)
+    else:
+        for cmd in ['ip addr', 'ifconfig -a']:
+            if _cmd_exists(cmd.split()[0]):
+                r = tool_execute_shell(cmd, timeout=10)
+                results.append(r)
+                break
+        # Check connectivity
+        ping_target = '8.8.8.8'
+        ping_cmd = f'ping -c 1 -W 2 {ping_target}' if not _IS_WIN else f'ping -n 1 {ping_target}'
+        r2 = tool_execute_shell(ping_cmd, timeout=10)
+        results.append(f"Internet: {'ONLINE' if 'ttl' in r2.lower() or 'time' in r2.lower() else 'OFFLINE/blocked'}")
+        return '\n'.join(results)
+    return r
+
+def tool_install_package(package: str, manager: str = '') -> str:
+    """Install a Python package (pip) or system package (apt/brew/choco)."""
+    if not manager:
+        manager = 'pip'  # default
+    if manager == 'pip':
+        return tool_execute_shell(f'{sys.executable} -m pip install {package}', timeout=120)
+    if manager in ('apt', 'apt-get'):
+        return tool_execute_shell(f'sudo apt-get install -y {package}', timeout=120)
+    if manager == 'brew':
+        return tool_execute_shell(f'brew install {package}', timeout=120)
+    if manager == 'choco':
+        return tool_execute_shell(f'choco install {package} -y', timeout=120)
+    if manager == 'npm':
+        return tool_execute_shell(f'npm install -g {package}', timeout=120)
+    return f"ERROR: Unknown manager {manager!r}. Use: pip, apt, brew, choco, npm"
+
+def tool_context_info() -> str:
+    """Return info about the current conversation/context state."""
+    return json.dumps({
+        "platform": _PLATFORM,
+        "has_display": _HAS_DISPLAY,
+        "has_pyautogui": _HAS_PAG,
+        "cwd": str(Path.cwd()),
+        "root": str(_ROOT),
+        "memory_count": _DB.execute('SELECT count(*) FROM memories').fetchone()[0],
+        "tools_available": len(TOOLS) if 'TOOLS' in globals() else 'loading',
+        "modules": _modules_status(),
+    }, indent=2)
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2072,6 +2312,139 @@ TOOLS: Dict[str, Dict] = {
         "required": [],
         "category": "integrations",
     },
+
+    # ── Window extras ──────────────────────────────────────────────────────────
+    "get_active_window": {
+        "fn": tool_get_active_window,
+        "desc": "Get the title of the currently active/focused window.",
+        "params": {},
+        "required": [],
+        "category": "windows",
+    },
+    "resize_window": {
+        "fn": tool_resize_window,
+        "desc": "Resize a window to the given width and height.",
+        "params": {
+            "width":  {"type": "integer", "description": "Target width in pixels"},
+            "height": {"type": "integer", "description": "Target height in pixels"},
+            "title":  {"type": "string",  "description": "Window title substring (empty = active window)"},
+        },
+        "required": ["width", "height"],
+        "category": "windows",
+    },
+    "move_window": {
+        "fn": tool_move_window,
+        "desc": "Move a window to position (x, y) on screen.",
+        "params": {
+            "x":     {"type": "integer", "description": "X position"},
+            "y":     {"type": "integer", "description": "Y position"},
+            "title": {"type": "string",  "description": "Window title substring (empty = active window)"},
+        },
+        "required": ["x", "y"],
+        "category": "windows",
+    },
+    "send_notification": {
+        "fn": tool_send_notification,
+        "desc": "Send a desktop notification (notify-send on Linux, osascript on macOS, PowerShell on Windows).",
+        "params": {
+            "title": {"type": "string", "description": "Notification title"},
+            "body":  {"type": "string", "description": "Notification body text"},
+        },
+        "required": ["title", "body"],
+        "category": "apps",
+    },
+
+    # ── Compound mouse+keyboard ────────────────────────────────────────────────
+    "type_text_at": {
+        "fn": tool_type_text_at,
+        "desc": "Click at (x,y) then immediately type text. Single compound action.",
+        "params": {
+            "x":    {"type": "integer", "description": "Click X coordinate"},
+            "y":    {"type": "integer", "description": "Click Y coordinate"},
+            "text": {"type": "string",  "description": "Text to type"},
+        },
+        "required": ["x", "y", "text"],
+        "category": "keyboard",
+    },
+    "press_key_at": {
+        "fn": tool_press_key_at,
+        "desc": "Click at (x,y) then press a key. Useful for clicking an input then pressing Enter.",
+        "params": {
+            "x":   {"type": "integer", "description": "Click X coordinate"},
+            "y":   {"type": "integer", "description": "Click Y coordinate"},
+            "key": {"type": "string",  "description": "Key to press (e.g. Return, Escape, Tab)"},
+        },
+        "required": ["x", "y", "key"],
+        "category": "keyboard",
+    },
+    "select_all_copy": {
+        "fn": tool_select_all_copy,
+        "desc": "Press Ctrl+A then Ctrl+C and return clipboard content. Useful for reading all text in a focused window.",
+        "params": {},
+        "required": [],
+        "category": "clipboard",
+    },
+    "wait_and_click": {
+        "fn": tool_wait_and_click,
+        "desc": "Wait for an element to appear on screen (by description), then click it.",
+        "params": {
+            "element_description": {"type": "string",  "description": "Description of what to look for"},
+            "timeout":             {"type": "integer", "description": "Max seconds to wait (default 10)"},
+        },
+        "required": ["element_description"],
+        "category": "vision",
+    },
+    "scroll_to_element": {
+        "fn": tool_scroll_to_element,
+        "desc": "Take screenshot, check if element is visible; if not, scroll down and report.",
+        "params": {
+            "element_description": {"type": "string", "description": "What to look for on screen"},
+        },
+        "required": ["element_description"],
+        "category": "vision",
+    },
+
+    # ── Script execution ───────────────────────────────────────────────────────
+    "run_script": {
+        "fn": tool_run_script,
+        "desc": "Run a script file (.py, .sh, .js, .ps1, .bat, .rb, .pl). Auto-detects interpreter from extension.",
+        "params": {
+            "script_path":  {"type": "string", "description": "Path to script file"},
+            "interpreter":  {"type": "string", "description": "Override interpreter (optional)"},
+        },
+        "required": ["script_path"],
+        "category": "shell",
+    },
+
+    # ── Network ────────────────────────────────────────────────────────────────
+    "network_info": {
+        "fn": tool_network_info,
+        "desc": "Get network interface info, IP addresses, and internet connectivity status.",
+        "params": {},
+        "required": [],
+        "category": "system",
+    },
+
+    # ── Package installation ───────────────────────────────────────────────────
+    "install_package": {
+        "fn": tool_install_package,
+        "desc": "Install a package using pip, apt, brew, choco, or npm.",
+        "params": {
+            "package": {"type": "string", "description": "Package name to install"},
+            "manager": {"type": "string", "description": "Package manager: pip (default), apt, brew, choco, npm"},
+        },
+        "required": ["package"],
+        "category": "shell",
+    },
+
+    # ── Context info ───────────────────────────────────────────────────────────
+    "context_info": {
+        "fn": tool_context_info,
+        "desc": "Return current environment info: platform, display, modules, memory count, tools.",
+        "params": {},
+        "required": [],
+        "category": "system",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -2678,19 +3051,19 @@ Task: "Test the webapp on localhost:8080 for SQL injection"
 ## Tool reference (all {len(TOOLS)} tools)
 reasoning:    think
 web:          web_search, web_fetch, open_browser, http_request, parse_json
-shell:        execute_shell, execute_python, list_processes, kill_process, sleep
+shell:        execute_shell, execute_python, list_processes, kill_process, sleep, run_script, install_package
 files:        read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files
 git:          git_command, git_advanced
-vision:       screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window
+vision:       screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window, wait_and_click, scroll_to_element
 mouse:        mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
-keyboard:     keyboard_type, keyboard_press, keyboard_hotkey, click_and_type
-windows:      get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab
-apps:         open_application, open_terminal, close_application
+keyboard:     keyboard_type, keyboard_press, keyboard_hotkey, click_and_type, type_text_at, press_key_at
+windows:      get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab, get_active_window, resize_window, move_window
+apps:         open_application, open_terminal, close_application, send_notification
 browser:      browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
-clipboard:    clipboard_get, clipboard_set
+clipboard:    clipboard_get, clipboard_set, select_all_copy
 voice:        speak, listen
 memory:       remember, recall
-system:       get_system_info, get_system_metrics
+system:       get_system_info, get_system_metrics, network_info, context_info
 code:         analyze_code
 integrations: devin_module, list_integrations, run_devin_module, discover_modules
 notes:        take_note
@@ -2743,17 +3116,61 @@ def run_agent(task: str, provider, max_steps: int = 100,
     step = 0
     consecutive_errors = 0
     MAX_ERRORS = 5  # retry up to this many consecutive provider errors
+    # Context management: estimate token count and warn when approaching limits
+    _CTX_WARN_CHARS = 60_000   # ~15k tokens — start warning
+    _CTX_COMPACT_CHARS = 100_000  # ~25k tokens — auto-compact older messages
+
+    def _estimate_chars(msgs: list) -> int:
+        total = 0
+        for m in msgs:
+            c = m.get('content', '')
+            if isinstance(c, list):
+                c = ' '.join(str(b.get('text','') or b.get('content','')) for b in c)
+            total += len(str(c))
+        return total
+
+    def _compact_messages(msgs: list) -> list:
+        """Keep system-level context + last N exchanges to avoid context overflow."""
+        if len(msgs) <= 4:
+            return msgs
+        # Summarise older messages into a single context block
+        old = msgs[:-4]
+        recent = msgs[-4:]
+        summary_parts = []
+        for m in old:
+            role = m.get('role', '?')
+            c = m.get('content', '')
+            if isinstance(c, list):
+                c = ' '.join(str(b.get('text','') or b.get('content','')) for b in c)
+            preview = str(c)[:200].replace('\n', ' ')
+            summary_parts.append(f"[{role}]: {preview}")
+        summary = "EARLIER CONTEXT (summarised):\n" + '\n'.join(summary_parts[-20:])
+        return [{"role": "user", "content": summary}, {"role": "assistant", "content": "Understood, continuing."}] + recent
 
     if not quiet:
         print()
         print(_box(f"Task: {task[:72]}"))
         print(dim(f"Provider: {provider.name}  |  Tools: {len(TOOLS)}  |  Max steps: {max_steps}"))
         if not _HAS_DISPLAY:
-            print(dim("⚠  Headless: GUI tools will return errors (need display)"))
+            print(dim("⚠  Headless: GUI tools unavailable — focus on shell/files/web tasks"))
         print(_hr())
 
     while step < max_steps:
         step += 1
+
+        # Context size management
+        ctx_chars = _estimate_chars(messages)
+        if ctx_chars > _CTX_COMPACT_CHARS and not quiet:
+            print(yellow(f"\r  ⚠ Context growing large ({ctx_chars//1000}k chars), compacting older messages…"))
+            if conv_messages is not None:
+                # Compact in-place for REPL mode
+                compacted = _compact_messages(list(messages))
+                messages.clear()
+                messages.extend(compacted)
+            else:
+                messages = _compact_messages(messages)
+        elif ctx_chars > _CTX_WARN_CHARS and step % 10 == 0 and not quiet:
+            print(dim(f"\r  ℹ Context: {ctx_chars//1000}k chars"))
 
         if not quiet:
             label = f"step {step}/{max_steps} · {provider.name}"
