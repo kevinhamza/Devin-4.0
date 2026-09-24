@@ -67,17 +67,30 @@ Runtime code (`modules/integrations.py`) prefers `repos/` mirrors when both
 exist, so the empty stubs don't affect functionality but should be either
 populated or removed from `.gitmodules` in a follow-up cleanup.
 
-## Missing LICENSE files (action items)
+## LICENSE fetch pass (2026-09-24)
 
-The following `repos/` mirrors are missing an in-tree LICENSE file even
-though their upstream declares one. Adding a local copy would tighten the
-audit trail:
+Ran `curl` against upstream `raw.githubusercontent.com` and GitHub's
+`/license` API for the 5 mirrors that were missing a local LICENSE file:
 
-- `repos/aia/` — copy from upstream https://github.com/kevinhamza/AIA/blob/main/LICENSE
-- `repos/gemini_cli/` — copy Apache-2.0 from https://github.com/google-gemini/gemini-cli/blob/main/LICENSE
-- `repos/holomat/` — check upstream https://github.com/Concept-Bytes/Holomat
-- `repos/jarvis/` — check upstream https://github.com/Concept-Bytes/Jarvis
-- `repos/security/hackability/` — check upstream https://github.com/PortSwigger/hackability
+- ✓ `repos/aia/LICENSE` — fetched from upstream (MIT).
+- ✓ `repos/gemini_cli/LICENSE` — fetched from upstream (Apache-2.0).
+- ⚠ `repos/holomat/` — upstream `Concept-Bytes/Holomat` exists but has
+  **no LICENSE file** at any conventional path, and GitHub's license
+  detector returns null. Treat as *unlicensed source, all rights reserved
+  by author*; Devin only references it for XR/holographic-UI patterns —
+  no code redistribution.
+- ⚠ `repos/jarvis/` — upstream `Concept-Bytes/Jarvis` — same as above:
+  no LICENSE file upstream. Devin only imports specific tool functions
+  via its adapter; treated as "pattern reference, do not redistribute".
+- ⚠ `repos/security/hackability/` — upstream `PortSwigger/hackability`
+  — no LICENSE file upstream. Devin does not directly invoke this repo
+  at runtime; kept as security-research reference only.
+
+The three ⚠ entries are documented rather than deleted so a future
+maintainer knows the provenance situation without re-doing the audit.
+If PortSwigger / Concept-Bytes later publish a LICENSE, rerun the same
+`curl raw.githubusercontent.com/<slug>/main/LICENSE` command to fold it
+in.
 
 ## Devin's own license
 
