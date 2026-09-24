@@ -97,14 +97,20 @@ async function runConversation(
           ALL_TOOLS,
           (chunk: StreamChunk) => {
             if (chunk.type === 'text' && chunk.content) {
+              // Strip model self-narration artifacts: "(acting)", repetition of user query,
+              // "[Tool: ...]" literal text that should have been a real tool call.
+              const cleaned = chunk.content
+                .replace(/^\s*\(acting\)\s*/i, '')
+                .replace(/^\s*\[Tool:\s*\w+[^\]]*\]\s*/g, '');
+              if (!cleaned) return; // skip if nothing left after cleaning
               if (!streamDone) {
                 spinner.stop();
                 streamDone = true;
                 process.stdout.write('\n' + colorize('Devin', c.bold, c.brightCyan) + '\n');
               }
-              process.stdout.write(renderMarkdown(chunk.content));
-              streamText += chunk.content;
-              fullReply += chunk.content;
+              process.stdout.write(renderMarkdown(cleaned));
+              streamText += cleaned;
+              fullReply += cleaned;
             }
           },
           callOptions

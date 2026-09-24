@@ -15,12 +15,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 export type GeminiModel =
-  | 'gemini-3.5-flash'
-  | 'gemini-3.6-flash'
-  | 'gemini-3.7-flash'
-  | 'gemini-3.1-flash-lite'
-  | 'gemini-3.1-pro-preview'
-  | 'gemini-flash-latest'
+  | 'gemini-2.5-flash'
+  | 'gemini-2.5-pro'
+  | 'gemini-2.0-flash'
   | 'gemini-1.5-flash'
   | 'gemini-1.5-pro'
   | 'gemini-1.0-pro'
@@ -119,7 +116,7 @@ function geminiRequest(
 
 export async function generateText(
   prompt: string,
-  model: GeminiModel = 'gemini-3.5-flash',
+  model: GeminiModel = 'gemini-2.5-flash',
   config: GeminiConfig = {}
 ): Promise<string> {
   const contents: GeminiContent[] = [
@@ -136,7 +133,7 @@ export class GeminiChat {
   private model: GeminiModel;
   private config: GeminiConfig;
 
-  constructor(model: GeminiModel = 'gemini-3.5-flash', config: GeminiConfig = {}) {
+  constructor(model: GeminiModel = 'gemini-2.5-flash', config: GeminiConfig = {}) {
     this.model = model;
     this.config = config;
   }
@@ -161,10 +158,10 @@ export class GeminiChat {
 
 // Models tried in order for vision — dedicated image models have separate quota buckets
 const VISION_MODELS: GeminiModel[] = [
-  'gemini-3.1-flash-image',      // dedicated image model, separate quota
-  'gemini-3.5-flash-lite',       // lighter quota than 3.5-flash
-  'gemini-3.5-flash',            // primary
-  'gemini-3.1-flash-lite',       // fastest fallback
+  'gemini-2.0-flash',      // dedicated image model, separate quota
+  'gemini-2.5-flash-lite',       // lighter quota than 3.5-flash
+  'gemini-2.5-flash',            // primary
+  'gemini-2.0-flash',       // fastest fallback
   'gemini-flash-lite-latest',    // alias for latest lite
 ];
 
@@ -246,7 +243,7 @@ export async function generateCode(
   description: string,
   language: string,
   context?: string,
-  model: GeminiModel = 'gemini-3.5-flash'
+  model: GeminiModel = 'gemini-2.5-flash'
 ): Promise<string> {
   const prompt = [
     `Write ${language} code for: ${description}`,
@@ -280,7 +277,7 @@ export interface GeminiFunctionCall {
 export async function callWithFunctions(
   prompt: string,
   functions: GeminiFunctionDeclaration[],
-  model: GeminiModel = 'gemini-3.5-flash'
+  model: GeminiModel = 'gemini-2.5-flash'
 ): Promise<{ text: string; functionCalls: GeminiFunctionCall[] }> {
   const body = JSON.stringify({
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -342,7 +339,7 @@ export async function listGeminiModels(): Promise<string[]> {
           const models = (parsed.models || []).map((m: { name: string }) => m.name.replace('models/', ''));
           resolve(models);
         } catch {
-          resolve(['gemini-3.5-flash', 'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-1.5-flash']);
+          resolve(['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash']);
         }
       });
     });
