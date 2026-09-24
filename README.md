@@ -166,10 +166,10 @@ User (CLI / voice)
 │  OpenAIProvider │ HuggingFaceProvider │  │
 │  OllamaProvider                          │
 └────────────────┬─────────────────────────┘
-                 │  tool calls (82+ tools)
+                 │  tool calls (115 tools)
                  ▼
 ┌──────────────────────────────────────────┐
-│  TOOL REGISTRY  (103 tools)              │
+│  TOOL REGISTRY  (115 tools)              │
 │  reasoning  web  shell  files  vision    │
 │  mouse  keyboard  windows  apps          │
 │  browser  clipboard  voice  memory       │
@@ -310,7 +310,11 @@ Categories:
 - **code**: analyze_code
 - **integrations**: devin_module, list_integrations, run_devin_module, discover_modules
 - **notes**: take_note
-- **control**: task_complete
+- **control**: task_complete, ask_user, wait_and_verify
+- **power**: write_and_run, install_and_verify, git_clone_and_explore, search_and_open, screen_to_clipboard
+- **email**: send_email
+- **data**: analyze_data
+- **scheduling**: schedule_task
 
 ---
 
@@ -465,7 +469,7 @@ python3 -c "import importlib.util, sys; spec = importlib.util.spec_from_file_loc
 
 Test categories and status:
 - **Import/startup**: AUTOMATED VERIFIED
-- **Tool registry**: AUTOMATED VERIFIED (82 tools load cleanly)
+- **Tool registry**: AUTOMATED VERIFIED (115 tools load cleanly)
 - **Shell/file operations**: AUTOMATED VERIFIED
 - **Web search/fetch**: AUTOMATED VERIFIED (requires network)
 - **Model API connectivity**: BLOCKED BY EXTERNAL ENVIRONMENT (requires valid API key)
