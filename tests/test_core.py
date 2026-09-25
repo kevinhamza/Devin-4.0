@@ -372,6 +372,42 @@ def t_decompose_task():
     # Should contain a tool suggestion
     assert 'execute_shell' in r or 'write_file' in r
 
+
+# ─── Phase AC: File analysis tools ───────────────────────────────────────────
+
+def t_summarize_file():
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        f.write("# test file\ndef hello():\n    return 42\nclass Foo:\n    pass\n")
+        fpath = f.name
+    try:
+        r = _agent.tool_summarize_file(fpath)
+        assert 'FILE:' in r
+        assert 'Lines:' in r
+        assert 'hello' in r or 'CONTENT' in r
+    finally:
+        os.unlink(fpath)
+
+
+def t_diff_files():
+    import tempfile, os
+    f1 = tempfile.mktemp(suffix='.txt')
+    f2 = tempfile.mktemp(suffix='.txt')
+    try:
+        open(f1, 'w').write("alpha\nbeta\ngamma\n")
+        open(f2, 'w').write("alpha\nbeta_changed\ngamma\n")
+        r = _agent.tool_diff_files(f1, f2)
+        assert '-beta' in r or '+beta_changed' in r, f"diff not in result: {r}"
+    finally:
+        for f in (f1, f2):
+            try: os.unlink(f)
+            except: pass
+
+
+def t_search_in_files():
+    r = _agent.tool_search_in_files('def tool_', directory='.', file_glob='agent.py', max_results=5)
+    assert 'def tool_' in r or 'matches' in r.lower()
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -460,6 +496,12 @@ def main():
     test("checkpoint save/load/list roundtrip", t_checkpoint_roundtrip)
     test("batch_execute parallel 3 tools", t_batch_execute_parallel)
     test("decompose_task structure", t_decompose_task)
+
+    # Phase 10: File analysis tools (Phase AC)
+    print("\n── Phase 10: File Analysis Tools ──")
+    test("summarize_file", t_summarize_file)
+    test("diff_files", t_diff_files)
+    test("search_in_files", t_search_in_files)
 
     # Summary
     total = PASS + FAIL + SKIP

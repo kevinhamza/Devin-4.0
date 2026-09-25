@@ -3204,6 +3204,147 @@ def tool_run_workflow_file(path: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AC — FILE SUMMARIZER + DIFF TOOL + CODE SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_summarize_file(path: str, max_chars: int = 4000) -> str:
+    """
+    Read a file and return a structured summary: size, type, line count,
+    first N chars, last N chars, and any patterns found (functions, classes,
+    imports, TODOs). Useful for getting an overview of large files without
+    reading all of them. Works with code, text, JSON, CSV, Markdown.
+    """
+    try:
+        p = Path(path)
+        if not p.exists():
+            return f"ERROR: file not found: {path}"
+        size = p.stat().st_size
+        suffix = p.suffix.lower()
+
+        content = p.read_text(encoding='utf-8', errors='replace')
+        lines = content.split('\n')
+        line_count = len(lines)
+
+        out = [
+            f"FILE: {path}",
+            f"Size: {size:,} bytes | Lines: {line_count:,} | Type: {suffix or 'unknown'}",
+            "",
+        ]
+
+        # Show first and last portions
+        half = max_chars // 2
+        if len(content) <= max_chars:
+            out.append("CONTENT:")
+            out.append(content[:max_chars])
+        else:
+            out.append(f"FIRST {half} chars:")
+            out.append(content[:half])
+            out.append(f"\n... ({len(content) - max_chars:,} chars omitted) ...\n")
+            out.append(f"LAST {half} chars:")
+            out.append(content[-half:])
+
+        # Extract patterns for code files
+        code_suffixes = {'.py', '.js', '.ts', '.go', '.rs', '.java', '.cpp', '.c', '.rb', '.sh'}
+        if suffix in code_suffixes:
+            out.append("\nCODE PATTERNS:")
+            fns = re.findall(r'^(?:def |function |func |fn |pub fn )\s*(\w+)', content, re.M)
+            if fns:
+                out.append(f"  Functions/methods ({len(fns)}): {', '.join(fns[:20])}")
+            classes = re.findall(r'^(?:class |struct |interface |enum )\s*(\w+)', content, re.M)
+            if classes:
+                out.append(f"  Classes/structs ({len(classes)}): {', '.join(classes[:15])}")
+            imports = re.findall(r'^(?:import |from |require|use )\s*(\S+)', content, re.M)
+            if imports:
+                out.append(f"  Imports ({len(imports)}): {', '.join(imports[:10])}")
+            todos = re.findall(r'(?:TODO|FIXME|HACK|XXX)[:\s]+(.+)', content)
+            if todos:
+                out.append(f"  TODOs ({len(todos)}): {todos[0][:80]}")
+
+        return '\n'.join(out)
+    except Exception as e:
+        return f"ERROR summarizing {path}: {e}"
+
+
+def tool_diff_files(path1: str, path2: str, context: int = 3) -> str:
+    """
+    Show a unified diff between two files. Returns the diff output with
+    N lines of context around each change. Useful for comparing file versions.
+    """
+    try:
+        import difflib
+        p1, p2 = Path(path1), Path(path2)
+        if not p1.exists():
+            return f"ERROR: file not found: {path1}"
+        if not p2.exists():
+            return f"ERROR: file not found: {path2}"
+        a = p1.read_text(encoding='utf-8', errors='replace').splitlines(keepends=True)
+        b = p2.read_text(encoding='utf-8', errors='replace').splitlines(keepends=True)
+        diff = list(difflib.unified_diff(a, b, fromfile=path1, tofile=path2, n=context))
+        if not diff:
+            return f"Files are identical: {path1} == {path2}"
+        return ''.join(diff[:500])  # cap at 500 lines
+    except Exception as e:
+        return f"ERROR diffing files: {e}"
+
+
+def tool_search_in_files(pattern: str, directory: str = '.', file_glob: str = '*',
+                          max_results: int = 50) -> str:
+    """
+    Search for a regex pattern in files under a directory. Like grep -r.
+    Returns matching lines with file:line context. More powerful than shell
+    grep because it handles binary files gracefully and reports counts.
+    """
+    import fnmatch
+    try:
+        rx = re.compile(pattern)
+    except re.error as e:
+        return f"ERROR: invalid regex pattern: {e}"
+
+    results = []
+    total_files = 0
+    matched_files = 0
+
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        return f"ERROR: directory not found: {directory}"
+
+    try:
+        all_files = sorted(dir_path.rglob(file_glob))
+    except Exception as e:
+        return f"ERROR scanning directory: {e}"
+
+    for fpath in all_files:
+        if not fpath.is_file():
+            continue
+        # Skip binary and very large files
+        try:
+            if fpath.stat().st_size > 5_000_000:
+                continue
+            total_files += 1
+            text = fpath.read_text(encoding='utf-8', errors='replace')
+            lines = text.split('\n')
+            file_matches = []
+            for lineno, line in enumerate(lines, 1):
+                if rx.search(line):
+                    file_matches.append(f"  {lineno}: {line.rstrip()[:200]}")
+                    if len(file_matches) >= 10:  # cap per-file matches
+                        break
+            if file_matches:
+                matched_files += 1
+                results.append(f"{fpath}:")
+                results.extend(file_matches)
+                if len(results) >= max_results * 2:
+                    break
+        except Exception:
+            continue
+
+    if not results:
+        return f"No matches for '{pattern}' in {directory} (searched {total_files} files)"
+    summary = f"Found matches in {matched_files}/{total_files} files:\n"
+    return summary + '\n'.join(results[:max_results * 2])
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AB — PARALLEL BATCH EXECUTION + TASK DECOMPOSER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -4739,6 +4880,51 @@ TOOLS: Dict[str, Dict] = {
         "required": ["goal"],
         "category": "workflow",
     },
+
+    # ── File analysis (Phase AC) ──────────────────────────────────────────────
+    "summarize_file": {
+        "fn": tool_summarize_file,
+        "desc": (
+            "Read a file and return a structured summary: size, line count, first/last N chars, "
+            "and extracted code patterns (functions, classes, imports, TODOs). "
+            "Use instead of read_file for large files (>500 lines)."
+        ),
+        "params": {
+            "path": {"type": "string", "description": "Path to the file to summarize"},
+            "max_chars": {"type": "integer", "description": "Max chars to show from file (default: 4000)"},
+        },
+        "required": ["path"],
+        "category": "files",
+    },
+
+    "diff_files": {
+        "fn": tool_diff_files,
+        "desc": "Show a unified diff between two files. Returns changed lines with context.",
+        "params": {
+            "path1": {"type": "string", "description": "First file path"},
+            "path2": {"type": "string", "description": "Second file path"},
+            "context": {"type": "integer", "description": "Lines of context around changes (default: 3)"},
+        },
+        "required": ["path1", "path2"],
+        "category": "files",
+    },
+
+    "search_in_files": {
+        "fn": tool_search_in_files,
+        "desc": (
+            "Search for a regex pattern in files under a directory (like grep -r). "
+            "Returns matching file:line pairs. Use for code search, finding TODOs, "
+            "locating function definitions, etc."
+        ),
+        "params": {
+            "pattern": {"type": "string", "description": "Regex pattern to search for"},
+            "directory": {"type": "string", "description": "Directory to search (default: '.')"},
+            "file_glob": {"type": "string", "description": "File glob filter (default: '*', e.g. '*.py')"},
+            "max_results": {"type": "integer", "description": "Max result lines (default: 50)"},
+        },
+        "required": ["pattern"],
+        "category": "files",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -5780,23 +5966,60 @@ def _estimate_chars(msgs: list) -> int:
 
 
 def _compact_messages(msgs: list) -> list:
-    """Keep last 4 message exchanges; summarise older ones into a single context block."""
-    if len(msgs) <= 4:
+    """
+    Keep last 6 message exchanges; summarise older ones into a structured
+    context block that preserves: tool calls made, files written, key results.
+    """
+    if len(msgs) <= 6:
         return msgs
-    old = msgs[:-4]
-    recent = msgs[-4:]
+    old = msgs[:-6]
+    recent = msgs[-6:]
+
+    tools_used: List[str] = []
+    files_written: List[str] = []
+    key_results: List[str] = []
     summary_parts = []
+
     for m in old:
         role = m.get('role', '?')
         c = m.get('content', '')
         if isinstance(c, list):
-            c = ' '.join(str(b.get('text', '') or b.get('content', '')) for b in c)
-        preview = str(c)[:200].replace('\n', ' ')
+            # Extract tool calls and results from structured content
+            for block in c:
+                if isinstance(block, dict):
+                    if block.get('type') == 'tool_use':
+                        tname = block.get('name', '')
+                        tinput = block.get('input', {})
+                        tools_used.append(tname)
+                        if tname in ('write_file', 'write_and_run'):
+                            path = tinput.get('path', tinput.get('filename', ''))
+                            if path:
+                                files_written.append(path)
+                    elif block.get('type') == 'tool_result':
+                        result_str = str(block.get('content', ''))[:120]
+                        if result_str and not result_str.startswith('ERROR'):
+                            key_results.append(result_str.replace('\n', ' '))
+            c = ' '.join(str(b.get('text', '') or b.get('content', '')) for b in c if isinstance(b, dict))
+        preview = str(c)[:150].replace('\n', ' ')
         summary_parts.append(f"[{role}]: {preview}")
-    summary = "EARLIER CONTEXT (summarised):\n" + '\n'.join(summary_parts[-20:])
+
+    parts = ["EARLIER CONTEXT (compacted for efficiency):"]
+    if tools_used:
+        unique_tools = list(dict.fromkeys(tools_used))  # preserve order, dedup
+        parts.append(f"Tools called: {', '.join(unique_tools[-15:])}")
+    if files_written:
+        parts.append(f"Files written: {', '.join(files_written[-10:])}")
+    if key_results:
+        parts.append("Key results:")
+        for r in key_results[-5:]:
+            parts.append(f"  • {r[:100]}")
+    parts.append("Full exchange summary:")
+    parts.extend(summary_parts[-15:])
+
+    summary = "\n".join(parts)
     return [
         {"role": "user", "content": summary},
-        {"role": "assistant", "content": "Understood, continuing."},
+        {"role": "assistant", "content": "Context noted. Continuing from where we left off."},
     ] + recent
 
 
