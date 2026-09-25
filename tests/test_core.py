@@ -296,6 +296,61 @@ def t_github_repo_audit_normalization():
     r = _agent.tool_github_repo_audit('not-a-repo')
     assert 'ERROR' in r
 
+
+# ─── Phase AA: Workflow / checkpoint tools ───────────────────────────────────
+
+def t_multi_step_workflow():
+    steps = json.dumps([
+        {"tool": "execute_python", "args": {"code": "print('wf_step_1')"}, "label": "step1"},
+        {"tool": "execute_shell",  "args": {"command": "echo wf_step_2"},   "label": "step2"},
+    ])
+    result = _agent.tool_multi_step_workflow(steps)
+    assert 'wf_step_1' in result, f"step1 not in result: {result[:300]}"
+    assert 'wf_step_2' in result, f"step2 not in result: {result[:300]}"
+    assert 'SUMMARY: 2/2' in result
+
+
+def t_multi_step_workflow_stop_on_error():
+    steps = json.dumps([
+        {"tool": "execute_python", "args": {"code": "raise ValueError('intentional')"}, "label": "bad"},
+        {"tool": "execute_python", "args": {"code": "print('should_not_run')"},         "label": "skipped"},
+    ])
+    result = _agent.tool_multi_step_workflow(steps, stop_on_error=True)
+    assert 'should_not_run' not in result, "step 2 ran despite stop_on_error"
+    assert 'ERROR' in result or 'Stopped' in result
+
+
+def t_wait_for_condition_true():
+    r = _agent.tool_wait_for_condition('True', timeout=5)
+    assert 'met' in r.lower() or 'attempt' in r.lower()
+
+
+def t_wait_for_condition_timeout():
+    r = _agent.tool_wait_for_condition('False', timeout=2, interval=0.5)
+    assert 'TIMEOUT' in r or 'timeout' in r.lower()
+
+
+def t_checkpoint_roundtrip():
+    import time as _time
+    cp_name = f'test_cp_{int(_time.time())}'
+    save_r = _agent.tool_checkpoint_save(cp_name, 'test_data_roundtrip')
+    assert 'saved' in save_r.lower(), f"save failed: {save_r}"
+    load_r = _agent.tool_checkpoint_load(cp_name)
+    assert load_r == 'test_data_roundtrip', f"load returned: {load_r}"
+    list_r = _agent.tool_checkpoint_list()
+    assert cp_name in list_r, f"checkpoint not in list: {list_r[:200]}"
+
+
+def t_workflow_tools_registered():
+    for name in ('multi_step_workflow', 'wait_for_condition',
+                 'checkpoint_save', 'checkpoint_load', 'checkpoint_list',
+                 'run_workflow_file'):
+        assert name in _agent.TOOLS, f"tool '{name}' not registered"
+        spec = _agent.TOOLS[name]
+        for key in ('fn', 'desc', 'params', 'required', 'category'):
+            assert key in spec, f"tool '{name}' missing key '{key}'"
+        assert spec['category'] == 'workflow'
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -373,6 +428,15 @@ def main():
     print("\n── Phase 8: Tool Dispatch ──")
     test("_dispatch_tool execute_python", t_dispatch_tool_execute_python)
     test("_dispatch_tool unknown graceful", t_dispatch_unknown_tool)
+
+    # Phase 9: Workflow + checkpoint tools (Phase AA)
+    print("\n── Phase 9: Workflow & Checkpoint Tools ──")
+    test("workflow tools registered", t_workflow_tools_registered)
+    test("multi_step_workflow 2-step", t_multi_step_workflow)
+    test("multi_step_workflow stop_on_error", t_multi_step_workflow_stop_on_error)
+    test("wait_for_condition true", t_wait_for_condition_true)
+    test("wait_for_condition timeout", t_wait_for_condition_timeout)
+    test("checkpoint save/load/list roundtrip", t_checkpoint_roundtrip)
 
     # Summary
     total = PASS + FAIL + SKIP

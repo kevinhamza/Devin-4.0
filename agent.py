@@ -3032,6 +3032,178 @@ def tool_ai_route(task: str, preferred_model: str = 'auto') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AA — MULTI-STEP WORKFLOW + CONDITION POLLING + CHECKPOINT TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_multi_step_workflow(steps: str, stop_on_error: bool = True) -> str:
+    """
+    Execute a JSON-defined list of tool calls in sequence with per-step verification.
+    Each step: {"tool": "name", "args": {...}, "verify": "optional shell/python check"}.
+    Returns a summary report of every step's result.
+
+    Example:
+      steps = '[{"tool":"execute_shell","args":{"command":"mkdir /tmp/test"}},
+               {"tool":"write_file","args":{"path":"/tmp/test/hello.txt","content":"hi"}}]'
+    """
+    try:
+        plan = json.loads(steps)
+    except json.JSONDecodeError as e:
+        return f"ERROR: steps must be valid JSON list: {e}"
+
+    if not isinstance(plan, list) or not plan:
+        return "ERROR: steps must be a non-empty JSON list of {tool, args} objects"
+
+    results = []
+    for i, step in enumerate(plan, 1):
+        tool_name = step.get("tool", "")
+        args = step.get("args", {})
+        verify = step.get("verify", "")
+        label = step.get("label", tool_name)
+
+        if not tool_name:
+            results.append(f"Step {i}: SKIP — no tool specified")
+            continue
+
+        result = _dispatch_tool(tool_name, args)
+        is_err = (result.startswith("ERROR") or
+                  result.startswith("Traceback") or
+                  "Error:" in result[:200])
+
+        entry = f"Step {i}/{len(plan)} [{label}]: {'ERROR' if is_err else 'OK'}\n  → {result[:300]}"
+
+        if verify and not is_err:
+            try:
+                ver_result = _dispatch_tool("execute_shell", {"command": verify, "timeout": 10})
+                entry += f"\n  ✓ Verify: {ver_result[:100]}"
+            except Exception as ve:
+                entry += f"\n  ⚠ Verify failed: {ve}"
+
+        results.append(entry)
+
+        if is_err and stop_on_error:
+            results.append(f"Stopped at step {i} due to error (stop_on_error=True)")
+            break
+
+    summary = "\n\n".join(results)
+    ok = sum(1 for r in results if "OK" in r.split("\n")[0])
+    total = len(plan)
+    summary += f"\n\nSUMMARY: {ok}/{total} steps succeeded"
+    return summary
+
+
+def tool_wait_for_condition(condition: str, timeout: int = 30,
+                             interval: float = 1.0) -> str:
+    """
+    Poll until a Python expression evaluates to True, or timeout is reached.
+    'condition' is a Python expression that returns truthy/falsy, evaluated
+    with exec/eval (read-only checks only — no side effects).
+    Useful for waiting on file creation, process start, network availability, etc.
+
+    Examples:
+      condition="os.path.exists('/tmp/output.txt')"
+      condition="subprocess.run(['pgrep','firefox'],capture_output=True).returncode==0"
+    """
+    import time as _time
+    deadline = _time.time() + max(1, min(timeout, 300))
+    attempt = 0
+    while _time.time() < deadline:
+        attempt += 1
+        try:
+            result = eval(condition, {"os": os, "subprocess": subprocess,
+                                      "Path": Path, "time": _time,
+                                      "json": json, "re": re})
+            if result:
+                return f"Condition met after {attempt} attempt(s): {condition[:80]}"
+        except Exception as e:
+            if attempt == 1:
+                return f"ERROR evaluating condition '{condition[:80]}': {e}"
+        _time.sleep(min(interval, deadline - _time.time()))
+    elapsed = timeout
+    return f"TIMEOUT after {elapsed}s ({attempt} attempts): condition not met: {condition[:80]}"
+
+
+def _ensure_checkpoints_table(conn: sqlite3.Connection) -> None:
+    """Ensure the checkpoints table exists (created lazily)."""
+    conn.execute('''CREATE TABLE IF NOT EXISTS checkpoints (
+        name TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        ts REAL NOT NULL
+    )''')
+    conn.commit()
+
+
+def tool_checkpoint_save(name: str, data: str) -> str:
+    """
+    Save a named checkpoint to persistent storage (SQLite). Use to record
+    task progress so it can be resumed if the session is interrupted.
+    'data' is any string (JSON, text, URL, file path, etc.)
+    """
+    try:
+        conn = _db_connect()
+        _ensure_checkpoints_table(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO checkpoints (name, data, ts) VALUES (?, ?, ?)",
+            (name, data, time.time())
+        )
+        conn.commit()
+        return f"Checkpoint saved: {name} ({len(data)} chars)"
+    except Exception as e:
+        return f"ERROR saving checkpoint '{name}': {e}"
+
+
+def tool_checkpoint_load(name: str) -> str:
+    """
+    Load a previously saved checkpoint by name.
+    Returns the saved data string, or ERROR if not found.
+    """
+    try:
+        conn = _db_connect()
+        _ensure_checkpoints_table(conn)
+        row = conn.execute(
+            "SELECT data FROM checkpoints WHERE name = ?", (name,)
+        ).fetchone()
+        if row:
+            return row[0]
+        return f"ERROR: no checkpoint found named '{name}'"
+    except Exception as e:
+        return f"ERROR loading checkpoint '{name}': {e}"
+
+
+def tool_checkpoint_list() -> str:
+    """List all saved checkpoints with their names, sizes, and timestamps."""
+    try:
+        conn = _db_connect()
+        _ensure_checkpoints_table(conn)
+        rows = conn.execute(
+            "SELECT name, length(data), ts FROM checkpoints ORDER BY ts DESC"
+        ).fetchall()
+        if not rows:
+            return "No checkpoints saved"
+        lines = ["Saved checkpoints:"]
+        for cp_name, sz, ts in rows:
+            lines.append(
+                f"  {cp_name:<30} {sz:>6} chars  saved {time.strftime('%Y-%m-%d %H:%M', time.localtime(ts))}"
+            )
+        return "\n".join(lines)
+    except Exception as e:
+        return f"ERROR listing checkpoints: {e}"
+
+
+def tool_run_workflow_file(path: str) -> str:
+    """
+    Load a JSON workflow file and execute it via multi_step_workflow.
+    The file must contain a JSON array of step objects: [{tool, args, verify?, label?}].
+    """
+    try:
+        content = Path(path).read_text(encoding='utf-8')
+        return tool_multi_step_workflow(content)
+    except FileNotFoundError:
+        return f"ERROR: file not found: {path}"
+    except Exception as e:
+        return f"ERROR loading workflow file: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -4327,6 +4499,77 @@ TOOLS: Dict[str, Dict] = {
         "required": ["task"],
         "category": "ai",
     },
+
+    # ── Multi-step workflow orchestration ─────────────────────────────────────
+    "multi_step_workflow": {
+        "fn": tool_multi_step_workflow,
+        "desc": (
+            "Execute a JSON-defined sequence of tool calls in order. "
+            "Each step: {\"tool\": \"name\", \"args\": {...}, \"label\": \"optional\", \"verify\": \"optional shell check\"}. "
+            "Use for complex multi-step tasks to ensure every step is verified and logged."
+        ),
+        "params": {
+            "steps": {"type": "string", "description": "JSON array of step objects: [{tool, args, label?, verify?}]"},
+            "stop_on_error": {"type": "boolean", "description": "Stop if any step errors (default: true)"},
+        },
+        "required": ["steps"],
+        "category": "workflow",
+    },
+
+    "wait_for_condition": {
+        "fn": tool_wait_for_condition,
+        "desc": (
+            "Poll until a Python expression is truthy or timeout is reached. "
+            "Use to wait for file creation, process start, network availability, etc. "
+            "Expression has access to: os, subprocess, Path, time, json, re."
+        ),
+        "params": {
+            "condition": {"type": "string", "description": "Python expression to evaluate (e.g. \"os.path.exists('/tmp/out.txt')\")"},
+            "timeout": {"type": "integer", "description": "Max seconds to wait (default: 30, max: 300)"},
+            "interval": {"type": "number", "description": "Seconds between checks (default: 1.0)"},
+        },
+        "required": ["condition"],
+        "category": "workflow",
+    },
+
+    "checkpoint_save": {
+        "fn": tool_checkpoint_save,
+        "desc": "Save a named progress checkpoint to SQLite. Use during long tasks to record where you are.",
+        "params": {
+            "name": {"type": "string", "description": "Checkpoint name (short identifier)"},
+            "data": {"type": "string", "description": "Data to save (JSON, text, URL, notes)"},
+        },
+        "required": ["name", "data"],
+        "category": "workflow",
+    },
+
+    "checkpoint_load": {
+        "fn": tool_checkpoint_load,
+        "desc": "Load a previously saved checkpoint by name. Returns the stored data string.",
+        "params": {
+            "name": {"type": "string", "description": "Checkpoint name to load"},
+        },
+        "required": ["name"],
+        "category": "workflow",
+    },
+
+    "checkpoint_list": {
+        "fn": tool_checkpoint_list,
+        "desc": "List all saved task checkpoints with names, sizes, and timestamps.",
+        "params": {},
+        "required": [],
+        "category": "workflow",
+    },
+
+    "run_workflow_file": {
+        "fn": tool_run_workflow_file,
+        "desc": "Load a JSON workflow file and execute it. File must contain a JSON array of {tool, args} step objects.",
+        "params": {
+            "path": {"type": "string", "description": "Path to the JSON workflow file"},
+        },
+        "required": ["path"],
+        "category": "workflow",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -5550,32 +5793,40 @@ def run_agent(task: str, provider, max_steps: int = 100,
                 return final_result if final_result else "(no response)"
 
             # Task mode — check if AI explicitly says it's done
-            done_phrases = re.compile(
-                r'\b(task (is )?complete|done|finished|completed|accomplished|'
+            _done_phrases = re.compile(
+                r'\b(task (is )?complete|done\b|finished\b|completed\b|accomplished|'
                 r'successfully (done|completed|finished)|all done|all steps (done|complete)|'
-                r'that\'s (all|it)|i\'ve (completed|finished|done))\b',
+                r'that\'s (all|it)\b|i\'ve (completed|finished|done)|'
+                r'everything (is |has been )?(done|complete|finished)|'
+                r'work is (done|complete|finished)|operation (complete|successful)|'
+                r'result:|summary:|here (is|are) the|i (have|\'ve) (now )?(written|created|'
+                r'saved|installed|opened|launched|built|run|executed|generated|deployed|'
+                r'downloaded|uploaded|sent|configured))\b',
                 re.IGNORECASE
             )
-            if done_phrases.search(final_result):
-                # AI said it's done — accept
+            if _done_phrases.search(final_result):
                 return final_result
 
-            # AI responded but didn't use tools and didn't declare done
-            # Push it to continue executing
+            # AI responded but didn't use tools and didn't declare done — push it
             if no_tool_pushes < MAX_NO_TOOL_PUSHES:
                 no_tool_pushes += 1
                 _SESSION_STATS['no_tool_pushes'] += 1
-                push_msg = (
-                    "Continue executing the task using tools. "
-                    "Do not describe what you would do — actually do it by calling tools. "
-                    f"This is step {step} of the task: {task[:80]}"
-                )
+                # Vary nudge messages to avoid the AI seeing the same prompt repeatedly
+                _nudge_msgs = [
+                    (f"Execute the task now using tools. Do not describe — actually call tools. "
+                     f"Task: {task[:100]}"),
+                    (f"You described what to do but haven't done it yet. "
+                     f"Call the appropriate tool NOW to make it happen. Task: {task[:100]}"),
+                    (f"ACTION REQUIRED: Use a tool to make real progress. "
+                     f"If you're unsure which tool to use, call think_and_plan first, then execute. "
+                     f"Task: {task[:100]}"),
+                ]
+                push_msg = _nudge_msgs[min(no_tool_pushes - 1, len(_nudge_msgs) - 1)]
                 if not quiet:
-                    print(dim(f"\r  ↺ Pushing AI to continue (push {no_tool_pushes}/{MAX_NO_TOOL_PUSHES})…"))
+                    print(dim(f"\r  ↺ Nudging AI to execute (nudge {no_tool_pushes}/{MAX_NO_TOOL_PUSHES})…"))
                 messages.append({"role": "user", "content": push_msg})
                 continue
             else:
-                # Max pushes reached — accept what we have
                 return final_result if final_result else "(task ended without explicit completion)"
 
         # Execute tools
@@ -5704,6 +5955,8 @@ def _make_help() -> str:
   {cyan('/audit_repo <own/nm>')} Audit a public GitHub repo (metadata + README + tree)
   {cyan('/demo')}                Quick health check (platform, tools, memory, providers)
   {cyan('/stats')}               Session stats (steps, tool calls, errors, top tools)
+  {cyan('/workflow <json|@f>')}  Run a JSON-defined multi-step workflow (or @file.json)
+  {cyan('/checkpoint [cmd]')}    Manage task checkpoints: list | save <name> <data> | load <name>
   {cyan('/new')}                 Start a fresh conversation
   {cyan('/clear')}               Clear screen
   {cyan('/exit')} {cyan('/quit')}           Exit
@@ -6172,6 +6425,36 @@ def repl(provider_name: str = '', model: str = ''):
                 r = tool_execute_python('print(2+2)')
                 print(green("  ✓ execute_python(print(2+2)): ") + r.strip())
                 print(dim("\n  For a full demo, run: python3 tests/demo_workflow.py"))
+
+            elif cmd == '/workflow':
+                # Execute a multi-step JSON workflow
+                if not args.strip():
+                    print(yellow("  Usage: /workflow <json-steps | @path/to/workflow.json>"))
+                    print(dim("  JSON: [{\"tool\":\"execute_shell\",\"args\":{\"command\":\"echo hi\"},\"label\":\"test\"}]"))
+                    print(dim("  File: /workflow @my_workflow.json"))
+                else:
+                    wf_arg = args.strip()
+                    if wf_arg.startswith('@'):
+                        # Load from file
+                        wf_path = wf_arg[1:].strip()
+                        print(dim(f"  Loading workflow from: {wf_path}"))
+                        result = tool_run_workflow_file(wf_path)
+                    else:
+                        result = tool_multi_step_workflow(wf_arg)
+                    print(result)
+
+            elif cmd == '/checkpoint':
+                # Manage task checkpoints
+                sub = args.strip().split(None, 2)
+                subcmd = sub[0] if sub else 'list'
+                if subcmd == 'list' or not sub:
+                    print(tool_checkpoint_list())
+                elif subcmd == 'save' and len(sub) >= 3:
+                    print(tool_checkpoint_save(sub[1], sub[2]))
+                elif subcmd == 'load' and len(sub) >= 2:
+                    print(tool_checkpoint_load(sub[1]))
+                else:
+                    print(yellow("  Usage: /checkpoint [list | save <name> <data> | load <name>]"))
 
             else:
                 print(yellow(f"  Unknown command: {cmd}. Try /help"))
