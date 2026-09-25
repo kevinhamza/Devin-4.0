@@ -43,6 +43,8 @@ logger.propagate = False
 class KeyboardMouseController:
     """Low-level wrapper for pynput keyboard and mouse control."""
     def __init__(self):
+        if not DEPS_AVAILABLE:
+            raise ImportError(f"pynput/selenium/pyautogui required: {_import_error}")
         self.keyboard = KeyboardController()
         self.mouse = MouseController()
     

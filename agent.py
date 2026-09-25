@@ -493,50 +493,723 @@ try:
 except BaseException:
     pass
 
+# ── Extended module loading (all remaining modules/) ─────────────────────────
+
+# Load Gemini module (Google Gemini API wrapper)
+_gemini_mod = None
+try:
+    _gemini_mod = _il.import_module('Gemini_module')
+except BaseException:
+    pass
+
+# Load access control (permission/role management)
+_access_ctrl_mod = None
+try:
+    _access_ctrl_mod = _il.import_module('access_control')
+except BaseException:
+    pass
+
+# Load AI conversation module (multi-turn conversation management)
+_ai_conv_mod = None
+try:
+    _ai_conv_mod = _il.import_module('ai_conversation_module')
+except BaseException:
+    pass
+
+# Load cheetah agent (cheetahclaws full agent)
+_cheetah_agent_mod = None
+try:
+    _cheetah_agent_mod = _il.import_module('cheetah_agent')
+except BaseException:
+    pass
+
+# Load cheetah compaction (context compaction/summarization)
+_cheetah_compact_mod = None
+try:
+    _cheetah_compact_mod = _il.import_module('cheetah_compaction')
+except BaseException:
+    pass
+
+# Load cheetah files (file operations via cheetah)
+_cheetah_files_mod = None
+try:
+    _cheetah_files_mod = _il.import_module('cheetah_files')
+except BaseException:
+    pass
+
+# Load AIA internet tasks (web automation, data fetch)
+_aia_internet_mod = None
+try:
+    _aia_internet_mod = _il.import_module('aia_internet_tasks')
+except BaseException:
+    pass
+
+# Load cloud services manager (multi-cloud orchestration)
+_cloud_svc_mgr_mod = None
+try:
+    _cloud_svc_mgr_mod = _il.import_module('cloud_services_manager')
+except BaseException:
+    pass
+
+# Load ChatGPT module (OpenAI GPT integration)
+_chatgpt_mod = None
+try:
+    _chatgpt_mod = _il.import_module('chatgpt_module')
+except BaseException:
+    pass
+
+# Load cloud integration utilities
+_cloud_util_mod = None
+try:
+    _cloud_util_mod = _il.import_module('cloud_integration_utilities')
+except BaseException:
+    pass
+
+# Load automation module (task automation workflows)
+_automation_main_mod = None
+try:
+    _automation_main_mod = _il.import_module('automation_module')
+except BaseException:
+    pass
+
+# Load AIA automation (AIA repo automation facade)
+_aia_auto_mod = None
+try:
+    _aia_auto_mod = _il.import_module('aia_automation')
+except BaseException:
+    pass
+
+# Load AIA data retrieval (structured data extraction)
+_aia_data_mod = None
+try:
+    _aia_data_mod = _il.import_module('aia_data_retrieval')
+except BaseException:
+    pass
+
+# Load canvas server (collaborative canvas/whiteboard)
+_canvas_mod = None
+try:
+    _canvas_mod = _il.import_module('canvas_server')
+except BaseException:
+    pass
+
+# Load cheetah web (web browsing/scraping via cheetah)
+_cheetah_web_mod = None
+try:
+    _cheetah_web_mod = _il.import_module('cheetah_web')
+except BaseException:
+    pass
+
+# Load cheetah browser (Playwright/browser automation)
+_cheetah_browser_mod = None
+try:
+    _cheetah_browser_mod = _il.import_module('cheetah_browser')
+except BaseException:
+    pass
+
+# Load cheetah notebook (Jupyter notebook operations)
+_cheetah_notebook_mod = None
+try:
+    _cheetah_notebook_mod = _il.import_module('cheetah_notebook')
+except BaseException:
+    pass
+
+# Load cheetah shell (shell/bash via cheetah)
+_cheetah_shell_mod = None
+try:
+    _cheetah_shell_mod = _il.import_module('cheetah_shell')
+except BaseException:
+    pass
+
+# Load cheetah context (context window management)
+_cheetah_ctx_mod = None
+try:
+    _cheetah_ctx_mod = _il.import_module('cheetah_context')
+except BaseException:
+    pass
+
+# Load Claude module (Anthropic Claude API wrapper)
+_claude_mod = None
+try:
+    _claude_mod = _il.import_module('claude_module')
+except BaseException:
+    pass
+
+# Load all-other-AIs module (misc AI provider wrappers)
+_all_other_ais_mod = None
+try:
+    _all_other_ais_mod = _il.import_module('all_otherais_modules')
+except BaseException:
+    pass
+
+# Load AIA voice assistant (AIA STT/TTS)
+_aia_voice_mod = None
+try:
+    _aia_voice_mod = _il.import_module('aia_voice_assistant')
+except BaseException:
+    pass
+
+# Load AIA device control (IoT/smart device control)
+_aia_device_mod = None
+try:
+    _aia_device_mod = _il.import_module('aia_device_control')
+except BaseException:
+    pass
+
+# Load cloud integration services (service mesh)
+_cloud_svc_mod = None
+try:
+    _cloud_svc_mod = _il.import_module('cloud_integration_services')
+except BaseException:
+    pass
+
+# Load AIA social media (social platform automation)
+_aia_social_mod = None
+try:
+    _aia_social_mod = _il.import_module('aia_social_media')
+except BaseException:
+    pass
+
+# Load AIA machine learning (model training/inference)
+_aia_ml_mod = None
+try:
+    _aia_ml_mod = _il.import_module('aia_machine_learning')
+except BaseException:
+    pass
+
+# Load AIA face detection (computer vision face recognition)
+_aia_face_mod = None
+try:
+    _aia_face_mod = _il.import_module('aia_face_detection')
+except BaseException:
+    pass
+
+# Load Holomat home screen (HoloLens/XR home UI)
+_holomat_home_mod = None
+try:
+    _holomat_home_mod = _il.import_module('holomat_home_screen')
+except BaseException:
+    pass
+
+# Load Devin 1 core service (legacy Devin 1 runtime)
+_devin1_core_mod = None
+try:
+    _devin1_core_mod = _il.import_module('devin1_core_service')
+except BaseException:
+    pass
+
+# Load Devin 2 bootstrap (Devin 2 capabilities bridge)
+_devin2_mod = None
+try:
+    _devin2_mod = _il.import_module('devin2_bootstrap')
+except BaseException:
+    pass
+
+# Load Holomat run (XR session runner)
+_holomat_run_mod = None
+try:
+    _holomat_run_mod = _il.import_module('holomat_run')
+except BaseException:
+    pass
+
+# Load Jarvis main (full JARVIS orchestrator)
+_jarvis_main_mod = None
+try:
+    _jarvis_main_mod = _il.import_module('jarvis_main')
+except BaseException:
+    pass
+
+# Load Devin 3 bootstrap (Devin 3 capabilities bridge)
+_devin3_mod = None
+try:
+    _devin3_mod = _il.import_module('devin3_bootstrap')
+except BaseException:
+    pass
+
+# Load engine module (task engine / orchestrator core)
+_engine_mod = None
+try:
+    _engine_mod = _il.import_module('engine')
+except BaseException:
+    pass
+
+# Load HuggingFace provider module (HF inference wrapper)
+_hf_provider_mod = None
+try:
+    _hf_provider_mod = _il.import_module('hf_provider')
+except BaseException:
+    pass
+
+# Load Devin 1 chat main (Devin 1 conversation loop)
+_devin1_chat_mod = None
+try:
+    _devin1_chat_mod = _il.import_module('devin1_chatmain')
+except BaseException:
+    pass
+
+# Load cloud tools (generic cloud utilities)
+_cloud_tools_mod = None
+try:
+    _cloud_tools_mod = _il.import_module('cloud_tools')
+except BaseException:
+    pass
+
+# Load Jarvis bridge (JARVIS capability bridge)
+_jarvis_bridge_mod = None
+try:
+    _jarvis_bridge_mod = _il.import_module('jarvis_bridge')
+except BaseException:
+    pass
+
+# Load face recognition tools (FR beyond AIA)
+_face_recog_mod = None
+try:
+    _face_recog_mod = _il.import_module('face_recognition_tools')
+except BaseException:
+    pass
+
+# Load Devin 1 bootstrap (Devin 1 init bridge)
+_devin1_boot_mod = None
+try:
+    _devin1_boot_mod = _il.import_module('devin1_bootstrap')
+except BaseException:
+    pass
+
+# Load Perplexity module (Perplexity AI search API)
+_perplexity_mod = None
+try:
+    _perplexity_mod = _il.import_module('perplexity_module')
+except BaseException:
+    pass
+
+# Load reality XR tools (immersive reality / AR/VR)
+_reality_xr_mod = None
+try:
+    _reality_xr_mod = _il.import_module('reality_xr_tools')
+except BaseException:
+    pass
+
+# Load platform ops tools (OS-level platform operations)
+_platform_ops_mod = None
+try:
+    _platform_ops_mod = _il.import_module('platform_ops_tools')
+except BaseException:
+    pass
+
+# Load user interaction module (HCI / feedback loop)
+_user_interact_mod = None
+try:
+    _user_interact_mod = _il.import_module('user_interaction_module')
+except BaseException:
+    pass
+
+# Load vulnerability analysis main (vuln scanner)
+_vuln_main_mod = None
+try:
+    _vuln_main_mod = _il.import_module('vuln_analysis_main')
+except BaseException:
+    pass
+
+# Load system monitor module (extended sysmon)
+_sysmon_ext_mod = None
+try:
+    _sysmon_ext_mod = _il.import_module('system_monitor_module')
+except BaseException:
+    pass
+
+# Load vulnerability analysis CLI (vuln CLI tools)
+_vuln_cli_mod = None
+try:
+    _vuln_cli_mod = _il.import_module('vuln_analysis_cli')
+except BaseException:
+    pass
+
+# Load tool executor (generic tool dispatch)
+_tool_exec_mod = None
+try:
+    _tool_exec_mod = _il.import_module('tool_executor')
+    _tool_executor = (_tool_exec_mod.ToolExecutor() if hasattr(_tool_exec_mod, 'ToolExecutor') else None)
+except BaseException:
+    _tool_executor = None
+
+# Load XR tools (extended XR/AR/VR tools)
+_xr_tools_mod = None
+try:
+    _xr_tools_mod = _il.import_module('xr_tools')
+except BaseException:
+    pass
+
+# ── ai_core/ modules ─────────────────────────────────────────────────────────
+
+# Add ai_core subdirs to path
+for _ai_core_sub in [
+    _ROOT / 'ai_core' / 'cognitive_arch',
+    _ROOT / 'ai_core' / 'neurosymbolic',
+    _ROOT / 'ai_core' / 'self_improvement',
+]:
+    _s = str(_ai_core_sub)
+    if _ai_core_sub.is_dir() and _s not in sys.path:
+        sys.path.insert(0, _s)
+
+# Load long-term memory (cognitive architecture)
+_ltm_mod = None
+_ltm = None
+try:
+    import importlib.util as _ilu2
+    _ltm_spec = _ilu2.spec_from_file_location(
+        'long_term_memory', str(_ROOT / 'ai_core' / 'cognitive_arch' / 'long_term_memory.py'))
+    if _ltm_spec:
+        _ltm_mod = _ilu2.module_from_spec(_ltm_spec)
+        _ltm_spec.loader.exec_module(_ltm_mod)  # type: ignore
+        _ltm = (_ltm_mod.LongTermMemory() if hasattr(_ltm_mod, 'LongTermMemory') else None)
+except BaseException:
+    pass
+
+# Load working memory (cognitive architecture)
+_wm_mod = None
+_working_mem = None
+try:
+    _wm_spec = _ilu2.spec_from_file_location(
+        'working_memory', str(_ROOT / 'ai_core' / 'cognitive_arch' / 'working_memory.py'))
+    if _wm_spec:
+        _wm_mod = _ilu2.module_from_spec(_wm_spec)
+        _wm_spec.loader.exec_module(_wm_mod)  # type: ignore
+        _working_mem = (_wm_mod.WorkingMemory() if hasattr(_wm_mod, 'WorkingMemory') else None)
+except BaseException:
+    pass
+
+# Load reasoning engine
+_reasoning_mod = None
+try:
+    _re_spec = _ilu2.spec_from_file_location(
+        'reasoning_engine', str(_ROOT / 'ai_core' / 'cognitive_arch' / 'reasoning_engine.py'))
+    if _re_spec:
+        _reasoning_mod = _ilu2.module_from_spec(_re_spec)
+        _re_spec.loader.exec_module(_reasoning_mod)  # type: ignore
+except BaseException:
+    pass
+
+# ── security/ modules ────────────────────────────────────────────────────────
+
+# Load security dashboard
+_sec_dashboard_mod = None
+_sec_dashboard = None
+try:
+    _sd_spec = _ilu2.spec_from_file_location(
+        'security_dashboard', str(_ROOT / 'security' / 'security_dashboard.py'))
+    if _sd_spec:
+        _sec_dashboard_mod = _ilu2.module_from_spec(_sd_spec)
+        _sd_spec.loader.exec_module(_sec_dashboard_mod)  # type: ignore
+        _sec_dashboard = (_sec_dashboard_mod.SecurityDashboard()
+                          if hasattr(_sec_dashboard_mod, 'SecurityDashboard') else None)
+except BaseException:
+    pass
+
+# Load action auditor
+_auditor_mod = None
+try:
+    _aud_spec = _ilu2.spec_from_file_location(
+        'action_auditor', str(_ROOT / 'security' / 'audit_logs' / 'action_auditor.py'))
+    if _aud_spec:
+        _auditor_mod = _ilu2.module_from_spec(_aud_spec)
+        _aud_spec.loader.exec_module(_auditor_mod)  # type: ignore
+except BaseException:
+    pass
+
+# Load ethics constraints (Three Laws compliance)
+_ethics_const_mod = None
+try:
+    _ec_spec = _ilu2.spec_from_file_location(
+        'ethics_constraints',
+        str(_ROOT / 'security' / 'ethical_enforcer' / 'three_laws_compliance.py'))
+    if _ec_spec:
+        _ethics_const_mod = _ilu2.module_from_spec(_ec_spec)
+        _ec_spec.loader.exec_module(_ethics_const_mod)  # type: ignore
+except BaseException:
+    pass
+
+# Load ransomware detector
+_ransomware_mod = None
+try:
+    _rw_spec = _ilu2.spec_from_file_location(
+        'ransomware_detector',
+        str(_ROOT / 'security' / 'incident_response' / 'ransomware_detector.py'))
+    if _rw_spec:
+        _ransomware_mod = _ilu2.module_from_spec(_rw_spec)
+        _rw_spec.loader.exec_module(_ransomware_mod)  # type: ignore
+except BaseException:
+    pass
+
+# ── servers/ modules ─────────────────────────────────────────────────────────
+
+# Add servers dir to path
+_servers_dir = _ROOT / 'servers'
+if _servers_dir.is_dir() and str(_servers_dir) not in sys.path:
+    sys.path.insert(0, str(_servers_dir))
+
+# Load cloud integration server (background Flask server)
+_cloud_server_mod = None
+try:
+    _cs_spec = _ilu2.spec_from_file_location(
+        'cloud_integration_server', str(_servers_dir / 'cloud_integration_server.py'))
+    if _cs_spec:
+        _cloud_server_mod = _ilu2.module_from_spec(_cs_spec)
+        _cs_spec.loader.exec_module(_cloud_server_mod)  # type: ignore
+except BaseException:
+    pass
+
+# Load analytics server
+_analytics_server_mod = None
+try:
+    _as_spec = _ilu2.spec_from_file_location(
+        'analytics_server', str(_servers_dir / 'analytics_server.py'))
+    if _as_spec:
+        _analytics_server_mod = _ilu2.module_from_spec(_as_spec)
+        _as_spec.loader.exec_module(_analytics_server_mod)  # type: ignore
+except BaseException:
+    pass
+
+# Load task orchestrator
+_task_orch_mod = None
+try:
+    _to_spec = _ilu2.spec_from_file_location(
+        'task_orchestrator', str(_servers_dir / 'task_orchestrator.py'))
+    if _to_spec:
+        _task_orch_mod = _ilu2.module_from_spec(_to_spec)
+        _to_spec.loader.exec_module(_task_orch_mod)  # type: ignore
+except BaseException:
+    pass
+
+# ── singularity/ modules ─────────────────────────────────────────────────────
+
+# Load utility function (goal-system utility)
+_utility_fn_mod = None
+try:
+    _uf_spec = _ilu2.spec_from_file_location(
+        'utility_function',
+        str(_ROOT / 'singularity' / 'goal_system' / 'utility_function.py'))
+    if _uf_spec:
+        _utility_fn_mod = _ilu2.module_from_spec(_uf_spec)
+        _uf_spec.loader.exec_module(_utility_fn_mod)  # type: ignore
+except BaseException:
+    pass
+
+# Load code generator (self-replication / code synthesis)
+_code_gen_mod = None
+try:
+    _cg_spec = _ilu2.spec_from_file_location(
+        'code_generator',
+        str(_ROOT / 'singularity' / 'self_replication' / 'code_generator.py'))
+    if _cg_spec:
+        _code_gen_mod = _ilu2.module_from_spec(_cg_spec)
+        _cg_spec.loader.exec_module(_code_gen_mod)  # type: ignore
+except BaseException:
+    pass
+
+# ── cloud/ modules ────────────────────────────────────────────────────────────
+
+_cloud_dir = _ROOT / 'cloud'
+if _cloud_dir.is_dir() and str(_cloud_dir) not in sys.path:
+    sys.path.insert(0, str(_cloud_dir))
+
+_aws_mod = None
+try:
+    _aws_spec = _ilu2.spec_from_file_location('aws_integration', str(_cloud_dir / 'aws_integration.py'))
+    if _aws_spec:
+        _aws_mod = _ilu2.module_from_spec(_aws_spec)
+        _aws_spec.loader.exec_module(_aws_mod)  # type: ignore
+except BaseException:
+    pass
+
+_azure_mod = None
+try:
+    _az_spec = _ilu2.spec_from_file_location('azure_integration', str(_cloud_dir / 'azure_integration.py'))
+    if _az_spec:
+        _azure_mod = _ilu2.module_from_spec(_az_spec)
+        _az_spec.loader.exec_module(_azure_mod)  # type: ignore
+except BaseException:
+    pass
+
+_gcp_mod = None
+try:
+    _gcp_spec = _ilu2.spec_from_file_location('gcp_integration', str(_cloud_dir / 'gcp_integration.py'))
+    if _gcp_spec:
+        _gcp_mod = _ilu2.module_from_spec(_gcp_spec)
+        _gcp_spec.loader.exec_module(_gcp_mod)  # type: ignore
+except BaseException:
+    pass
+
+# ── Dynamic bulk loader: every remaining first-party directory ────────────────
+# Covers ai_ethics/, ai_integrations/, chaos_engineering/, community/,
+# cross_border_data_flow/, cyber_law/, cyber_range/, databases/, digital_twins/,
+# edge/, edge_ai/, enterprise/, experimental/, hardware/, hexstrike-ai/, hmi/,
+# infra/, legal/, mlops/, monitoring/, plugins/, privacy/, prototypes/, quantum/,
+# recovery/, scripts/, threat_intel/, xr_env/ — any .py file not already loaded.
+
+_BULK_SCAN_DIRS: List[str] = [
+    'ai_ethics', 'ai_integrations', 'chaos_engineering', 'community',
+    'cross_border_data_flow', 'cyber_law', 'cyber_range', 'databases',
+    'digital_twins', 'edge', 'edge_ai', 'enterprise', 'experimental',
+    'hardware', 'hexstrike-ai', 'hmi', 'infra', 'legal', 'mlops',
+    'monitoring', 'plugins', 'privacy', 'prototypes', 'quantum', 'recovery',
+    'scripts', 'threat_intel', 'xr_env',
+]
+
+_bulk_loaded: Dict[str, Any] = {}
+
+def _bulk_load_dir(directory: 'Path') -> Dict[str, Any]:
+    """Load every .py (non-__init__, non-pycache) file under directory."""
+    result: Dict[str, Any] = {}
+    if not directory.is_dir():
+        return result
+    _skip = {'__pycache__', '.git', 'node_modules'}
+    for pyfile in directory.rglob('*.py'):
+        if any(s in pyfile.parts for s in _skip):
+            continue
+        if pyfile.name == '__init__.py':
+            continue
+        rel = str(pyfile.relative_to(_ROOT))
+        mod_name = rel.replace(os.sep, '.').replace('/', '.')[:-3]
+        if mod_name in sys.modules:
+            result[rel] = sys.modules[mod_name]
+            continue
+        try:
+            spec = _ilu2.spec_from_file_location(mod_name, str(pyfile))
+            if spec is None or spec.loader is None:
+                continue
+            mod = _ilu2.module_from_spec(spec)
+            spec.loader.exec_module(mod)   # type: ignore
+            sys.modules[mod_name] = mod
+            result[rel] = mod
+        except BaseException:
+            result[rel] = None
+    return result
+
+for _bdir_name in _BULK_SCAN_DIRS:
+    _bdir = _ROOT / _bdir_name
+    _s = str(_bdir)
+    if _bdir.is_dir() and _s not in sys.path:
+        sys.path.insert(0, _s)
+    _bulk_loaded.update(_bulk_load_dir(_bdir))
+
 # Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
-        'voice':             _voice_mod           is not None,
-        'os_automation':     _os_auto_mod         is not None,
-        'persistent_memory': _pmem                is not None,
-        'messaging_gateway': _msg_mod             is not None,
-        'integration_hub':   _hub_mod             is not None,
-        'cheetahclaws':      _cc_bridge           is not None,
-        'browser':           _browser_mod         is not None,
-        'system_monitor':    _sysmon_mod          is not None,
-        'code_execution':    _code_exec_mod       is not None,
-        'scheduler':         _scheduler_mod       is not None,
-        'encryption':        _crypto_mod          is not None,
-        'cloud':             _cloud_mod           is not None,
-        'jarvis_tools':      _jarvis_tools_mod    is not None,
+        # ── Core modules ──────────────────────────────────────────────────────
+        'voice':             _voice_mod             is not None,
+        'os_automation':     _os_auto_mod           is not None,
+        'persistent_memory': _pmem                  is not None,
+        'messaging_gateway': _msg_mod               is not None,
+        'integration_hub':   _hub_mod               is not None,
+        'cheetahclaws':      _cc_bridge             is not None,
+        'browser':           _browser_mod           is not None,
+        'system_monitor':    _sysmon_mod            is not None,
+        'code_execution':    _code_exec_mod         is not None,
+        'scheduler':         _scheduler_mod         is not None,
+        'encryption':        _crypto_mod            is not None,
+        'cloud':             _cloud_mod             is not None,
+        'jarvis_tools':      _jarvis_tools_mod      is not None,
         'cheetah_providers': _cheetah_providers_mod is not None,
-        'ollama':            _ollama_mod          is not None,
-        'social_media':      _social_mod          is not None,
-        'analytics':         _analytics_mod       is not None,
-        'automation_tools':  _auto_tools_mod      is not None,
-        'ai_connector':      _ai_connector_mod    is not None,
-        'email_tools':       _email_mod           is not None,
-        'repo_tools':        _repo_tools_mod      is not None,
-        'cheetah_security':  _cheetah_sec_mod     is not None,
-        'pentest':           _pentest_mod         is not None,
-        'privacy':           _privacy_mod         is not None,
-        'resilience':        _resilience_mod      is not None,
-        'threat_intel':      _threat_intel_mod    is not None,
-        'multimedia':        _multimedia_mod      is not None,
-        'mobile':            _mobile_mod          is not None,
-        'robotics':          _robotics_mod        is not None,
-        'external_agents':   _ext_agent_mod       is not None,
-        'quantum':           _quantum_mod         is not None,
-        'keyboard_mouse':    _kbm_ctrl            is not None,
-        'ethics_legal':      _ethics_mod          is not None,
-        'ai_learning':       _ai_learn_mod        is not None,
-        'opendevin':         _opendevin_mod       is not None,
-        'holomat_xr':        _holomat_mod         is not None,
-        'pentestgpt':        _pentestgpt_mod      is not None,
-        'cyber_range':       _cyber_range_mod     is not None,
-        'data_logger':       _data_logger         is not None,
-        'plugins':           _plugins_mod         is not None,
-        'all_ais':           _all_ais_mod         is not None,
+        'ollama':            _ollama_mod            is not None,
+        'social_media':      _social_mod            is not None,
+        'analytics':         _analytics_mod         is not None,
+        'automation_tools':  _auto_tools_mod        is not None,
+        'ai_connector':      _ai_connector_mod      is not None,
+        'email_tools':       _email_mod             is not None,
+        'repo_tools':        _repo_tools_mod        is not None,
+        'cheetah_security':  _cheetah_sec_mod       is not None,
+        'pentest':           _pentest_mod           is not None,
+        'privacy':           _privacy_mod           is not None,
+        'resilience':        _resilience_mod        is not None,
+        'threat_intel':      _threat_intel_mod      is not None,
+        'multimedia':        _multimedia_mod        is not None,
+        'mobile':            _mobile_mod            is not None,
+        'robotics':          _robotics_mod          is not None,
+        'external_agents':   _ext_agent_mod         is not None,
+        'quantum':           _quantum_mod           is not None,
+        'keyboard_mouse':    _kbm_ctrl              is not None,
+        'ethics_legal':      _ethics_mod            is not None,
+        'ai_learning':       _ai_learn_mod          is not None,
+        'opendevin':         _opendevin_mod         is not None,
+        'holomat_xr':        _holomat_mod           is not None,
+        'pentestgpt':        _pentestgpt_mod        is not None,
+        'cyber_range':       _cyber_range_mod       is not None,
+        'data_logger':       _data_logger           is not None,
+        'plugins':           _plugins_mod           is not None,
+        'all_ais':           _all_ais_mod           is not None,
+        # ── Extended modules ──────────────────────────────────────────────────
+        'gemini_module':     _gemini_mod            is not None,
+        'access_control':    _access_ctrl_mod       is not None,
+        'ai_conversation':   _ai_conv_mod           is not None,
+        'cheetah_agent':     _cheetah_agent_mod     is not None,
+        'cheetah_compact':   _cheetah_compact_mod   is not None,
+        'cheetah_files':     _cheetah_files_mod     is not None,
+        'aia_internet':      _aia_internet_mod      is not None,
+        'cloud_svc_mgr':     _cloud_svc_mgr_mod     is not None,
+        'chatgpt':           _chatgpt_mod           is not None,
+        'cloud_utils':       _cloud_util_mod        is not None,
+        'automation_main':   _automation_main_mod   is not None,
+        'aia_automation':    _aia_auto_mod          is not None,
+        'aia_data':          _aia_data_mod          is not None,
+        'canvas_server':     _canvas_mod            is not None,
+        'cheetah_web':       _cheetah_web_mod       is not None,
+        'cheetah_browser':   _cheetah_browser_mod   is not None,
+        'cheetah_notebook':  _cheetah_notebook_mod  is not None,
+        'cheetah_shell':     _cheetah_shell_mod     is not None,
+        'cheetah_context':   _cheetah_ctx_mod       is not None,
+        'claude_module':     _claude_mod            is not None,
+        'all_other_ais':     _all_other_ais_mod     is not None,
+        'aia_voice':         _aia_voice_mod         is not None,
+        'aia_device':        _aia_device_mod        is not None,
+        'cloud_services':    _cloud_svc_mod         is not None,
+        'aia_social':        _aia_social_mod        is not None,
+        'aia_ml':            _aia_ml_mod            is not None,
+        'aia_face':          _aia_face_mod          is not None,
+        'holomat_home':      _holomat_home_mod      is not None,
+        'devin1_core':       _devin1_core_mod       is not None,
+        'devin2_bootstrap':  _devin2_mod            is not None,
+        'holomat_run':       _holomat_run_mod       is not None,
+        'jarvis_main':       _jarvis_main_mod       is not None,
+        'devin3_bootstrap':  _devin3_mod            is not None,
+        'engine':            _engine_mod            is not None,
+        'hf_provider':       _hf_provider_mod       is not None,
+        'devin1_chat':       _devin1_chat_mod       is not None,
+        'cloud_tools':       _cloud_tools_mod       is not None,
+        'jarvis_bridge':     _jarvis_bridge_mod     is not None,
+        'face_recognition':  _face_recog_mod        is not None,
+        'devin1_bootstrap':  _devin1_boot_mod       is not None,
+        'perplexity':        _perplexity_mod        is not None,
+        'reality_xr':        _reality_xr_mod        is not None,
+        'platform_ops':      _platform_ops_mod      is not None,
+        'user_interaction':  _user_interact_mod     is not None,
+        'vuln_analysis':     _vuln_main_mod         is not None,
+        'sysmon_ext':        _sysmon_ext_mod        is not None,
+        'vuln_cli':          _vuln_cli_mod          is not None,
+        'tool_executor':     _tool_executor         is not None,
+        'xr_tools':          _xr_tools_mod          is not None,
+        # ── ai_core/ ─────────────────────────────────────────────────────────
+        'long_term_memory':  _ltm                   is not None,
+        'working_memory':    _working_mem           is not None,
+        'reasoning_engine':  _reasoning_mod         is not None,
+        # ── security/ ────────────────────────────────────────────────────────
+        'security_dashboard': _sec_dashboard        is not None,
+        'action_auditor':    _auditor_mod           is not None,
+        'ethics_constraints': _ethics_const_mod     is not None,
+        'ransomware_detect': _ransomware_mod        is not None,
+        # ── servers/ ─────────────────────────────────────────────────────────
+        'cloud_server':      _cloud_server_mod      is not None,
+        'analytics_server':  _analytics_server_mod  is not None,
+        'task_orchestrator': _task_orch_mod         is not None,
+        # ── singularity/ ─────────────────────────────────────────────────────
+        'utility_fn':        _utility_fn_mod        is not None,
+        'code_generator':    _code_gen_mod          is not None,
+        # ── cloud/ ───────────────────────────────────────────────────────────
+        'aws':               _aws_mod               is not None,
+        'azure':             _azure_mod             is not None,
+        'gcp':               _gcp_mod               is not None,
+        # ── bulk-loaded directories ───────────────────────────────────────────
+        **{k.replace('/', '.').replace(os.sep, '.'): (v is not None)
+           for k, v in _bulk_loaded.items()},
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
