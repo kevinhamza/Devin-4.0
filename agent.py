@@ -3355,6 +3355,164 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AI — TEXT PROCESSING: ENCODE/DECODE, REGEX, STATS, MARKDOWN, TOKENS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_encode_decode(text: str, operation: str, encoding: str = 'utf-8') -> str:
+    """
+    Encode or decode text. Operations:
+    base64_encode, base64_decode, hex_encode, hex_decode,
+    url_encode, url_decode, sha256, md5, sha1.
+    """
+    import base64, hashlib
+    try:
+        op = operation.lower().replace('-', '_')
+        if op == 'base64_encode':
+            return base64.b64encode(text.encode(encoding)).decode('ascii')
+        elif op == 'base64_decode':
+            return base64.b64decode(text.encode('ascii')).decode(encoding, errors='replace')
+        elif op == 'hex_encode':
+            return text.encode(encoding).hex()
+        elif op == 'hex_decode':
+            return bytes.fromhex(text.strip()).decode(encoding, errors='replace')
+        elif op == 'url_encode':
+            import urllib.parse
+            return urllib.parse.quote(text, safe='')
+        elif op == 'url_decode':
+            import urllib.parse
+            return urllib.parse.unquote(text)
+        elif op in ('sha256', 'sha1', 'md5'):
+            h = hashlib.new(op)
+            h.update(text.encode(encoding))
+            return h.hexdigest()
+        else:
+            return f"ERROR: unknown operation {operation!r}. Use: base64_encode/decode, hex_encode/decode, url_encode/decode, sha256, md5, sha1"
+    except Exception as e:
+        return f"ERROR in encode_decode ({operation}): {e}"
+
+
+def tool_regex_extract(text: str, pattern: str, group: int = 0,
+                       flags: str = '', max_matches: int = 100) -> str:
+    """
+    Extract all regex matches from text. group=0 for full match, 1+ for capture groups.
+    flags: 'i' for case-insensitive, 'm' for multiline, 's' for dotall.
+    """
+    re_flags = 0
+    for f in flags.lower():
+        if f == 'i': re_flags |= re.IGNORECASE
+        elif f == 'm': re_flags |= re.MULTILINE
+        elif f == 's': re_flags |= re.DOTALL
+    try:
+        matches = re.findall(pattern, text, re_flags)
+        if not matches:
+            return f"No matches for pattern {pattern!r}"
+        # Handle groups
+        if isinstance(matches[0], tuple):
+            if group > 0:
+                items = [m[group - 1] if group <= len(m) else '' for m in matches]
+            else:
+                items = [' | '.join(m) for m in matches]
+        else:
+            items = matches
+        items = items[:max_matches]
+        result = [f"Found {len(matches)} match(es)" + (f" (showing {max_matches})" if len(matches) > max_matches else "") + ":"]
+        result.extend(f"  [{i+1}] {repr(m)}" for i, m in enumerate(items))
+        return "\n".join(result)
+    except re.error as e:
+        return f"ERROR: invalid regex: {e}"
+
+
+def tool_text_stats(text: str) -> str:
+    """
+    Compute text statistics: character count, word count, line count,
+    sentence count, estimated reading time, and top 10 most frequent words.
+    """
+    if not text.strip():
+        return "ERROR: empty text"
+    chars = len(text)
+    words = text.split()
+    word_count = len(words)
+    lines = text.splitlines()
+    line_count = len(lines)
+    sentences = len(re.findall(r'[.!?]+', text)) or 1
+    reading_time_sec = word_count / 3.3  # ~200 wpm
+    # Top words (excluding very common ones)
+    stopwords = {'the','a','an','is','in','it','of','and','to','for','on','at','be',
+                 'was','are','with','this','that','by','as','or','but','not','from','has'}
+    word_freq: dict = {}
+    for w in words:
+        w_clean = re.sub(r'[^\w]', '', w.lower())
+        if len(w_clean) > 2 and w_clean not in stopwords:
+            word_freq[w_clean] = word_freq.get(w_clean, 0) + 1
+    top_words = sorted(word_freq.items(), key=lambda x: -x[1])[:10]
+    result = [
+        f"Characters: {chars:,}",
+        f"Words: {word_count:,}",
+        f"Lines: {line_count:,}",
+        f"Sentences: {sentences:,}",
+        f"Reading time: {int(reading_time_sec // 60)}m {int(reading_time_sec % 60)}s",
+        f"Avg words/sentence: {word_count/sentences:.1f}",
+    ]
+    if top_words:
+        result.append("Top words: " + ", ".join(f"{w}({c})" for w, c in top_words))
+    return "\n".join(result)
+
+
+def tool_markdown_to_text(markdown: str) -> str:
+    """
+    Convert Markdown to plain text by removing headers, bold, italic, links,
+    code blocks, blockquotes, and horizontal rules.
+    """
+    text = markdown
+    text = re.sub(r'```[^\n]*\n(.*?)```', r'\1', text, flags=re.DOTALL)  # fenced code
+    text = re.sub(r'`([^`]+)`', r'\1', text)   # inline code
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)  # headings
+    text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', text)   # links
+    text = re.sub(r'!\[[^\]]*\]\([^)]+\)', '', text)        # images
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)   # bold **
+    text = re.sub(r'__(.+?)__', r'\1', text)        # bold __
+    text = re.sub(r'\*(.+?)\*', r'\1', text)        # italic *
+    text = re.sub(r'_(.+?)_', r'\1', text)          # italic _
+    text = re.sub(r'^>\s*', '', text, flags=re.MULTILINE)   # blockquotes
+    text = re.sub(r'^[-*_]{3,}\s*$', '', text, flags=re.MULTILINE)  # hr
+    text = re.sub(r'^[-*+]\s+', '', text, flags=re.MULTILINE)  # unordered list
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)  # ordered list
+    text = re.sub(r'\n{3,}', '\n\n', text)   # excess blank lines
+    return text.strip()
+
+
+def tool_count_tokens(text: str, model: str = 'gpt4') -> str:
+    """
+    Estimate token count for AI context planning.
+    Uses character-based heuristic: ~4 chars/token (GPT-4/Claude style).
+    Also warns if approaching common context limits.
+    """
+    LIMITS = {
+        'gpt4': 128_000, 'gpt35': 16_385, 'claude': 200_000,
+        'gemini': 1_000_000, 'llama': 8_192, 'mistral': 32_768,
+    }
+    chars = len(text)
+    words = len(text.split())
+    # Heuristic: ~4 chars per token for English
+    est_tokens = chars // 4
+    limit = LIMITS.get(model.lower(), 128_000)
+    pct = est_tokens / limit * 100
+    warning = ""
+    if pct > 90:
+        warning = f"\n⚠ WARNING: {pct:.0f}% of {model} context limit ({limit:,} tokens)"
+    elif pct > 70:
+        warning = f"\n⚠ CAUTION: {pct:.0f}% of {model} context limit"
+    result = (
+        f"Estimated tokens: ~{est_tokens:,}\n"
+        f"Characters: {chars:,}\n"
+        f"Words: {words:,}\n"
+        f"Model: {model} (limit: {limit:,} tokens = {pct:.1f}% used)"
+        f"{warning}"
+    )
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AH — DATA & NETWORK: HTTP, HTML PARSE, JSON VALIDATE, CSV QUERY, TABLE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6044,6 +6202,64 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["data"],
         "category": "data",
+    },
+
+    # ── Phase AI — Text processing tools ───────────────────────────────────────
+    "encode_decode": {
+        "fn": tool_encode_decode,
+        "desc": "Encode or decode text: base64, hex, URL encode/decode, or compute sha256/md5/sha1 hash.",
+        "params": {
+            "text": {"type": "string", "description": "Input text"},
+            "operation": {"type": "string", "description": "Operation: base64_encode/decode, hex_encode/decode, url_encode/decode, sha256, md5, sha1"},
+            "encoding": {"type": "string", "description": "Character encoding (default 'utf-8')"},
+        },
+        "required": ["text", "operation"],
+        "category": "data",
+    },
+
+    "regex_extract": {
+        "fn": tool_regex_extract,
+        "desc": "Extract all regex matches from text with optional capture group selection.",
+        "params": {
+            "text": {"type": "string", "description": "Input text to search"},
+            "pattern": {"type": "string", "description": "Regex pattern"},
+            "group": {"type": "integer", "description": "Capture group (0=full match, 1+=group, default 0)"},
+            "flags": {"type": "string", "description": "Regex flags: i=case-insensitive, m=multiline, s=dotall"},
+            "max_matches": {"type": "integer", "description": "Max matches to return (default 100)"},
+        },
+        "required": ["text", "pattern"],
+        "category": "data",
+    },
+
+    "text_stats": {
+        "fn": tool_text_stats,
+        "desc": "Compute text statistics: word/char/line/sentence count, reading time, top words.",
+        "params": {
+            "text": {"type": "string", "description": "Text to analyze"},
+        },
+        "required": ["text"],
+        "category": "data",
+    },
+
+    "markdown_to_text": {
+        "fn": tool_markdown_to_text,
+        "desc": "Convert Markdown to plain text by removing formatting, links, code blocks, etc.",
+        "params": {
+            "markdown": {"type": "string", "description": "Markdown text to convert"},
+        },
+        "required": ["markdown"],
+        "category": "data",
+    },
+
+    "count_tokens": {
+        "fn": tool_count_tokens,
+        "desc": "Estimate token count for AI context planning. Warns if approaching model limits.",
+        "params": {
+            "text": {"type": "string", "description": "Text to estimate tokens for"},
+            "model": {"type": "string", "description": "Model: gpt4, gpt35, claude, gemini, llama, mistral (default 'gpt4')"},
+        },
+        "required": ["text"],
+        "category": "reasoning",
     },
 }
 
