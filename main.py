@@ -3,10 +3,11 @@
 Devin AGI 4.0 — Comprehensive Unified Entry Point
 ===================================================
 Dynamically loads EVERY Python file from EVERY first-party directory,
-explicitly bootstraps all capability modules, then delegates to agent.py.
+explicitly bootstraps all capability modules, then delegates to the
+DevinREPL (Claude Code-style interface) or agent.py.
 
 Usage:
-  python main.py                  # Full module load + interactive REPL
+  python main.py                  # Full module load + DevinREPL
   python main.py "do something"    # One-shot prompt
   python main.py --status         # Print per-file module load status
   python main.py --caps           # Capability summary per directory
@@ -14,6 +15,7 @@ Usage:
   python main.py --provider hf    # Force HuggingFace provider
   python main.py --no-agent       # Load modules only, skip REPL
   python main.py --test           # Run 40 core tests via agent.py
+  DEVIN_USE_CLASSIC_REPL=1 python main.py  # Use agent.py REPL instead
 """
 from __future__ import annotations
 import os, sys, json, time, platform, threading, subprocess, shutil, signal
@@ -21,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 
-# ── Bootstrap .env ──────────────────────────────────────────────────────────────────────────────
+# ── Bootstrap .env ──────────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 _ENV  = ROOT / '.env'
 if _ENV.exists():
@@ -31,13 +33,12 @@ if _ENV.exists():
             _k, _, _v = _l.partition('=')
             os.environ.setdefault(_k.strip(), _v.strip().strip('"\'' ))
 
-# ── sys.path bootstrap ───────────────────────────────────────────────────────────────────────
+# ── sys.path bootstrap ────────────────────────────────────────────────────────────────────────
 def _add_path(p: Path) -> None:
     s = str(p)
     if p.is_dir() and s not in sys.path:
         sys.path.insert(0, s)
 
-# Every first-party directory (including ones not yet populated)
 _FIRST_PARTY = [
     'modules', 'servers', 'security', 'ai_core', 'singularity', 'cloud',
     'ai_ethics', 'ai_integrations', 'ai_models', 'api_gateway',
@@ -75,7 +76,6 @@ _SKIP_DIRS = frozenset({
 })
 
 def _load_file(path: Path, mod_name: Optional[str] = None) -> Optional[Any]:
-    """Load a single .py file. Returns the module or None on any failure."""
     name = mod_name or path.stem
     try:
         spec = _ilu.spec_from_file_location(name, str(path))
@@ -91,10 +91,6 @@ def _load_file(path: Path, mod_name: Optional[str] = None) -> Optional[Any]:
 
 
 def _discover_dir(directory: Path) -> Dict[str, Any]:
-    """
-    Recursively find and load every .py file in *directory*.
-    Returns {relative_path_str: module_or_None}.
-    """
     result: Dict[str, Any] = {}
     if not directory.is_dir():
         return result
@@ -112,30 +108,24 @@ def _discover_dir(directory: Path) -> Dict[str, Any]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Capability bootstrap — explicitly init all new modules and expose singletons
+# Capability bootstrap
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class _Capabilities:
-    """
-    Holds live singletons for every capability module.
-    Populated by _bootstrap_capabilities() after all files are loaded.
-    """
-    os_agent       = None   # modules.os_agent.OSAgent
-    reasoning      = None   # modules.reasoning_engine.ReasoningEngine
-    conversation   = None   # modules.conversation_engine.ConversationEngine
-    hf_provider    = None   # modules.hf_enhanced_provider (module)
-    free_claude    = None   # modules.free_claude_provider (module)
-    system_monitor = None   # modules.system_monitor_enhanced.SystemMonitor
-    voice          = None   # modules.voice_engine.VoiceEngine
-    browser        = None   # modules.browser_agent (module, lazy)
+    os_agent       = None
+    reasoning      = None
+    conversation   = None
+    hf_provider    = None
+    free_claude    = None
+    system_monitor = None
+    voice          = None
+    browser        = None
 
 
 CAPS = _Capabilities()
 
 
 def _bootstrap_capabilities() -> None:
-    """Initialize all capability modules. Called after _discover_dir finishes."""
-
     # OS Agent
     try:
         from modules.os_agent import get_os_agent
@@ -143,7 +133,7 @@ def _bootstrap_capabilities() -> None:
     except BaseException:
         pass
 
-    # Reasoning Engine — try both names for robustness
+    # Reasoning Engine
     try:
         from modules.reasoning_engine import get_reasoning_engine  # type: ignore
         CAPS.reasoning = get_reasoning_engine()
@@ -161,7 +151,7 @@ def _bootstrap_capabilities() -> None:
     except BaseException:
         pass
 
-    # HuggingFace enhanced provider
+    # HuggingFace provider
     try:
         from modules import hf_enhanced_provider
         CAPS.hf_provider = hf_enhanced_provider
@@ -189,20 +179,19 @@ def _bootstrap_capabilities() -> None:
     except BaseException:
         pass
 
-    # Browser Agent (lazy: don't open browser at startup)
+    # Browser Agent (lazy)
     try:
         from modules import browser_agent as _ba_mod
-        CAPS.browser = _ba_mod  # don't construct yet — avoids opening browser
+        CAPS.browser = _ba_mod
     except BaseException:
         pass
 
-    # Register OS agent tools into reasoning engine (with string-returning wrappers)
+    # Wire OS tools into reasoning engine
     if CAPS.reasoning and CAPS.os_agent:
         try:
             oa = CAPS.os_agent
 
             def _r(result) -> str:
-                """Extract string from ActionResult or return as-is."""
                 if hasattr(result, 'vision_result') and result.vision_result:
                     return result.vision_result
                 if hasattr(result, 'message'):
@@ -228,7 +217,7 @@ def _bootstrap_capabilities() -> None:
             CAPS.reasoning.register_tool(
                 'hotkey',
                 lambda keys='ctrl+c': _r(oa.hotkey(*str(keys).split('+'))),
-                'Keyboard shortcut (e.g. ctrl+c, alt+f4)')
+                'Keyboard shortcut')
             CAPS.reasoning.register_tool(
                 'observe_screen',
                 oa.observe,
@@ -240,24 +229,21 @@ def _bootstrap_capabilities() -> None:
         except BaseException:
             pass
 
-    # Register system monitor into reasoning engine
     if CAPS.reasoning and CAPS.system_monitor:
         try:
-            sm = CAPS.system_monitor
-            CAPS.reasoning.register_tool('system_status', sm.summary, 'System resource summary')
+            CAPS.reasoning.register_tool('system_status', CAPS.system_monitor.summary,
+                                          'System resource summary')
         except BaseException:
             pass
 
-    # Register voice into reasoning engine
     if CAPS.reasoning and CAPS.voice:
         try:
-            ve = CAPS.voice
-            CAPS.reasoning.register_tool('speak',  ve.speak,        'Speak text aloud')
-            CAPS.reasoning.register_tool('listen', ve.listen_once,  'Listen for voice input')
+            CAPS.reasoning.register_tool('speak',  CAPS.voice.speak,       'Speak text aloud')
+            CAPS.reasoning.register_tool('listen', CAPS.voice.listen_once, 'Listen for voice input')
         except BaseException:
             pass
 
-    # Register CAPS in sys.modules so modules loaded by agent.py can access singletons
+    # Register CAPS in sys.modules so agent.py can access singletons
     try:
         import types as _types
         _caps_mod = _types.ModuleType('_devin_caps')
@@ -279,101 +265,17 @@ def _bootstrap_capabilities() -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class DevinAGI:
-    """
-    Comprehensive loader: discovers and imports every Python file from
-    every first-party directory.  Exposes property helpers for the most
-    important capability singletons.
-    """
-
     SCAN_DIRS: List[str] = [
-        # Core capability modules
-        'modules',
-        # Background micro-services
-        'servers',
-        # Security, audit, compliance
-        'security',
-        # Cognitive architecture (memory, reasoning)
-        'ai_core',
-        # Goal system and self-improvement
-        'singularity',
-        # Cloud integrations (AWS, Azure, GCP)
-        'cloud',
-        # Fairness / ethics / transparency
-        'ai_ethics',
-        # External AI provider connectors
-        'ai_integrations',
-        # AI model definitions / fine-tuning configs
-        'ai_models',
-        # API gateway / REST / gRPC endpoints
-        'api_gateway',
-        # Chaos / resilience engineering
-        'chaos_engineering',
-        # Community tools (bug bounty, plugin marketplace)
-        'community',
-        # App config and settings schemas
-        'config',
-        # Data sovereignty (CCPA, GDPR, cross-border)
-        'cross_border_data_flow',
-        # Legal / cyber law tools
-        'cyber_law',
-        # Cyber range / CTF / red-blue team
-        'cyber_range',
-        # Datasets, sample data, fixtures
-        'data',
-        # Database initialization / migration
-        'databases',
-        # Digital-twin simulations
-        'digital_twins',
-        # Edge computing (federated learning, IoT, TinyML)
-        'edge',
-        # Neuromorphic / swarm edge AI
-        'edge_ai',
-        # Enterprise (HIPAA, SOC2, SSO, licensing)
-        'enterprise',
-        # Experimental (consciousness, quantum AI)
-        'experimental',
-        # Cloned external repos
-        'external',
-        # Hardware (robotics firmware, TPM, simulation)
-        'hardware',
-        # Hexstrike MCP / server tools
-        'hexstrike-ai',
-        # Human-machine interface (AR/VR, neural interface)
-        'hmi',
-        # Infrastructure (k8s, observability, tracing)
-        'infra',
-        # Legal compliance tools
-        'legal',
-        # ML operations (canary, drift, A/B testing)
-        'mlops',
-        # Monitoring dashboards, CPU/memory trackers
-        'monitoring',
-        # Notes and knowledge base
-        'notes',
-        # Plugin ecosystem
-        'plugins',
-        # Privacy tooling (differential privacy, data obfuscation)
-        'privacy',
-        # Prototype / experimental features
-        'prototypes',
-        # Post-quantum cryptography
-        'quantum',
-        # Reality engine (physics simulation, game engine)
-        'reality_engine',
-        # Disaster recovery, auto-rollback
-        'recovery',
-        # Cloned first-party repos (free-claude-code, etc.)
-        'repos',
-        # Utility scripts (DB init, firmware updates)
-        'scripts',
-        # Self-operating computer integration
-        'self-operating-computer',
-        # Threat intelligence (MITRE ATT&CK, IOC, VirusTotal)
-        'threat_intel',
-        # Web scraping, HTTP tools
-        'web',
-        # XR / metaverse / spatial computing
-        'xr_env',
+        'modules', 'servers', 'security', 'ai_core', 'singularity', 'cloud',
+        'ai_ethics', 'ai_integrations', 'ai_models', 'api_gateway',
+        'chaos_engineering', 'community', 'config', 'cross_border_data_flow',
+        'cyber_law', 'cyber_range', 'data', 'databases', 'digital_twins',
+        'edge', 'edge_ai', 'enterprise', 'experimental', 'external',
+        'hardware', 'hexstrike-ai', 'hmi', 'infra', 'legal', 'mlops',
+        'monitoring', 'notes', 'plugins', 'privacy', 'prototypes',
+        'quantum', 'reality_engine', 'recovery', 'repos',
+        'scripts', 'self-operating-computer', 'singularity',
+        'threat_intel', 'web', 'xr_env',
     ]
 
     def __init__(self):
@@ -386,38 +288,25 @@ class DevinAGI:
             directory = ROOT / dir_name
             if not directory.is_dir():
                 continue
-            loaded = _discover_dir(directory)
-            self.modules.update(loaded)
-
-    # ── Named property accessors for key capability singletons ─────────────────────
+            self.modules.update(_discover_dir(directory))
 
     @property
-    def os_agent(self):
-        return CAPS.os_agent
-
+    def os_agent(self):        return CAPS.os_agent
     @property
-    def reasoning(self):
-        return CAPS.reasoning
-
+    def reasoning(self):       return CAPS.reasoning
     @property
-    def conversation(self):
-        return CAPS.conversation
-
+    def conversation(self):    return CAPS.conversation
     @property
-    def system_monitor(self):
-        return CAPS.system_monitor
-
+    def system_monitor(self):  return CAPS.system_monitor
     @property
-    def voice(self):
-        return CAPS.voice
-
+    def voice(self):           return CAPS.voice
     @property
     def browser(self):
         if CAPS.browser and hasattr(CAPS.browser, 'get_browser_agent'):
             return CAPS.browser.get_browser_agent()
         return None
 
-    def _get_instance(self, attr: str, rel_path: str, class_name: str):
+    def _get_instance(self, attr, rel_path, class_name):
         if not hasattr(self, '_' + attr):
             mod = self.modules.get(rel_path)
             obj = None
@@ -446,15 +335,12 @@ class DevinAGI:
 
     @property
     def tool_executor(self):
-        return self._get_instance('tex',
-            'modules/tool_executor.py', 'ToolExecutor')
+        return self._get_instance('tex', 'modules/tool_executor.py', 'ToolExecutor')
 
     @property
     def persistent_memory(self):
         return self._get_instance('pmem',
             'modules/persistent_memory.py', 'PersistentMemory')
-
-    # ── Status helpers ───────────────────────────────────────────────────────────────────
 
     def loaded_count(self) -> int:
         return sum(1 for v in self.modules.values() if v is not None)
@@ -495,7 +381,7 @@ class DevinAGI:
         return '\n'.join(lines)
 
 
-# ── Singleton ─────────────────────────────────────────────────────────────────────────────────
+# ── Singleton ───────────────────────────────────────────────────────────────────────────
 _devin: Optional[DevinAGI] = None
 
 
@@ -506,7 +392,7 @@ def get_devin() -> DevinAGI:
     return _devin
 
 
-# ── Banner ─────────────────────────────────────────────────────────────────────────────────
+# ── Banner ──────────────────────────────────────────────────────────────────────────────
 def _banner(devin: DevinAGI) -> None:
     IS_TTY = sys.stdout.isatty()
     def _c(code: str, t: str) -> str:
@@ -533,14 +419,14 @@ def _banner(devin: DevinAGI) -> None:
     print(_c('36;1', f'╰{line}╯') + '\n')
 
 
-# ── Entry point ──────────────────────────────────────────────────────────────────────────────
+# ── Entry point ─────────────────────────────────────────────────────────────────────────────
 def main():
     import argparse
     p = argparse.ArgumentParser(
         description='Devin AGI 4.0 — full module loader + agent REPL',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument('prompt',       nargs='?',         help='One-shot prompt (skip REPL)')
+    p.add_argument('prompt',       nargs='?',          help='One-shot prompt (skip REPL)')
     p.add_argument('--status',     action='store_true', help='Print module load status and exit')
     p.add_argument('--caps',       action='store_true', help='Print capability summary per directory')
     p.add_argument('--no-agent',   action='store_true', help='Load modules only, skip REPL')
@@ -551,7 +437,6 @@ def main():
 
     if args.provider:
         os.environ['DEVIN_PROVIDER'] = args.provider
-
     if args.voice:
         os.environ['DEVIN_VOICE_MODE'] = '1'
 
@@ -577,6 +462,18 @@ def main():
         print(f'ERROR: {agent_py} not found.')
         sys.exit(1)
 
+    # ── Route to DevinREPL (default) or agent.py (───────────────────────────────────────
+    # DevinREPL is the default interactive mode.
+    # Set DEVIN_USE_CLASSIC_REPL=1 to use agent.py's built-in REPL instead.
+    if not args.test and not args.prompt and not os.environ.get('DEVIN_USE_CLASSIC_REPL'):
+        try:
+            from modules.devin_repl import start_repl
+            start_repl(devin)
+            sys.exit(0)
+        except BaseException:
+            pass  # Fall through to agent.py on any failure
+
+    # ── Delegate to agent.py (──────────────────────────────────────────────────────────
     agent_argv = [str(agent_py)]
     if args.test:
         agent_argv.append('--test')
@@ -585,7 +482,6 @@ def main():
     agent_argv.extend(remaining)
     sys.argv = agent_argv
 
-    # Inject capability singletons into agent.py's exec namespace
     exec_globals = {
         '__file__':  str(agent_py),
         '__name__':  '__main__',
