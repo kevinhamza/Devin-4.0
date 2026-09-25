@@ -3355,6 +3355,105 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AN — FINAL CAPABILITY LAYER: SUMMARIZE_DIFF, COLOR_OUTPUT, TASK_DONE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_summarize_changes(before: str, after: str, context: str = '') -> str:
+    """
+    Summarize the changes between a 'before' and 'after' version of text/code.
+    Provides a human-readable summary of what changed: added, removed, modified lines.
+    Useful for reporting what a task accomplished.
+    """
+    import difflib
+    b_lines = before.splitlines(keepends=True)
+    a_lines = after.splitlines(keepends=True)
+    diff = list(difflib.unified_diff(b_lines, a_lines, lineterm=''))
+    if not diff:
+        return "No changes detected between before and after versions."
+    added = sum(1 for l in diff if l.startswith('+') and not l.startswith('+++'))
+    removed = sum(1 for l in diff if l.startswith('-') and not l.startswith('---'))
+    result = [
+        f"Changes summary{f' ({context})' if context else ''}:",
+        f"  Lines added:   {added}",
+        f"  Lines removed: {removed}",
+        f"  Net change:    {added - removed:+d} lines",
+        "",
+        "Diff (first 50 changed lines):",
+    ]
+    shown = 0
+    for line in diff[2:]:  # skip --- +++ header
+        if line.startswith('@@') or line.startswith('+') or line.startswith('-'):
+            result.append(('+ ' if line.startswith('+') else '- ' if line.startswith('-') else '  ') + line[1:].rstrip())
+            shown += 1
+            if shown >= 50:
+                remaining = sum(1 for l in diff if l.startswith(('+', '-'))) - shown
+                if remaining > 0:
+                    result.append(f"  ... ({remaining} more changed lines)")
+                break
+    return "\n".join(result)
+
+
+def tool_task_complete(summary: str, artifacts: str = '') -> str:
+    """
+    Signal that a task is complete. Records the outcome and any created artifacts.
+    This is the FINAL tool call at the end of a task. Always call this when done.
+    artifacts: JSON array of file paths or URLs created during the task.
+    """
+    import datetime
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    artifact_list = []
+    if artifacts:
+        try:
+            artifact_list = json.loads(artifacts)
+        except json.JSONDecodeError:
+            artifact_list = [artifacts]
+    lines = [
+        f"✓ TASK COMPLETE — {ts}",
+        f"Summary: {summary}",
+    ]
+    if artifact_list:
+        lines.append(f"Artifacts ({len(artifact_list)}):")
+        lines.extend(f"  • {a}" for a in artifact_list)
+    # Log to session stats if available
+    try:
+        _SESSION_STATS['tasks_completed'] = _SESSION_STATS.get('tasks_completed', 0) + 1
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
+def tool_format_output(content: str, style: str = 'box', title: str = '') -> str:
+    """
+    Format output text for display. Styles:
+    box: Unicode bordered box, list: bullet list, table: pipe-separated,
+    numbered: numbered items, header: section header, plain: as-is.
+    """
+    lines = [line.rstrip() for line in content.strip().splitlines()]
+    if style == 'box':
+        if not lines:
+            return '┌─┐\n│ │\n└─┘'
+        width = max(len(l) for l in lines)
+        if title:
+            width = max(width, len(title) + 4)
+        top = f"┌{'─' * (width + 2)}┐"
+        bot = f"└{'─' * (width + 2)}┘"
+        body = [f"│ {l.ljust(width)} │" for l in lines]
+        if title:
+            hdr = f"│ {'─' * ((width - len(title) - 2) // 2)} {title} {'─' * ((width - len(title) - 1) // 2)} │"
+            sep = f"├{'─' * (width + 2)}┤"
+            return "\n".join([top, hdr, sep] + body + [bot])
+        return "\n".join([top] + body + [bot])
+    elif style == 'list':
+        return "\n".join(f"• {l}" for l in lines if l)
+    elif style == 'numbered':
+        return "\n".join(f"{i+1}. {l}" for i, l in enumerate(lines) if l)
+    elif style == 'header':
+        t = title or (lines[0] if lines else 'Section')
+        return f"\n{'═' * (len(t) + 4)}\n  {t}\n{'═' * (len(t) + 4)}\n" + "\n".join(lines[1:] if title else lines)
+    return content  # plain
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AM — CALCULATE, LIST_TOOLS, PARSE_ARGS, DIFF_JSON
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7095,6 +7194,40 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AN ──────────────────────────────────────────────────────────────
+    "summarize_changes": {
+        "fn": tool_summarize_changes,
+        "desc": "Summarize the diff between a before and after version of text/code.",
+        "params": {
+            "before": {"type": "string", "description": "Original text/code"},
+            "after": {"type": "string", "description": "Updated text/code"},
+            "context": {"type": "string", "description": "Optional label for the summary header"},
+        },
+        "required": ["before", "after"],
+        "category": "devtools",
+    },
+    "task_complete": {
+        "fn": tool_task_complete,
+        "desc": "Signal that a task is complete. Records outcome and artifacts created.",
+        "params": {
+            "summary": {"type": "string", "description": "Summary of what was accomplished"},
+            "artifacts": {"type": "string", "description": "JSON array of files/URLs created"},
+        },
+        "required": ["summary"],
+        "category": "workflow",
+    },
+    "format_output": {
+        "fn": tool_format_output,
+        "desc": "Format content for display: box, list, numbered, header, or plain style.",
+        "params": {
+            "content": {"type": "string", "description": "Text content to format"},
+            "style": {"type": "string", "description": "box | list | numbered | header | plain"},
+            "title": {"type": "string", "description": "Optional title for box style"},
+        },
+        "required": ["content"],
+        "category": "workflow",
     },
 }
 
