@@ -876,6 +876,36 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AN tests ──────────────────────────────────────────────────────────
+
+def t_an_tools_registered():
+    for name in ('summarize_changes', 'task_complete', 'format_output'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_summarize_changes():
+    before = "line one\nline two\nline three\n"
+    after  = "line one\nline TWO\nline four\n"
+    r = _agent.tool_summarize_changes(before, after, 'test')
+    assert 'Lines added' in r, f"got: {r}"
+    assert 'Lines removed' in r, f"got: {r}"
+    r2 = _agent.tool_summarize_changes("same", "same")
+    assert 'No changes' in r2, f"got: {r2}"
+
+def t_task_complete():
+    r = _agent.tool_task_complete('Finished the work', '["file_a.py","file_b.py"]')
+    assert 'TASK COMPLETE' in r, f"got: {r}"
+    assert 'Finished the work' in r, f"got: {r}"
+    assert 'file_a.py' in r, f"got: {r}"
+
+def t_format_output():
+    r = _agent.tool_format_output('hello world', 'box', 'Title')
+    assert '┌' in r and '┘' in r, f"got: {r}"
+    r2 = _agent.tool_format_output('alpha\nbeta\ngamma', 'list')
+    assert '•' in r2 or '*' in r2 or '-' in r2, f"got: {r2}"
+    r3 = _agent.tool_format_output('one\ntwo', 'numbered')
+    assert '1.' in r3 or '1)' in r3, f"got: {r3}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -1047,6 +1077,13 @@ def main():
     test("list_tools filter", t_list_tools)
     test("diff_json", t_diff_json)
     test("parse_args", t_parse_args)
+
+    # Phase 21: Summarize changes, task complete, format output (Phase AN)
+    print("\n── Phase 21: Change Summary, Task Done, Output Format ──")
+    test("Phase AN tools registered", t_an_tools_registered)
+    test("summarize_changes", t_summarize_changes)
+    test("task_complete", t_task_complete)
+    test("format_output", t_format_output)
 
     # Summary
     total = PASS + FAIL + SKIP
