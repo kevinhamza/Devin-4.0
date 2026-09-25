@@ -6,22 +6,35 @@ import inspect
 import logging
 from typing import Dict, Any, List, Callable, Optional
 
-# --- Import all tool-providing modules ---
-from modules.all_ais_modules import AIAgent
-from security.security_dashboard import SecurityDashboard
-from modules.cloud_integration_services import CloudServicesManager
-from modules.pentesting_tools.pentesting_facade import PentestingFacade
-from modules.pentesting_tools.hexstrike_client import HexStrikeClient
-from modules.pentesting_tools.wifi_audit_tools import WifiAuditTools
-from modules.external_agent_tools import ExternalAgentTools
-from modules.automation_tools import DesktopAutomator, WebAutomator
-from modules.system_monitor_module import SystemMonitorFacade
-from modules.mobile_integration_module import MobileFacade
-from modules.os_operations.universal_operations import UniversalOSOperator
-from modules.os_operations.self_operating_computer_tool import operate_computer, SOC_AVAILABLE
-from modules.knowledge_retrieval.code_retriever import CodeRetriever
-from modules.data_logger import DataLogger
-from modules.code_execution import CodeExecutor # For execute_shell, etc.
+# --- Import all tool-providing modules (guarded — missing deps disable only that module) ---
+def _safe_import(dotpath: str, names):
+    """Import names from dotpath; return tuple of (name→obj or None)."""
+    try:
+        mod = __import__(dotpath, fromlist=names if isinstance(names, list) else [names])
+        if isinstance(names, str):
+            return getattr(mod, names, None)
+        return tuple(getattr(mod, n, None) for n in names)
+    except Exception:
+        if isinstance(names, str):
+            return None
+        return tuple(None for _ in names)
+
+AIAgent              = _safe_import('modules.all_ais_modules',   'AIAgent')
+SecurityDashboard    = _safe_import('security.security_dashboard', 'SecurityDashboard')
+CloudServicesManager = _safe_import('modules.cloud_integration_services', 'CloudServicesManager')
+PentestingFacade     = _safe_import('modules.pentesting_tools.pentesting_facade', 'PentestingFacade')
+HexStrikeClient      = _safe_import('modules.pentesting_tools.hexstrike_client', 'HexStrikeClient')
+WifiAuditTools       = _safe_import('modules.pentesting_tools.wifi_audit_tools', 'WifiAuditTools')
+ExternalAgentTools   = _safe_import('modules.external_agent_tools', 'ExternalAgentTools')
+DesktopAutomator, WebAutomator = _safe_import('modules.automation_tools', ['DesktopAutomator', 'WebAutomator'])
+SystemMonitorFacade  = _safe_import('modules.system_monitor_module', 'SystemMonitorFacade')
+MobileFacade         = _safe_import('modules.mobile_integration_module', 'MobileFacade')
+UniversalOSOperator  = _safe_import('modules.os_operations.universal_operations', 'UniversalOSOperator')
+operate_computer, SOC_AVAILABLE = _safe_import(
+    'modules.os_operations.self_operating_computer_tool', ['operate_computer', 'SOC_AVAILABLE']) or (None, False)
+CodeRetriever        = _safe_import('modules.knowledge_retrieval.code_retriever', 'CodeRetriever')
+DataLogger           = _safe_import('modules.data_logger', 'DataLogger')
+CodeExecutor         = _safe_import('modules.code_execution', 'CodeExecutor')
 
 # Configure basic logging
 logger = logging.getLogger("ToolExecutor")
