@@ -1,8 +1,8 @@
 # Devin-4.0 Phase Status Report
 
-**Last Updated:** 2026-09-24
+**Last Updated:** 2026-09-25
 **Branch:** `claude/ecstatic-maxwell-z0reej`
-**Head Commit:** Phase Q
+**Head Commit:** Phase AA
 
 ---
 
@@ -22,18 +22,20 @@
 | R     | PHASE_STATUS.md ground-truth report | `b8762b5d` | done |
 | S     | Session stats tracking + /stats + TypeScript build verified | `6d9da3a8` | done |
 | T+U   | /save transcripts + smarter provider error recovery | `674406f0` | done |
-| V+W+X | /tools search + `--health`, `--test`, `--version` CLI flags | this commit | done |
-| Y+Z   | Final compliance audit + phase status update | this commit | done |
+| V+W+X | /tools search + `--health`, `--test`, `--version` CLI flags | `3b5f52f9` | done |
+| Y+Z   | Final compliance audit + phase status update | `3b5f52f9` | done |
+| post-Z | `--doctor` deep diagnostic CLI flag (8 sections, 5 self-checks) | `acd09aed` | done |
+| AA    | 6 workflow tools (multi_step, wait_for_condition, checkpoints), 46 tests | this commit | done |
 
 ---
 
 ## Current Runtime Snapshot
 
-**agent.py:** ~6,100 lines, single-file Python entry point
-**Tools registered:** 136 across 24 categories
+**agent.py:** ~6,650 lines, single-file Python entry point
+**Tools registered:** 142 across 25 categories (new: workflow)
 **Modules loaded (this env):** 33/41 tracked, 53/91 discoverable
 **Providers:** 5 (Gemini, Claude, OpenAI, HuggingFace, Ollama)
-**Test suite:** 40/40 automated tests pass (via `./devin --test`)
+**Test suite:** 46/46 automated tests pass (via `./devin --test`)
 **Demo:** `tests/demo_workflow.py` — 11-step end-to-end health check
 **TypeScript:** `npx tsc --noEmit` — 0 errors across 38 .ts files
 
@@ -49,13 +51,14 @@
 ./devin --version                   # print tools + modules loaded
 ```
 
-## REPL slash commands (24 total)
+## REPL slash commands (26 total)
 
 Core: /help /clear /new /exit /quit
 State: /status /providers /provider /model /tools [q] /integrations /repos
 Memory: /memory /remember /forget /history /save /compact
 Actions: /shell /run /screenshot /voice /audit_repo /audit
 Analysis: /think /workflow /pentest /lab /os /debug /demo /stats
+Workflow: /workflow <json|@file> /checkpoint [list|save|load]
 
 ---
 
