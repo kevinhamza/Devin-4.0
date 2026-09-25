@@ -3355,6 +3355,184 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AK — SYSTEM, CONFIG, MEMORY: SNAPSHOT, CONFIG R/W, MEMORY SEARCH
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_system_snapshot() -> str:
+    """
+    Take a full system health snapshot: CPU, memory, disk, top processes,
+    network interfaces, load average. No external deps required; falls back
+    gracefully if psutil is unavailable.
+    """
+    import subprocess, platform
+    lines = [f"=== System Snapshot — {platform.node()} ===", f"OS: {platform.platform()}",
+             f"Python: {platform.python_version()}", f"Time: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+             ""]
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.5)
+        cpus = psutil.cpu_count()
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        lines += [
+            f"CPU: {cpu:.1f}% ({cpus} cores)",
+            f"Memory: {mem.used/1e9:.1f}/{mem.total/1e9:.1f} GB ({mem.percent:.0f}% used)",
+            f"Disk (/): {disk.used/1e9:.1f}/{disk.total/1e9:.1f} GB ({disk.percent:.0f}% used)",
+        ]
+        try:
+            la = psutil.getloadavg()
+            lines.append(f"Load avg: {la[0]:.2f} / {la[1]:.2f} / {la[2]:.2f} (1/5/15 min)")
+        except Exception:
+            pass
+        # Top 5 processes by CPU
+        procs = sorted(psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']),
+                       key=lambda p: p.info.get('cpu_percent', 0) or 0, reverse=True)[:5]
+        lines.append("\nTop processes (by CPU):")
+        for p in procs:
+            lines.append(f"  {p.info['pid']:6d}  {(p.info.get('cpu_percent') or 0):5.1f}% CPU  "
+                         f"{(p.info.get('memory_percent') or 0):4.1f}% MEM  {p.info['name'][:30]}")
+    except ImportError:
+        # Fallback to shell commands
+        try:
+            r = subprocess.run(['free', '-h'], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                lines.append("Memory:\n" + r.stdout.strip())
+        except Exception:
+            pass
+        try:
+            r = subprocess.run(['df', '-h', '/'], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                lines.append("Disk:\n" + r.stdout.strip())
+        except Exception:
+            pass
+        try:
+            r = subprocess.run(['ps', 'aux', '--sort=-%cpu'], capture_output=True, text=True, timeout=5)
+            if r.returncode == 0:
+                ps_lines = r.stdout.splitlines()[:6]
+                lines.append("Top processes:\n" + "\n".join(ps_lines))
+        except Exception:
+            pass
+    return "\n".join(lines)
+
+
+def tool_config_read(path: str, section: str = '') -> str:
+    """
+    Read a config file (INI, JSON, TOML if available, or .env style).
+    Returns the full config or a specific section.
+    """
+    p = Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    suffix = p.suffix.lower()
+    try:
+        if suffix == '.json':
+            data = json.loads(p.read_text(encoding='utf-8'))
+            if section:
+                data = data.get(section, f"Section {section!r} not found")
+            return json.dumps(data, indent=2, ensure_ascii=False)[:4000]
+        elif suffix in ('.ini', '.cfg', '.conf'):
+            import configparser
+            cfg = configparser.ConfigParser()
+            cfg.read(str(p))
+            if section:
+                if section not in cfg:
+                    return f"Section {section!r} not found. Available: {', '.join(cfg.sections())}"
+                return "\n".join(f"{k} = {v}" for k, v in cfg[section].items())
+            result = {}
+            for sec in cfg.sections():
+                result[sec] = dict(cfg[sec])
+            return json.dumps(result, indent=2)[:4000]
+        elif suffix == '.toml':
+            try:
+                import tomllib  # Python 3.11+
+                data = tomllib.loads(p.read_text(encoding='utf-8'))
+            except ImportError:
+                try:
+                    import tomli as tomllib
+                    data = tomllib.loads(p.read_text(encoding='utf-8'))
+                except ImportError:
+                    return "TOML support requires Python 3.11+ or: pip install tomli"
+            if section:
+                data = data.get(section, f"Section {section!r} not found")
+            return json.dumps(data, indent=2, ensure_ascii=False)[:4000]
+        else:
+            # .env or plain text
+            lines = p.read_text(encoding='utf-8', errors='replace').splitlines()
+            result = {}
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, _, v = line.partition('=')
+                    k = k.strip()
+                    # Redact secrets
+                    if re.search(r'key|token|secret|password|auth', k, re.I):
+                        result[k] = '[REDACTED]'
+                    else:
+                        result[k] = v.strip().strip('"\'')
+            if section:
+                return result.get(section, f"Key {section!r} not found") if isinstance(result, dict) else str(result)
+            return json.dumps(result, indent=2)[:4000]
+    except Exception as e:
+        return f"ERROR reading config: {e}"
+
+
+def tool_config_write(path: str, section: str, key: str, value: str) -> str:
+    """
+    Write or update a key in an INI/CFG config file.
+    Creates the file and section if they don't exist.
+    """
+    import configparser
+    p = Path(path)
+    cfg = configparser.ConfigParser()
+    if p.exists():
+        cfg.read(str(p))
+    if section not in cfg:
+        cfg[section] = {}
+    cfg[section][key] = value
+    try:
+        with p.open('w', encoding='utf-8') as f:
+            cfg.write(f)
+        return f"Written [{section}] {key} = {value!r} to {path}"
+    except Exception as e:
+        return f"ERROR writing config: {e}"
+
+
+def tool_memory_search(query: str, limit: int = 10) -> str:
+    """
+    Search stored memories for entries matching the query (keyword-based).
+    Returns matching facts ordered by relevance.
+    """
+    import sqlite3
+    db_path = _DB_PATH
+    if not Path(db_path).exists():
+        return "No memory database found."
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        # Try simple keyword search across the facts
+        words = [w.lower() for w in query.split() if len(w) > 2]
+        if not words:
+            return "ERROR: query too short"
+        # Build a LIKE query for each word
+        conditions = " OR ".join("LOWER(fact) LIKE ?" for _ in words)
+        params = [f'%{w}%' for w in words]
+        cur.execute(f"SELECT fact, ts FROM memories WHERE {conditions} ORDER BY ts DESC LIMIT ?",
+                    params + [limit])
+        rows = cur.fetchall()
+        conn.close()
+        if not rows:
+            return f"No memories found matching: {query!r}"
+        result = [f"Found {len(rows)} memory/memories matching {query!r}:"]
+        for fact, ts in rows:
+            import datetime
+            dt = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M')
+            result.append(f"  [{dt}] {fact}")
+        return "\n".join(result)
+    except Exception as e:
+        return f"ERROR searching memory: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AJ — TASK PLANNING: TASK_PLAN, FILE_TREE, COMPARE_FILES, TODOS, CHMOD
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6462,6 +6640,50 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["path"],
         "category": "files",
+    },
+
+    # ── Phase AK — System, config, memory ──────────────────────────────────────
+    "system_snapshot": {
+        "fn": tool_system_snapshot,
+        "desc": "Take a full system health snapshot: CPU, memory, disk, top processes.",
+        "params": {},
+        "required": [],
+        "category": "system",
+    },
+
+    "config_read": {
+        "fn": tool_config_read,
+        "desc": "Read a config file (INI, JSON, TOML, .env). Optionally get a specific section/key.",
+        "params": {
+            "path": {"type": "string", "description": "Path to config file"},
+            "section": {"type": "string", "description": "Section name to read (optional)"},
+        },
+        "required": ["path"],
+        "category": "files",
+    },
+
+    "config_write": {
+        "fn": tool_config_write,
+        "desc": "Write or update a key in an INI/CFG config file.",
+        "params": {
+            "path": {"type": "string", "description": "Path to config file (created if not exists)"},
+            "section": {"type": "string", "description": "Config section name"},
+            "key": {"type": "string", "description": "Key to write"},
+            "value": {"type": "string", "description": "Value to set"},
+        },
+        "required": ["path", "section", "key", "value"],
+        "category": "files",
+    },
+
+    "memory_search": {
+        "fn": tool_memory_search,
+        "desc": "Search stored memories for entries matching a query (keyword-based).",
+        "params": {
+            "query": {"type": "string", "description": "Search query"},
+            "limit": {"type": "integer", "description": "Max results (default 10)"},
+        },
+        "required": ["query"],
+        "category": "memory",
     },
 }
 

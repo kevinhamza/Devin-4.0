@@ -740,6 +740,50 @@ def t_make_executable():
         os.unlink(tmp)
 
 
+# ─── Phase AK: System, config & memory tools ─────────────────────────────────
+
+def t_ak_tools_registered():
+    for name in ('system_snapshot', 'config_read', 'config_write', 'memory_search'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_system_snapshot():
+    r = _agent.tool_system_snapshot()
+    assert 'System Snapshot' in r or 'CPU' in r or 'Memory' in r, f"got: {r[:200]}"
+    assert 'OS:' in r or 'Python:' in r, f"no OS/Python info: {r[:200]}"
+
+
+def t_config_read_write():
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix='.cfg', delete=False, mode='w') as f:
+        f.write('[database]\nhost = localhost\nport = 5432\n')
+        tmp = f.name
+    try:
+        r = _agent.tool_config_read(tmp, 'database')
+        assert 'localhost' in r and 'port' in r, f"read: {r}"
+        # Write a new key
+        rw = _agent.tool_config_write(tmp, 'database', 'name', 'mydb')
+        assert 'Written' in rw, f"write: {rw}"
+        # Verify written
+        r2 = _agent.tool_config_read(tmp, 'database')
+        assert 'mydb' in r2, f"after write: {r2}"
+        # Non-existent section
+        r3 = _agent.tool_config_read(tmp, 'missing_section')
+        assert 'not found' in r3.lower() or 'ERROR' in r3, f"got: {r3}"
+    finally:
+        os.unlink(tmp)
+
+
+def t_memory_search():
+    # memory_search gracefully handles missing db
+    r = _agent.tool_memory_search('test query')
+    # Either results or "No memory database" or "No memories found"
+    assert isinstance(r, str) and len(r) > 0, f"got: {r}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -889,6 +933,13 @@ def main():
     test("file_tree", t_file_tree)
     test("extract_todos", t_extract_todos)
     test("make_executable", t_make_executable)
+
+    # Phase 18: System, config & memory (Phase AK)
+    print("\n── Phase 18: System, Config & Memory ──")
+    test("Phase AK tools registered", t_ak_tools_registered)
+    test("system_snapshot", t_system_snapshot)
+    test("config_read + config_write", t_config_read_write)
+    test("memory_search", t_memory_search)
 
     # Summary
     total = PASS + FAIL + SKIP
