@@ -30,17 +30,16 @@ export function colorize(text: string, ...codes: string[]): string {
   return codes.join('') + text + c.reset;
 }
 
-// ── Banner (matches Claude Code's startup panel) ──────────────────────────
+// ── Banner ────────────────────────────────────────────────────────────────
 export function printBanner(model: string, provider: string, permMode: string, cwd: string): void {
   const cols = process.stdout.columns || 80;
-  const line = '─'.repeat(cols - 2);
-  const pad = (s: string) => ' ' + s;
+  const line = '─'.repeat(Math.max(cols - 2, 40));
 
   process.stdout.write('\n');
   process.stdout.write(colorize('╭' + line + '╮\n', c.cyan));
-  process.stdout.write(colorize('│', c.cyan) + pad(colorize('  Devin AGI  ', c.bold, c.cyan) + colorize('v4.0.0', c.dim)) + '\n');
-  process.stdout.write(colorize('│', c.cyan) + pad(colorize('  cwd: ', c.dim) + colorize(cwd, c.white)) + '\n');
-  process.stdout.write(colorize('│', c.cyan) + pad(colorize('  model: ', c.dim) + colorize(model, c.white) + colorize('   provider: ', c.dim) + colorize(provider, c.white) + colorize('   mode: ', c.dim) + colorize(permMode, c.white)) + '\n');
+  process.stdout.write(colorize('│ ', c.cyan) + colorize(' Devin AGI ', c.bold, c.brightCyan) + colorize('v4.0.0', c.dim) + '\n');
+  process.stdout.write(colorize('│ ', c.cyan) + colorize(' cwd: ', c.dim) + colorize(cwd, c.white) + '\n');
+  process.stdout.write(colorize('│ ', c.cyan) + colorize(' model: ', c.dim) + colorize(model, c.brightCyan) + colorize('  provider: ', c.dim) + colorize(provider, c.white) + colorize('  mode: ', c.dim) + colorize(permMode, c.green) + '\n');
   process.stdout.write(colorize('╰' + line + '╯\n', c.cyan));
   process.stdout.write('\n');
 }
@@ -107,8 +106,9 @@ export function renderMarkdown(text: string): string {
 
 // ── Message display ───────────────────────────────────────────────────────
 export function printAssistantMessage(text: string): void {
+  const ts = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   process.stdout.write('\n');
-  process.stdout.write(colorize('Devin', c.bold, c.brightCyan) + '\n');
+  process.stdout.write(colorize(ts, c.dim) + ' ' + colorize('Devin', c.bold, c.brightCyan) + '\n');
   process.stdout.write(renderMarkdown(text) + '\n');
 }
 
@@ -120,10 +120,12 @@ export function printThinking(thinking: string): void {
 
 export function printToolCall(name: string, args: Record<string, unknown>): void {
   const argsStr = Object.entries(args)
-    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-    .join(', ')
-    .slice(0, 100);
-  process.stdout.write('\n' + colorize('  ● ', c.dim) + colorize(name, c.cyan) + colorize('(' + argsStr + ')', c.dim) + '\n');
+    .map(([k, v]) => {
+      const vs = JSON.stringify(v);
+      return `${k}=${vs.length > 60 ? vs.slice(0, 60) + '…' : vs}`;
+    })
+    .join(', ');
+  process.stdout.write('\n' + colorize('  ● ', c.cyan) + colorize(name, c.bold, c.cyan) + colorize('(' + argsStr + ')', c.dim) + '\n');
 }
 
 export function printToolResult(result: string, isError = false): void {
@@ -173,23 +175,31 @@ export async function askConfirmation(prompt: string, dangerous = false): Promis
 
 // ── Prompt line ───────────────────────────────────────────────────────────
 export function promptLine(cwd: string): string {
+  const ts = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   const short = cwd.replace(os.homedir(), '~');
-  return colorize('❯ ', c.bold, c.cyan) + colorize(path.basename(short) + ' ', c.dim);
+  return colorize(ts, c.dim) + ' ' + colorize('You', c.bold, c.green) + ' ' + colorize(path.basename(short), c.dim) + '\n' + colorize('❯ ', c.bold, c.brightCyan);
 }
 
 // ── Help text ─────────────────────────────────────────────────────────────
 export function printHelp(): void {
   const cmds = [
-    ['/help',       'Show this help'],
-    ['/clear',      'Clear conversation history'],
-    ['/status',     'Show system and session status'],
-    ['/plan',       'Switch to plan mode (describe actions, don\'t run)'],
-    ['/auto',       'Switch to auto-approve mode'],
-    ['/voice',      'Toggle voice input'],
-    ['/memory',     'Show recent memories'],
-    ['/tools',      'List available tools'],
-    ['/subagent X', 'Delegate task X to a fresh sub-agent'],
-    ['exit / quit', 'Quit Devin'],
+    ['/help',           'Show this help'],
+    ['/clear',          'Clear conversation history'],
+    ['/status',         'Show system and session status'],
+    ['/screenshot',     'Take a screenshot and show path'],
+    ['/memory',         'Show recent memories'],
+    ['/remember <fact>','Save a fact to persistent memory'],
+    ['/tools',          'List all available tools'],
+    ['/repos',          'List integrated repositories'],
+    ['/model [name]',   'Show or set AI model'],
+    ['/plan',           'Plan mode — describe actions without running'],
+    ['/auto',           'Auto-approve mode — run all tools without confirmation'],
+    ['/default',        'Default mode — confirm dangerous actions'],
+    ['/voice',          'Toggle voice input/output'],
+    ['/verbose',        'Toggle verbose mode'],
+    ['/shell <cmd>',    'Run a shell command directly'],
+    ['/subagent <task>','Delegate a task to a sub-agent'],
+    ['exit / quit',     'Quit Devin'],
   ];
   process.stdout.write('\n');
   process.stdout.write(colorize('Slash commands:\n', c.bold));

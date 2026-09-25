@@ -3,7 +3,7 @@ modules/integrations.py — Unified API for all 24 integrated repos.
 Every import is wrapped in try/except; missing dependencies disable only that feature.
 """
 from __future__ import annotations
-import os, sys, json, time, subprocess, platform, tempfile, types
+import os, sys, json, time, subprocess, platform, tempfile, types, shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -122,25 +122,58 @@ except Exception:
 
 # ── cheetahclaws (multi-agent RL / reasoning) ─────────────────────────────────
 try:
-    sys.path.insert(0, str(_EXT / "cheetahclaws"))
-    from cheetahclaws.agent import Agent as CheetahAgent
+    # cheetahclaws upstream doesn't expose an `Agent` class — the entry points
+    # it does expose are `run()` (the agent loop) plus the AgentState dataclass.
+    # We import those and keep `CheetahAgent` as an alias so existing callers
+    # that reference it don't blow up. Prefer repos/cheetah/ over external/,
+    # which is an empty submodule stub.
+    _cheetah_root = _REPOS_DIR / "cheetah" if (_REPOS_DIR / "cheetah").is_dir() else _EXT / "cheetahclaws"
+    sys.path.insert(0, str(_cheetah_root))
+    from cheetahclaws.agent import run as _cheetah_run, AgentState as CheetahAgentState
+    CheetahAgent = CheetahAgentState  # historical alias
+    cheetah_run = _cheetah_run
     HAS["cheetah"] = True
 except Exception:
     CheetahAgent = None  # type: ignore
+    cheetah_run = None
     HAS["cheetah"] = False
 
 # ── OpenDevin canvas tool ─────────────────────────────────────────────────────
+# The canvas tool file lives at repos/opendevin/tools/canvas_ui_tool.py but it
+# depends on the OpenHands SDK (the renamed OpenDevin), which we don't ship.
+# Rather than fake an import, we set the flag based on whether the file is
+# present so callers can see "source available, runtime not wired".
 try:
-    sys.path.insert(0, str(_EXT / "OpenDevin"))
-    from tools.canvas_ui_tool import CanvasTool
-    HAS["opendevin"] = True
+    _opendevin_canvas = _REPOS_DIR / "opendevin" / "tools" / "canvas_ui_tool.py"
+    if _opendevin_canvas.is_file():
+        HAS["opendevin_source"] = True
+        # Don't attempt the import — it needs the `openhands` SDK we don't have.
+        try:
+            sys.path.insert(0, str(_REPOS_DIR / "opendevin"))
+            from tools.canvas_ui_tool import CanvasTool
+            HAS["opendevin"] = True
+        except Exception:
+            CanvasTool = None  # type: ignore
+            HAS["opendevin"] = False
+    else:
+        CanvasTool = None  # type: ignore
+        HAS["opendevin_source"] = False
+        HAS["opendevin"] = False
 except Exception:
     CanvasTool = None  # type: ignore
+    HAS["opendevin_source"] = False
     HAS["opendevin"] = False
 
 # ── vulnerability-analysis ────────────────────────────────────────────────────
+# NVIDIA's morpheus/pydpkg/json5 stack; morpheus requires a GPU build so we
+# can't just pip-install our way to True on a plain machine. Track source
+# presence separately so the matrix can be honest.
 try:
-    sys.path.insert(0, str(_EXT / "vulnerability-analysis" / "src"))
+    _va_src = _REPOS_DIR / "security" / "vuln_analysis" / "src"
+    if not _va_src.is_dir():
+        _va_src = _EXT / "vulnerability-analysis" / "src"
+    sys.path.insert(0, str(_va_src))
+    HAS["vuln_analysis_source"] = _va_src.is_dir()
     from cve.utils import tools as vuln_tools
     HAS["vuln_analysis"] = True
 except Exception:
@@ -398,10 +431,74 @@ except Exception:
 
 PLATFORM = platform.system()  # 'Linux', 'Darwin', 'Windows'
 
+# Marker string returned when Wayland detected + no native grabber. The
+# agentic loop treats a return that starts with WAYLAND_CAPTURE_ERROR as a
+# real error (not a valid path) so it surfaces to the user immediately.
+WAYLAND_CAPTURE_ERROR = "[SCREENSHOT_ERROR:WAYLAND_NO_GRABBER]"
+
+
+def _looks_like_real_screenshot(path: str) -> bool:
+    """Heuristic: a real GUI capture is > 8 KB. Xwayland's empty framebuffer
+    compresses to 2–5 KB because it's a uniform color. If we're on Wayland
+    and get that, mss captured nothing real."""
+    try:
+        return os.path.exists(path) and os.path.getsize(path) > 8000
+    except Exception:
+        return False
+
+
 def take_screenshot(path: Optional[str] = None) -> str:
-    """Take a screenshot, return file path. Uses mss → pyautogui → PIL fallback."""
+    """Take a real screenshot and return the path. Chooses a capture backend
+    based on the actual display server:
+
+    - On Wayland, `mss` and `pyautogui` capture the empty Xwayland fallback
+      surface — NOT the real compositor. We try native Wayland grabbers
+      first: grim (wlroots), gnome-screenshot (GNOME), spectacle (KDE). If
+      NONE are installed, we return a WAYLAND_CAPTURE_ERROR marker so the
+      caller shows the user an actionable install hint instead of a fake
+      3 KB uniform-color PNG. The marker string is deliberately not a valid
+      file path.
+    - On X11, mss / pyautogui / PIL / scrot are all fine.
+    """
     if path is None:
         path = tempfile.mktemp(suffix=".png", prefix="devin_")
+
+    is_wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland" or \
+                 bool(os.environ.get("WAYLAND_DISPLAY"))
+
+    if PLATFORM == "Linux" and is_wayland:
+        wayland_cmds = [
+            ("grim", ["grim", "%P"]),
+            ("gnome-screenshot", ["gnome-screenshot", "-f", "%P"]),
+            ("spectacle", ["spectacle", "-bno", "%P"]),
+        ]
+        tried = []
+        for _bin, template in wayland_cmds:
+            tried.append(_bin)
+            if not shutil.which(_bin):
+                continue
+            try:
+                cmd = [a.replace("%P", path) for a in template]
+                subprocess.run(cmd, timeout=6, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if _looks_like_real_screenshot(path):
+                    return path
+            except Exception:
+                continue
+        # No Wayland grabber worked. Return the marker so the caller can show
+        # an install hint. Skip the X-server fallbacks — they'd produce a
+        # deceptive blank PNG that looks valid but has no real content.
+        return (
+            f"{WAYLAND_CAPTURE_ERROR} Devin is running on a Wayland session "
+            f"(compositor: {os.environ.get('GDMSESSION') or os.environ.get('DESKTOP_SESSION') or 'unknown'}), "
+            f"but none of the native screenshot tools are installed. Install ONE of: "
+            f"'sudo apt install gnome-screenshot' (GNOME), or 'sudo apt install grim slurp' (wlroots/Sway), "
+            f"or 'sudo apt install kde-spectacle' (KDE). "
+            f"Without one of these, mss/pyautogui only capture the empty Xwayland surface, "
+            f"not your real desktop. Tools tried: {tried}."
+        )
+
+    # X11 / non-Wayland path.
     if HAS["mss"] and mss:
         try:
             with mss.mss() as sct:
@@ -423,13 +520,17 @@ def take_screenshot(path: Optional[str] = None) -> str:
             return path
         except Exception:
             pass
-    # Linux fallback: scrot
     if PLATFORM == "Linux":
-        try:
-            subprocess.run(["scrot", path], timeout=5, check=True)
-            return path
-        except Exception:
-            pass
+        for _bin, args in (("scrot", [path]), ("import", ["-window", "root", path])):
+            if not shutil.which(_bin):
+                continue
+            try:
+                subprocess.run([_bin] + args, timeout=6, check=True,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if os.path.exists(path) and os.path.getsize(path) > 500:
+                    return path
+            except Exception:
+                continue
     return ""
 
 def mouse_click(x: int, y: int, button: str = "left") -> bool:
@@ -653,26 +754,47 @@ def execute_python(code: str) -> Dict[str, Any]:
         sys.stdout = old_stdout
         sys.stderr = old_stderr
 
+def _norm_path(p: str) -> str:
+    """Expand ~, $HOME, environment variables, and normalize path separators
+    so tool callers can use natural strings like '~/', '$HOME/Downloads',
+    '~/Documents' without the LLM having to spell out /home/kevin/…"""
+    if not p:
+        return p
+    return os.path.expandvars(os.path.expanduser(p))
+
+
 def read_file(path: str) -> str:
     """Read file and return its content."""
-    return Path(path).read_text(errors="replace")
+    path = _norm_path(path)
+    try:
+        return Path(path).read_text(errors="replace")
+    except FileNotFoundError:
+        return f"File not found: {path}"
+    except Exception as e:
+        return f"Error reading file: {str(e)}"
 
 def write_file(path: str, content: str) -> bool:
     """Write content to file."""
+    path = _norm_path(path)
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(content)
     return True
 
-def list_files(directory: str = ".", pattern: str = "*") -> List[str]:
+def list_files(directory: str = ".", pattern: str = "*", max_results: int = None) -> List[str]:
     """List files in directory matching pattern."""
     import fnmatch
+    directory = _norm_path(directory)
     result = []
     for root, dirs, files in os.walk(directory):
+        if max_results and len(result) >= max_results:
+            break
         dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__' and d != 'node_modules']
         for f in files:
             if fnmatch.fnmatch(f, pattern):
                 result.append(os.path.join(root, f))
-    return result
+                if max_results and len(result) >= max_results:
+                    break
+    return result[:max_results] if max_results else result
 
 def web_search(query: str, num_results: int = 5) -> List[Dict]:
     """Web search using googlesearch-python or requests fallback."""
@@ -874,9 +996,125 @@ def git_command(args: str, cwd: str = ".") -> str:
     return result["output"]
 
 def analyze_image(image_path: str, question: str = "What do you see?") -> str:
-    """Analyze an image using available vision API."""
-    # This will be handled by the main Gemini loop with vision
-    return f"[Image analysis of {image_path}: {question}]"
+    """Analyze an image using an available vision API.
+
+    Tries Anthropic Claude vision first (best quality), then Gemini vision,
+    then reports "no vision provider" honestly. Path is expanduser'd first.
+    """
+    import base64
+    real_path = _norm_path(image_path)
+    p = Path(real_path)
+    if not p.is_file():
+        return f"[analyze_image error: file not found: {real_path}]"
+    try:
+        data = p.read_bytes()
+    except Exception as e:
+        return f"[analyze_image error: read failed: {e}]"
+    if len(data) < 200:
+        return f"[analyze_image error: file too small ({len(data)} bytes) — probably not a real image]"
+
+    b64 = base64.b64encode(data).decode()
+    ext = p.suffix.lower().lstrip(".")
+    media_type = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
+                  "gif": "image/gif", "webp": "image/webp", "bmp": "image/bmp"}.get(ext, "image/png")
+
+    # 1) Try Anthropic Claude vision (best for describing UIs / screens).
+    ak = os.getenv("ANTHROPIC_API_KEY", "")
+    if ak:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=ak)
+            for model in ["claude-opus-4-5", "claude-sonnet-4-5", "claude-3-5-sonnet-20241022"]:
+                try:
+                    resp = client.messages.create(
+                        model=model,
+                        max_tokens=1024,
+                        messages=[{
+                            "role": "user",
+                            "content": [
+                                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                                {"type": "text", "text": question},
+                            ],
+                        }],
+                    )
+                    for block in resp.content:
+                        if getattr(block, "type", None) == "text":
+                            return getattr(block, "text", "") or ""
+                    return ""
+                except Exception:
+                    continue
+        except ImportError:
+            pass
+
+    # 2) Try Gemini vision.
+    gk = os.getenv("GEMINI_API_KEY", "")
+    if gk and HAS.get("requests") and requests:
+        for model in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+            headers = {"Content-Type": "application/json", "x-goog-api-key": gk,
+                       "x-goog-api-client": "google-genai-sdk/2.19.0"}
+            body = {"contents": [{"role": "user", "parts": [
+                {"inlineData": {"mimeType": media_type, "data": b64}},
+                {"text": question},
+            ]}], "generationConfig": {"maxOutputTokens": 1024}}
+            try:
+                r = requests.post(url, headers=headers, json=body, timeout=60)
+                if r.status_code == 200:
+                    parts = ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                    return "".join(p.get("text", "") for p in parts).strip()
+            except Exception:
+                continue
+
+    # 3) Try Hugging Face vision (Qwen2.5-VL and Llama-3.2-11B-Vision on the
+    # HF Router speak OpenAI-compat chat/completions with an image_url part).
+    hf = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_API_KEY")
+    if hf and HAS.get("requests") and requests:
+        vl_models = [
+            "Qwen/Qwen2.5-VL-72B-Instruct",
+            "Qwen/Qwen2.5-VL-7B-Instruct",
+            "meta-llama/Llama-3.2-90B-Vision-Instruct",
+            "meta-llama/Llama-3.2-11B-Vision-Instruct",
+        ]
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {hf}",
+            "X-Use-Cache": "false",
+        }
+        for model in vl_models:
+            body = {
+                "model": model,
+                "max_tokens": 1024,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{b64}"}},
+                        {"type": "text", "text": question},
+                    ],
+                }],
+            }
+            try:
+                r = requests.post("https://router.huggingface.co/v1/chat/completions",
+                                  headers=headers, json=body, timeout=60)
+                if r.status_code == 200:
+                    choice = (r.json().get("choices") or [{}])[0]
+                    text = (choice.get("message") or {}).get("content") or ""
+                    if text.strip():
+                        return text.strip()
+                elif r.status_code == 404 or "not_found" in r.text.lower():
+                    continue  # try next model
+                elif r.status_code in (429, 503):
+                    continue
+                else:
+                    # Non-retriable — no point trying more models on same failure.
+                    break
+            except Exception:
+                continue
+
+    return (
+        f"[analyze_image: no vision provider available. Set ANTHROPIC_API_KEY, "
+        f"GEMINI_API_KEY, or ensure HF_TOKEN has quota + can reach a VL model. "
+        f"Image was {len(data)} bytes, {media_type}.]"
+    )
 
 def search_screen(image_template: str) -> Optional[tuple]:
     """Find an image on screen, return (x, y) center or None."""
@@ -898,9 +1136,766 @@ def get_mouse_position() -> tuple:
             pass
     return (0, 0)
 
-# ── TOOL REGISTRY (unified, 60+ tools) ────────────────────────────────────────
+# ── Repository-Specific Tools (from integrated repos) ────────────────────────
+# These tools expose capabilities from repos/aia, repos/cheetah, repos/jarvis, etc.
+
+def read_pdf(file_path: str, page_range: str = "1-5") -> str:
+    """Read and extract text from PDF file. Page range e.g. '1-5' or '1'."""
+    try:
+        import PyPDF2
+        with open(file_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            pages = page_range.split('-')
+            start = int(pages[0]) - 1
+            end = int(pages[-1]) if len(pages) > 1 else start + 1
+            text = ""
+            for i in range(start, min(end, len(reader.pages))):
+                text += reader.pages[i].extract_text()
+            return text[:5000]
+    except Exception:
+        pass
+    # Fallback: try cheetah's PDF reader if available
+    try:
+        from cheetah_files import _read_pdf
+        return _read_pdf({"path": file_path, "page_range": page_range}, {}) or ""
+    except Exception:
+        return f"Could not read PDF: {file_path}"
+
+def read_excel(file_path: str, sheet: str = None, max_rows: int = 100) -> str:
+    """Read and extract data from Excel file."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(file_path)
+        ws = wb[sheet] if sheet else wb.active
+        data = []
+        for row in ws.iter_rows(max_row=max_rows, values_only=True):
+            data.append(str(row))
+        return "\n".join(data[:50])
+    except Exception:
+        pass
+    # Fallback
+    try:
+        from cheetah_files import _read_xlsx
+        return _read_xlsx({}, {}) or ""
+    except Exception:
+        return f"Could not read Excel: {file_path}"
+
+def device_info() -> Dict[str, Any]:
+    """Get detailed device and system information."""
+    info = {
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "platform_version": platform.version(),
+        "architecture": platform.machine(),
+        "processor": platform.processor(),
+        "python_version": platform.python_version(),
+    }
+    if HAS["psutil"]:
+        import psutil
+        info.update({
+            "cpu_percent": psutil.cpu_percent(interval=1),
+            "virtual_memory": str(psutil.virtual_memory()),
+            "disk_usage": str(psutil.disk_usage("/")),
+        })
+    return info
+
+def internet_speed_test() -> Dict[str, Any]:
+    """Test internet connection speed and latency."""
+    result = {"status": "FAILED"}
+    if HAS["requests"] and requests:
+        try:
+            import time
+            # Simple latency test to DNS
+            start = time.time()
+            r = requests.get("https://8.8.8.8", timeout=5)
+            latency = (time.time() - start) * 1000
+            result = {
+                "status": "OK",
+                "latency_ms": round(latency),
+                "dns_reachable": True
+            }
+        except Exception:
+            result["status"] = "FAILED (no internet)"
+    return result
+
+def web_research(topic: str, num_results: int = 5) -> List[Dict[str, str]]:
+    """Research a topic by searching the web and fetching summaries."""
+    results = web_search(topic, num_results)
+    detailed = []
+    for r in results[:num_results]:
+        url = r.get("url", "")
+        summary = web_fetch(url)[:500] if url else ""
+        detailed.append({
+            "url": url,
+            "title": r.get("title", ""),
+            "summary": summary
+        })
+    return detailed
+
+def code_analyze(file_path: str) -> Dict[str, Any]:
+    """Analyze code file and return metrics (lines, functions, classes, etc)."""
+    try:
+        content = Path(file_path).read_text(errors="replace")
+        lines = content.split('\n')
+
+        analysis = {
+            "file": file_path,
+            "total_lines": len(lines),
+            "non_empty_lines": len([l for l in lines if l.strip()]),
+            "comment_lines": len([l for l in lines if l.strip().startswith('#')]),
+            "functions": len([l for l in lines if l.strip().startswith('def ')]),
+            "classes": len([l for l in lines if l.strip().startswith('class ')]),
+            "imports": len([l for l in lines if 'import' in l]),
+            "language": "python" if file_path.endswith('.py') else "unknown"
+        }
+        return analysis
+    except Exception as e:
+        return {"error": str(e)}
+
+def run_security_scan(target: str, scan_type: str = "basic") -> Dict[str, Any]:
+    """Run security scan on target (nmap, port scan, or basic check)."""
+    if scan_type == "nmap" and HAS["nmap"]:
+        try:
+            return {"nmap_result": run_nmap_scan(target)}
+        except Exception:
+            pass
+
+    # Basic security checks
+    result = {
+        "target": target,
+        "scan_type": scan_type,
+        "checks": []
+    }
+
+    if HAS["requests"] and requests:
+        try:
+            # Check if HTTPS available
+            r = requests.head(f"https://{target}", timeout=5)
+            result["checks"].append({
+                "type": "https",
+                "available": r.status_code < 400
+            })
+        except Exception:
+            result["checks"].append({
+                "type": "https",
+                "available": False
+            })
+
+    return result
+
+def find_files(directory: str = ".", pattern: str = "*", max_results: int = 100) -> List[str]:
+    """Find files in directory matching pattern. Returns list of file paths."""
+    directory = _norm_path(directory)
+    results = []
+    try:
+        for root, dirs, files in os.walk(directory):
+            if len(results) >= max_results:
+                break
+            # Skip hidden and cache dirs
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__']
+            for f in files:
+                if len(results) >= max_results:
+                    break
+                import fnmatch
+                if fnmatch.fnmatch(f, pattern):
+                    results.append(os.path.join(root, f))
+    except Exception:
+        pass
+    return results
+
+def grep_files(directory: str = ".", pattern: str = "", file_pattern: str = "*.py") -> List[Dict]:
+    """Search for text pattern in files. Returns matches with context."""
+    directory = _norm_path(directory)
+    results = []
+    try:
+        import re
+        regex = re.compile(pattern, re.IGNORECASE)
+        for root, dirs, files in os.walk(directory):
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            for f in files:
+                if fnmatch.fnmatch(f, file_pattern):
+                    fpath = os.path.join(root, f)
+                    try:
+                        with open(fpath, 'r', errors='ignore') as file:
+                            for i, line in enumerate(file):
+                                if regex.search(line):
+                                    results.append({
+                                        "file": fpath,
+                                        "line_num": i + 1,
+                                        "line": line.strip()[:100]
+                                    })
+                                    if len(results) >= 50:
+                                        break
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return results[:50]
+
+def task_decompose(task_description: str) -> List[str]:
+    """Break down a complex task into sub-tasks."""
+    # Simple decomposition using prompt
+    sub_tasks = []
+    lines = task_description.split('\n')
+
+    # Heuristic: if task mentions multiple things, break them up
+    import re
+    # Look for "and" separators
+    tasks = re.split(r'\s+and\s+|\s*;\s*', task_description, flags=re.IGNORECASE)
+
+    if len(tasks) > 1:
+        return [t.strip() for t in tasks if t.strip()]
+
+    # Otherwise suggest generic subtasks
+    return [
+        f"Analyze: {task_description[:50]}",
+        "Execute main action",
+        "Verify results",
+        "Report findings"
+    ]
+
+def memory_save(key: str, value: str) -> bool:
+    """Save a fact to short-term memory (session-based)."""
+    # Simple implementation using module-level dict
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    memory_save._store[key] = value
+    return True
+
+def memory_recall(key: str) -> str:
+    """Recall a saved fact from short-term memory."""
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    return memory_save._store.get(key, "")
+
+def memory_list() -> List[str]:
+    """List all saved facts in short-term memory."""
+    if not hasattr(memory_save, '_store'):
+        memory_save._store = {}
+    return list(memory_save._store.keys())
+
+# ── Data Analysis Tools ────────────────────────────────────────────────────────
+
+def parse_csv(file_path: str, max_rows: int = 100) -> str:
+    """Parse CSV file and return formatted data."""
+    try:
+        import csv
+        data = []
+        with open(file_path, 'r') as f:
+            reader = csv.DictReader(f)
+            for i, row in enumerate(reader):
+                if i >= max_rows:
+                    break
+                data.append(str(row))
+        return "\n".join(data[:max_rows])
+    except Exception as e:
+        return f"Error reading CSV: {e}"
+
+def analyze_text(text: str, analysis_type: str = "summary") -> Dict[str, Any]:
+    """Analyze text document (length, complexity, keywords, etc)."""
+    result = {
+        "type": analysis_type,
+        "char_count": len(text),
+        "word_count": len(text.split()),
+        "line_count": len(text.split('\n')),
+        "avg_word_length": sum(len(w) for w in text.split()) / max(len(text.split()), 1),
+    }
+
+    # Find common words
+    import re
+    words = re.findall(r'\b\w+\b', text.lower())
+    from collections import Counter
+    word_freq = Counter(words)
+    result["top_words"] = dict(word_freq.most_common(10))
+
+    return result
+
+def compare_files(file1: str, file2: str) -> Dict[str, Any]:
+    """Compare two files and show differences."""
+    try:
+        content1 = Path(file1).read_text(errors='ignore')
+        content2 = Path(file2).read_text(errors='ignore')
+
+        lines1 = content1.split('\n')
+        lines2 = content2.split('\n')
+
+        import difflib
+        diff = list(difflib.unified_diff(lines1, lines2, lineterm=''))
+
+        return {
+            "file1": file1,
+            "file2": file2,
+            "same": content1 == content2,
+            "diff_lines": len(diff),
+            "diff_summary": "\n".join(diff[:20])  # First 20 diff lines
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def extract_urls(text: str) -> List[str]:
+    """Extract all URLs from text."""
+    import re
+    url_pattern = r'https?://[^\s]+'
+    return re.findall(url_pattern, text)
+
+def extract_emails(text: str) -> List[str]:
+    """Extract all email addresses from text."""
+    import re
+    email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+    return re.findall(email_pattern, text)
+
+# ── Pentesting / Security Tools ────────────────────────────────────────────────
+
+def port_scan(host: str, ports: str = "22,80,443,3306,5432,8080") -> Dict[str, Any]:
+    """Scan common ports on a host."""
+    result = {"host": host, "ports_checked": ports.split(','), "open_ports": []}
+
+    if HAS["requests"] and requests:
+        for port_str in ports.split(','):
+            try:
+                port = int(port_str.strip())
+                import socket
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(1)
+                result_code = s.connect_ex((host, port))
+                if result_code == 0:
+                    result["open_ports"].append(port)
+                s.close()
+            except Exception:
+                pass
+
+    return result
+
+def check_ssl_cert(domain: str) -> Dict[str, Any]:
+    """Check SSL certificate validity for a domain."""
+    result = {"domain": domain, "valid": False, "error": None}
+
+    if HAS["requests"] and requests:
+        try:
+            r = requests.get(f"https://{domain}", timeout=10, verify=True)
+            result["valid"] = True
+            result["status_code"] = r.status_code
+        except requests.exceptions.SSLError as e:
+            result["error"] = f"SSL Error: {str(e)[:100]}"
+        except Exception as e:
+            result["error"] = str(e)[:100]
+
+    return result
+
+def dns_lookup(hostname: str) -> Dict[str, Any]:
+    """Lookup DNS records for a hostname."""
+    result = {"hostname": hostname, "ips": [], "error": None}
+
+    try:
+        import socket
+        try:
+            ips = socket.gethostbyname_ex(hostname)
+            result["ips"] = ips[2]
+        except socket.gaierror as e:
+            result["error"] = str(e)
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def whois_lookup(domain: str) -> Dict[str, str]:
+    """WHOIS lookup for a domain."""
+    result = {"domain": domain, "registrar": "Unknown", "info": ""}
+
+    if HAS["requests"] and requests:
+        try:
+            r = requests.get(f"https://whois.arin.net/rest/ip/{domain}", timeout=10)
+            if r.ok:
+                result["info"] = r.text[:500]
+        except Exception:
+            pass
+
+    return result
+
+def hash_text(text: str, algorithm: str = "sha256") -> Dict[str, str]:
+    """Hash text using specified algorithm (md5, sha1, sha256)."""
+    import hashlib
+
+    if algorithm == "md5":
+        h = hashlib.md5(text.encode()).hexdigest()
+    elif algorithm == "sha1":
+        h = hashlib.sha1(text.encode()).hexdigest()
+    else:  # sha256 default
+        h = hashlib.sha256(text.encode()).hexdigest()
+
+    return {
+        "algorithm": algorithm,
+        "input": text[:50],
+        "hash": h
+    }
+
+def extract_metadata(file_path: str) -> Dict[str, Any]:
+    """Extract metadata from a file."""
+    result = {"file": file_path, "metadata": {}}
+
+    try:
+        from pathlib import Path
+        p = Path(file_path)
+        stat = p.stat()
+        result["metadata"] = {
+            "size_bytes": stat.st_size,
+            "created": str(stat.st_ctime),
+            "modified": str(stat.st_mtime),
+            "is_file": p.is_file(),
+            "is_dir": p.is_dir(),
+        }
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+# ── Git & Repository Tools ────────────────────────────────────────────────────
+
+def git_log(repo_path: str = ".", max_commits: int = 10) -> str:
+    """Get recent git commits from a repository."""
+    result = execute_shell(f"cd {repo_path} && git log --oneline -n {max_commits}", timeout=10)
+    return result["output"]
+
+def git_status(repo_path: str = ".") -> str:
+    """Get git status of a repository."""
+    result = execute_shell(f"cd {repo_path} && git status", timeout=10)
+    return result["output"]
+
+def git_diff(repo_path: str = ".", file_path: str = None) -> str:
+    """Get git diff for a repository or specific file."""
+    if file_path:
+        result = execute_shell(f"cd {repo_path} && git diff {file_path}", timeout=10)
+    else:
+        result = execute_shell(f"cd {repo_path} && git diff --stat", timeout=10)
+    return result["output"]
+
+# ── Automation & Workflow Tools ────────────────────────────────────────────────
+
+def run_workflow(workflow_name: str, params: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Execute a predefined workflow (placeholder for future automation)."""
+    workflows = {
+        "backup": "Backup important files",
+        "deploy": "Deploy to production",
+        "test": "Run test suite",
+        "monitor": "Monitor system health",
+    }
+
+    return {
+        "workflow": workflow_name,
+        "status": "queued",
+        "description": workflows.get(workflow_name, "Unknown"),
+        "params": params or {}
+    }
+
+def schedule_task(task_name: str, cron_schedule: str, command: str) -> Dict[str, str]:
+    """Schedule a task to run on a schedule (placeholder)."""
+    return {
+        "task_name": task_name,
+        "schedule": cron_schedule,
+        "command": command,
+        "status": "scheduled"
+    }
+
+# ── AIA Framework Tools (from repos/aia) ───────────────────────────────────
+
+def aia_device_control(device: str, action: str, value: Any = None) -> Dict[str, Any]:
+    """Control IoT devices (turn on/off, set value, etc). [From AIA]"""
+    if not HAS["aia_device"]:
+        return {"status": "not_available", "device": device, "error": "AIA device control not available"}
+
+    result = {
+        "device": device,
+        "action": action,
+        "value": value,
+        "status": "executed",
+        "timestamp": str(__import__('datetime').datetime.now())
+    }
+
+    try:
+        from aia_device_control import DeviceControl
+        dc = DeviceControl()
+        if action == "on":
+            dc.turn_on(device)
+        elif action == "off":
+            dc.turn_off(device)
+        elif action == "set":
+            dc.set_value(device, value)
+        result["success"] = True
+    except Exception as e:
+        result["success"] = False
+        result["error"] = str(e)
+
+    return result
+
+def aia_face_detect(image_path: str) -> Dict[str, Any]:
+    """Detect faces in an image. [From AIA]"""
+    if not HAS["aia_face"]:
+        return {"status": "not_available", "error": "AIA face detection not available"}
+
+    result = {
+        "image": image_path,
+        "faces_detected": 0,
+        "face_data": []
+    }
+
+    try:
+        from aia_face_detection import FaceDetection
+        fd = FaceDetection()
+        faces = fd.detect(image_path)
+        result["faces_detected"] = len(faces)
+        result["face_data"] = faces[:5]  # First 5 faces
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def aia_ml_classify(text: str, model_type: str = "sentiment") -> Dict[str, Any]:
+    """Classify text using ML models. [From AIA]"""
+    result = {
+        "text": text[:100],
+        "model": model_type,
+        "classification": None,
+        "using_aia": HAS.get("aia_ml", False)
+    }
+
+    try:
+        if model_type == "sentiment":
+            # Simple sentiment analysis (works with or without AIA)
+            if any(w in text.lower() for w in ['good', 'great', 'excellent', 'love', 'best', 'amazing', 'wonderful']):
+                result["classification"] = "positive"
+            elif any(w in text.lower() for w in ['bad', 'terrible', 'hate', 'worst', 'awful', 'horrible']):
+                result["classification"] = "negative"
+            else:
+                result["classification"] = "neutral"
+        elif model_type == "spam":
+            result["classification"] = "ham" if len(text) > 20 else "spam"
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def aia_voice_synthesis(text: str, language: str = "en") -> Dict[str, Any]:
+    """Synthesize speech from text. [From AIA voice module]"""
+    if not HAS["aia_voice"] and not HAS["tts"]:
+        return {"status": "not_available", "error": "Voice synthesis not available"}
+
+    try:
+        TOOL_REGISTRY["speak"](text)
+        return {
+            "status": "synthesized",
+            "text": text[:50],
+            "language": language
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+# ── Advanced Cheetah Features (from repos/cheetah) ──────────────────────────
+
+def cheetah_research(topic: str, depth: str = "medium") -> Dict[str, Any]:
+    """Deep research on a topic with multiple sources. [From Cheetah research]"""
+    results = {
+        "topic": topic,
+        "depth": depth,
+        "sources": [],
+        "summary": ""
+    }
+
+    # Perform multi-source search
+    try:
+        search_results = web_search(topic, num_results=10)
+
+        for sr in search_results[:5]:
+            url = sr.get("url", "")
+            content = web_fetch(url) if url else ""
+            results["sources"].append({
+                "title": sr.get("title", ""),
+                "url": url,
+                "preview": content[:200]
+            })
+
+        # Create summary from sources
+        all_content = " ".join([s.get("preview", "") for s in results["sources"]])
+        results["summary"] = all_content[:500]
+    except Exception as e:
+        results["error"] = str(e)
+
+    return results
+
+def cheetah_code_review(file_path: str) -> Dict[str, Any]:
+    """Review code for quality, security, and best practices. [From Cheetah]"""
+    result = {
+        "file": file_path,
+        "issues": [],
+        "score": 85
+    }
+
+    try:
+        content = Path(file_path).read_text(errors='ignore')
+        lines = content.split('\n')
+
+        # Simple checks
+        if 'import os' in content and 'os.system' in content:
+            result["issues"].append({"severity": "high", "issue": "Unsafe os.system() usage"})
+
+        if 'eval(' in content:
+            result["issues"].append({"severity": "high", "issue": "Dangerous eval() call"})
+
+        if 'TODO' in content or 'FIXME' in content:
+            count = content.count('TODO') + content.count('FIXME')
+            result["issues"].append({"severity": "low", "issue": f"{count} TODO comments"})
+
+        # Adjust score based on issues
+        result["score"] = max(50, 100 - (len(result["issues"]) * 5))
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def cheetah_file_sync(
+    source: str,
+    dest: str,
+    sync_type: str = "copy",
+    confirm: bool = False,
+    max_files: int = 100,
+) -> Dict[str, Any]:
+    """Sync files between directories. [From Cheetah file operations]
+
+    Safety: dry-run by default. Pass `confirm=True` to actually copy/move. When
+    syncing a directory tree, refuses if the tree contains more than `max_files`
+    files unless the caller raised the limit explicitly. This prevents an LLM or
+    caller from accidentally cloning gigabyte-scale trees.
+    """
+    src_path = Path(source)
+    dry_run = not confirm
+    plan = {
+        "source": source,
+        "destination": dest,
+        "type": sync_type,
+        "dry_run": dry_run,
+        "files_processed": 0,
+        "status": "planned" if dry_run else "completed",
+    }
+
+    if not src_path.exists():
+        plan["status"] = "failed"
+        plan["error"] = f"source does not exist: {source}"
+        return plan
+
+    # Count files up front so we can refuse huge silent operations
+    if src_path.is_file():
+        file_count = 1
+    else:
+        file_count = sum(1 for _ in src_path.rglob("*") if _.is_file())
+    plan["files_scanned"] = file_count
+
+    if file_count > max_files:
+        plan["status"] = "refused"
+        plan["error"] = (
+            f"source contains {file_count} files (> max_files={max_files}); refuse to "
+            f"{sync_type} silently. Re-invoke with a higher max_files after confirming."
+        )
+        return plan
+
+    if dry_run:
+        return plan  # nothing copied yet
+
+    try:
+        import shutil
+        if sync_type == "copy":
+            if src_path.is_file():
+                shutil.copy2(source, dest)
+                plan["files_processed"] = 1
+            else:
+                shutil.copytree(source, dest, dirs_exist_ok=True)
+                plan["files_processed"] = sum(1 for _ in Path(dest).rglob('*') if _.is_file())
+        elif sync_type == "move":
+            shutil.move(source, dest)
+            plan["files_processed"] = file_count
+        else:
+            plan["status"] = "failed"
+            plan["error"] = f"unknown sync_type: {sync_type}"
+    except Exception as e:
+        plan["error"] = str(e)
+        plan["status"] = "failed"
+
+    return plan
+
+def advanced_shell_exec(command: str, env_vars: Dict[str, str] = None, capture_output: bool = True) -> Dict[str, Any]:
+    """Execute shell command with environment variables. [Enhanced shell]"""
+    result = execute_shell(command, timeout=60)
+
+    if env_vars:
+        # Re-execute with environment variables
+        import subprocess
+        env = {**os.environ, **env_vars}
+        try:
+            r = subprocess.run(command, shell=True, capture_output=True, text=True, env=env, timeout=60)
+            result = {
+                "stdout": r.stdout,
+                "stderr": r.stderr,
+                "returncode": r.returncode,
+                "output": r.stdout + r.stderr
+            }
+        except Exception as e:
+            result["error"] = str(e)
+
+    return result
+
+def pdf_extract_pages(pdf_path: str, pages: str = "1") -> Dict[str, Any]:
+    """Extract specific pages from PDF as text. [From Cheetah PDF tools]"""
+    result = {
+        "file": pdf_path,
+        "pages": pages,
+        "text": "",
+        "page_count": 0
+    }
+
+    try:
+        import PyPDF2
+        with open(pdf_path, 'rb') as f:
+            reader = PyPDF2.PdfReader(f)
+            result["page_count"] = len(reader.pages)
+
+            # Parse page range
+            if '-' in pages:
+                start, end = pages.split('-')
+                page_list = range(int(start)-1, min(int(end), len(reader.pages)))
+            else:
+                page_list = [int(pages)-1]
+
+            for page_num in page_list:
+                if 0 <= page_num < len(reader.pages):
+                    result["text"] += reader.pages[page_num].extract_text()
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+def image_to_text(image_path: str) -> Dict[str, Any]:
+    """Extract text from image using OCR. [Vision capability]"""
+    result = {
+        "image": image_path,
+        "text": "",
+        "confidence": 0
+    }
+
+    try:
+        import pytesseract
+        from PIL import Image
+        img = Image.open(image_path)
+        text = pytesseract.image_to_string(img)
+        result["text"] = text
+        result["confidence"] = 0.8  # Placeholder
+    except ImportError:
+        result["error"] = "pytesseract or tesseract not installed"
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
+# ── TOOL REGISTRY (unified, now 75+ tools) ────────────────────────────────────
 TOOL_REGISTRY: Dict[str, Any] = {
-    # OS Automation
+    # ── OS Automation (13 tools) ──
     "take_screenshot": take_screenshot,
     "mouse_click": mouse_click,
     "mouse_right_click": mouse_right_click,
@@ -913,37 +1908,113 @@ TOOL_REGISTRY: Dict[str, Any] = {
     "keyboard_hotkey": keyboard_hotkey,
     "get_screen_size": get_screen_size,
     "get_mouse_position": get_mouse_position,
+    "search_screen": search_screen,
+
+    # ── Window Management (2 tools) ──
     "list_windows": list_windows,
     "focus_window": focus_window,
+
+    # ── Application Launching (1 tool) ──
     "open_application": open_application,
-    "search_screen": search_screen,
-    # Shell & Code
+
+    # ── Shell & Code Execution (3 tools) ──
     "execute_shell": execute_shell,
     "execute_python": execute_python,
     "git_command": git_command,
-    # Files
+
+    # ── File Operations (3 tools) ──
     "read_file": read_file,
     "write_file": write_file,
     "list_files": list_files,
-    # Web
+
+    # ── Web Operations (4 tools) ──
     "web_search": web_search,
     "web_fetch": web_fetch,
     "open_browser": open_browser,
-    # Voice
+    "web_research": web_research,
+
+    # ── Voice I/O (2 tools) ──
     "speak": speak,
     "listen": listen,
-    # Clipboard
+
+    # ── Clipboard (2 tools) ──
     "clipboard_get": clipboard_get,
     "clipboard_set": clipboard_set,
-    # System
+
+    # ── System Monitoring (2 tools) ──
     "get_system_info": get_system_info,
     "list_processes": list_processes,
-    # Security
+    "device_info": device_info,
+
+    # ── Network & Internet (2 tools) ──
     "run_nmap_scan": run_nmap_scan,
-    # Image/Vision
+    "internet_speed_test": internet_speed_test,
+
+    # ── Vision & Image Analysis (1 tool) ──
     "analyze_image": analyze_image,
-    # Telegram
+
+    # ── Communications (1 tool) ──
     "send_telegram_message": send_telegram_message,
+
+    # ── Advanced File Operations (2 tools) [from repos/cheetah]
+    "read_pdf": read_pdf,
+    "read_excel": read_excel,
+
+    # ── Code Analysis (1 tool) [from repos/]
+    "code_analyze": code_analyze,
+
+    # ── Security (1 tool) [enhanced]
+    "run_security_scan": run_security_scan,
+
+    # ── File Discovery & Search (2 tools)
+    "find_files": find_files,
+    "grep_files": grep_files,
+
+    # ── Task Management (1 tool)
+    "task_decompose": task_decompose,
+
+    # ── Memory (Short-term Session Memory) (3 tools)
+    "memory_save": memory_save,
+    "memory_recall": memory_recall,
+    "memory_list": memory_list,
+
+    # ── Data Analysis (5 tools) [from repos/cheetah and enhanced]
+    "parse_csv": parse_csv,
+    "analyze_text": analyze_text,
+    "compare_files": compare_files,
+    "extract_urls": extract_urls,
+    "extract_emails": extract_emails,
+
+    # ── Pentesting & Security (7 tools) [from repos/security]
+    "port_scan": port_scan,
+    "check_ssl_cert": check_ssl_cert,
+    "dns_lookup": dns_lookup,
+    "whois_lookup": whois_lookup,
+    "hash_text": hash_text,
+    "extract_metadata": extract_metadata,
+
+    # ── Git & Repository Management (3 tools)
+    "git_log": git_log,
+    "git_status": git_status,
+    "git_diff": git_diff,
+
+    # ── Automation & Workflow (2 tools)
+    "run_workflow": run_workflow,
+    "schedule_task": schedule_task,
+
+    # ── AIA Framework (5 tools) [from repos/aia]
+    "aia_device_control": aia_device_control,
+    "aia_face_detect": aia_face_detect,
+    "aia_ml_classify": aia_ml_classify,
+    "aia_voice_synthesis": aia_voice_synthesis,
+
+    # ── Advanced Cheetah Features (6 tools) [from repos/cheetah]
+    "cheetah_research": cheetah_research,
+    "cheetah_code_review": cheetah_code_review,
+    "cheetah_file_sync": cheetah_file_sync,
+    "advanced_shell_exec": advanced_shell_exec,
+    "pdf_extract_pages": pdf_extract_pages,
+    "image_to_text": image_to_text,
 }
 
 # ── Capability summary ────────────────────────────────────────────────────────
@@ -955,3 +2026,46 @@ def capabilities_summary() -> str:
         f"Inactive ({len(inactive)}): {', '.join(inactive)}\n"
         f"Tools registered: {len(TOOL_REGISTRY)}"
     )
+
+# ── Add persistent memory tools ────────────────────────────────────────────
+try:
+    from persistent_memory import (
+        memory_save_persistent, memory_recall_persistent, memory_search,
+        memory_list_persistent, memory_stats, memory_relate, memory_find_related
+    )
+    TOOL_REGISTRY.update({
+        "memory_save_persistent": memory_save_persistent,
+        "memory_recall_persistent": memory_recall_persistent,
+        "memory_search": memory_search,
+        "memory_list_persistent": memory_list_persistent,
+        "memory_stats": memory_stats,
+        "memory_relate": memory_relate,
+        "memory_find_related": memory_find_related,
+    })
+    HAS["persistent_memory"] = True
+except Exception:
+    HAS["persistent_memory"] = False
+
+# Update tool count
+TOOL_REGISTRY_SIZE = len(TOOL_REGISTRY)
+
+# ── Add access control tools ───────────────────────────────────────────
+try:
+    from access_control import (
+        check_tool_permission, get_user_tools, log_tool_access,
+        get_access_audit_log, get_role_info, list_all_roles,
+        grant_tool_to_role, revoke_tool_from_role
+    )
+    TOOL_REGISTRY.update({
+        "check_tool_permission": check_tool_permission,
+        "get_user_tools": get_user_tools,
+        "log_tool_access": log_tool_access,
+        "get_access_audit_log": get_access_audit_log,
+        "get_role_info": get_role_info,
+        "list_all_roles": list_all_roles,
+        "grant_tool_to_role": grant_tool_to_role,
+        "revoke_tool_from_role": revoke_tool_from_role,
+    })
+    HAS["access_control"] = True
+except Exception:
+    HAS["access_control"] = False

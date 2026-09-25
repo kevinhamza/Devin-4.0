@@ -274,7 +274,13 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, NamedTuple, List
+from typing import Dict, Any, Optional, NamedTuple, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # Type-only import: keeps annotations working without forcing the robotics
+    # stack to be importable at module load. Real init still raises cleanly
+    # below when the runtime import fails.
+    from modules.robotics_control_module import RoboticsControlModule  # noqa: F401
 
 try:
     # --- Import the REAL, integrated monitoring and robotics modules ---
@@ -329,7 +335,7 @@ class SystemMonitorFacade:
     underlying specialized modules.
     """
 
-    def __init__(self, robot_controller: Optional[RoboticsControlModule] = None):
+    def __init__(self, robot_controller: 'Optional[RoboticsControlModule]' = None):
         if not DEVIN_CORE_AVAILABLE:
             raise ImportError(f"A core Devin module is missing. Error: {_import_error}")
         

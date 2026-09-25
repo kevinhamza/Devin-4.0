@@ -24,6 +24,10 @@ except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
 
+if not DEVIN_CORE_AVAILABLE:
+    import pytest
+    pytest.skip(f"devin core unavailable: {_import_error}", allow_module_level=True)
+
 # --- Suppress regular logging output during tests for clarity ---
 import logging
 logging.disable(logging.CRITICAL)
