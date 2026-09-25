@@ -876,6 +876,37 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AT tests ──────────────────────────────────────────────────────────
+
+def t_at_tools_registered():
+    for name in ('goal_plan', 'self_reflect', 'generate_report'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_goal_plan():
+    r = _agent.tool_goal_plan('implement a REST API endpoint for user signup')
+    assert 'GOAL PLAN' in r, f"got: {r}"
+    assert 'STEPS' in r, f"got: {r}"
+    assert 'task_complete' in r, f"got: {r}"
+
+def t_self_reflect():
+    r_err = _agent.tool_self_reflect('ERROR: file not found: /tmp/missing.py')
+    assert 'ERROR' in r_err, f"got: {r_err}"
+    r_ok = _agent.tool_self_reflect('✓ All 5 tests passed.', goal='Run test suite')
+    assert 'SUCCESS' in r_ok or '✅' in r_ok, f"got: {r_ok}"
+
+def t_generate_report():
+    import json
+    secs = json.dumps([
+        {"heading": "Summary", "content": "Everything went well."},
+        {"heading": "Details", "content": "123 files processed."},
+    ])
+    r = _agent.tool_generate_report('Test Report', secs, 'markdown')
+    assert '# Test Report' in r, f"got: {r}"
+    assert '## Summary' in r, f"got: {r}"
+    r_html = _agent.tool_generate_report('HTML Report', secs, 'html')
+    assert '<h1>' in r_html, f"got: {r_html}"
+
+
 # ─── Phase AS tests ──────────────────────────────────────────────────────────
 
 def t_as_tools_registered():
@@ -1273,37 +1304,44 @@ def main():
     test("task_complete", t_task_complete)
     test("format_output", t_format_output)
 
-    # Phase 22: Code intelligence — symbol search, dead code, count lines, AST (Phase AS)
-    print("\n── Phase 22: Code Intelligence Tools ──")
+    # Phase 22: Final intelligence — goal_plan, self_reflect, generate_report (Phase AT)
+    print("\n── Phase 22: Final Intelligence Tools ──")
+    test("Phase AT tools registered", t_at_tools_registered)
+    test("goal_plan", t_goal_plan)
+    test("self_reflect", t_self_reflect)
+    test("generate_report", t_generate_report)
+
+    # Phase 23: Code intelligence — symbol search, dead code, count lines, AST (Phase AS)
+    print("\n── Phase 23: Code Intelligence Tools ──")
     test("Phase AS tools registered", t_as_tools_registered)
     test("symbol_search", t_symbol_search)
     test("count_lines", t_count_lines)
     test("ast_parse", t_ast_parse_tool)
 
-    # Phase 23: Process control — list, spawn, info (Phase AR)
-    print("\n── Phase 23: Process Control Tools ──")
+    # Phase 24: Process control — list, spawn, info (Phase AR)
+    print("\n── Phase 24: Process Control Tools ──")
     test("Phase AR tools registered", t_ar_tools_registered)
     test("list_processes", t_list_processes)
     test("spawn_process", t_spawn_process)
     test("process_info (self)", t_process_info_self)
 
-    # Phase 24: Network tools — ping, port_scan, dns_lookup, http_headers (Phase AQ)
-    print("\n── Phase 24: Network Tools ──")
+    # Phase 25: Network tools — ping, port_scan, dns_lookup, http_headers (Phase AQ)
+    print("\n── Phase 25: Network Tools ──")
     test("Phase AQ tools registered", t_aq_tools_registered)
     test("port_scan", t_port_scan)
     test("dns_lookup", t_dns_lookup)
     test("http_headers", t_http_headers_tool)
 
-    # Phase 25: Bulk rename, folder sync, archive info, checksum (Phase AP)
-    print("\n── Phase 25: File Management Tools ──")
+    # Phase 26: Bulk rename, folder sync, archive info, checksum (Phase AP)
+    print("\n── Phase 26: File Management Tools ──")
     test("Phase AP tools registered", t_ap_tools_registered)
     test("bulk_rename", t_bulk_rename)
     test("folder_sync", t_folder_sync)
     test("archive_info", t_archive_info)
     test("checksum", t_checksum)
 
-    # Phase 26: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
-    print("\n── Phase 26: Pipe, String Ops, Utilities ──")
+    # Phase 27: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
+    print("\n── Phase 27: Pipe, String Ops, Utilities ──")
     test("Phase AO tools registered", t_ao_tools_registered)
     test("pipe tool chain", t_pipe)
     test("string_ops", t_string_ops)

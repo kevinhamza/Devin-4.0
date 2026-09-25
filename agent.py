@@ -3454,6 +3454,169 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AT — FINAL INTELLIGENCE: GOAL_PLAN, SELF_REFLECT, TOOL_SUGGEST, REPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_goal_plan(goal: str, context: str = '', constraints: str = '') -> str:
+    """
+    Break a high-level goal into an actionable plan using tool-based steps.
+    Returns a structured plan with Phase/Step/Tool/Purpose for each action.
+    context: current project context (optional).
+    constraints: known limitations (optional).
+    """
+    import re as _re
+    # Classify the goal domain
+    domains = {
+        'code': ['implement', 'build', 'create', 'write', 'add', 'fix', 'refactor', 'debug', 'test'],
+        'data': ['analyze', 'parse', 'query', 'extract', 'transform', 'export', 'import', 'csv', 'json'],
+        'system': ['deploy', 'monitor', 'configure', 'install', 'backup', 'schedule', 'automate'],
+        'web':  ['scrape', 'download', 'fetch', 'api', 'endpoint', 'request', 'http'],
+        'file': ['organize', 'move', 'rename', 'sync', 'compress', 'archive', 'search'],
+    }
+    goal_lower = goal.lower()
+    detected = [d for d, kws in domains.items() if any(kw in goal_lower for kw in kws)]
+    domain = detected[0] if detected else 'general'
+
+    # Generate a structured plan
+    lines = [
+        f"GOAL PLAN: {goal}",
+        f"Domain:    {domain}",
+    ]
+    if context:
+        lines.append(f"Context:   {context}")
+    if constraints:
+        lines.append(f"Constraints: {constraints}")
+    lines.append("")
+
+    # Domain-specific step templates
+    step_templates = {
+        'code': [
+            ("UNDERSTAND", "Read the relevant code/docs", "read_file / symbol_search"),
+            ("PLAN",       "Decompose task into sub-steps", "decompose_task"),
+            ("IMPLEMENT",  "Write or modify code", "write_file / execute_python"),
+            ("TEST",       "Run tests to verify", "run_tests / verify_output"),
+            ("DOCUMENT",   "Update docs/comments", "write_file"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+        'data': [
+            ("ACQUIRE",    "Fetch or read input data", "read_file / http_request"),
+            ("VALIDATE",   "Check data integrity", "validate_json / csv_query"),
+            ("TRANSFORM",  "Process and reshape data", "execute_python / regex_extract"),
+            ("EXPORT",     "Save results", "write_file"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+        'system': [
+            ("AUDIT",      "Check current system state", "system_snapshot / list_processes"),
+            ("CONFIGURE",  "Update configuration", "config_write / set_env"),
+            ("EXECUTE",    "Run system command", "execute_shell / spawn_process"),
+            ("VERIFY",     "Confirm change took effect", "verify_output / internet_check"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+        'web': [
+            ("FETCH",      "Make HTTP request", "http_request"),
+            ("PARSE",      "Extract relevant content", "parse_html / regex_extract"),
+            ("STORE",      "Save extracted data", "write_file"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+        'file': [
+            ("INVENTORY",  "List files to process", "file_tree / list_files"),
+            ("PROCESS",    "Rename/sync/compress files", "bulk_rename / folder_sync / zip_files"),
+            ("VERIFY",     "Confirm outcome", "read_file / checksum"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+        'general': [
+            ("UNDERSTAND", "Gather context and requirements", "read_file / search_in_files"),
+            ("PLAN",       "Break into concrete steps", "decompose_task / task_plan"),
+            ("EXECUTE",    "Carry out each step", "execute_python / execute_shell"),
+            ("VERIFY",     "Check results", "verify_output"),
+            ("COMPLETE",   "Signal task done", "task_complete"),
+        ],
+    }
+    steps = step_templates.get(domain, step_templates['general'])
+    lines.append(f"RECOMMENDED STEPS ({len(steps)}):")
+    for i, (phase, purpose, tools) in enumerate(steps, 1):
+        lines.append(f"  {i}. [{phase}] {purpose}")
+        lines.append(f"     Tools: {tools}")
+    return "\n".join(lines)
+
+
+def tool_self_reflect(last_output: str, goal: str = '') -> str:
+    """
+    Analyze the last tool output to assess progress and suggest next steps.
+    Used by the AI to decide whether a task is complete or what to do next.
+    """
+    out = last_output.strip()
+    lower = out.lower()
+    lines = ["SELF-REFLECTION:"]
+
+    # Detect outcomes
+    if any(w in lower for w in ('error', 'exception', 'traceback', 'failed', 'fail')):
+        lines.append("  Status: ❌ ERROR — output indicates a failure")
+        lines.append("  Suggestions:")
+        if 'no such file' in lower or 'not found' in lower:
+            lines.append("    • Check file paths; use file_tree or list_files to verify")
+        if 'permission' in lower:
+            lines.append("    • Insufficient permissions; try execute_shell with sudo or check ownership")
+        if 'import' in lower or 'module' in lower:
+            lines.append("    • Missing dependency; check requirements.txt or install with pip")
+        lines.append("    • Review the error message and retry with corrected arguments")
+    elif any(w in lower for w in ('✓', 'success', 'done', 'complete', 'passed', 'ok\n', ' ok')):
+        lines.append("  Status: ✅ SUCCESS — output looks good")
+        if goal:
+            lines.append(f"  Goal: {goal}")
+            lines.append("  Next: Verify the result meets requirements, then call task_complete")
+        else:
+            lines.append("  Next: Proceed to the next step or call task_complete if done")
+    elif any(w in lower for w in ('warning', 'warn', 'deprecated')):
+        lines.append("  Status: ⚠️  WARNING — partial success with warnings")
+        lines.append("  Next: Review warnings; they may be ignorable or indicate future issues")
+    else:
+        lines.append("  Status: ℹ️  NEUTRAL — output is informational")
+        lines.append("  Next: Review output and determine if action is needed")
+
+    # Output length heuristic
+    if len(out) > 5000:
+        lines.append(f"  Note: Output is long ({len(out)} chars); consider summarizing with summarize_changes")
+    if not out:
+        lines.append("  Warning: Empty output — tool may have produced no result")
+
+    return "\n".join(lines)
+
+
+def tool_generate_report(title: str, sections: str, format: str = 'markdown') -> str:
+    """
+    Generate a structured report from a JSON sections spec.
+    sections: JSON array of {heading, content} objects.
+    format: markdown | plain | html
+    """
+    try:
+        sec_list = json.loads(sections)
+    except json.JSONDecodeError as e:
+        return f"ERROR: invalid sections JSON: {e}"
+    if format == 'markdown':
+        lines = [f"# {title}", ""]
+        for sec in sec_list:
+            h = sec.get('heading', 'Section')
+            c = sec.get('content', '')
+            lines += [f"## {h}", "", c, ""]
+        return "\n".join(lines)
+    elif format == 'html':
+        parts = [f"<h1>{title}</h1>"]
+        for sec in sec_list:
+            h = sec.get('heading', 'Section')
+            c = sec.get('content', '').replace('\n', '<br>')
+            parts.append(f"<h2>{h}</h2><p>{c}</p>")
+        return "\n".join(parts)
+    else:  # plain
+        lines = [title, '=' * len(title), '']
+        for sec in sec_list:
+            h = sec.get('heading', 'Section')
+            c = sec.get('content', '')
+            lines += [h, '-' * len(h), c, '']
+        return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AS — CODE INTELLIGENCE: SYMBOL_SEARCH, CALL_GRAPH, TODO_FIX, DEAD_CODE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7958,6 +8121,40 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AT ──────────────────────────────────────────────────────────────
+    "goal_plan": {
+        "fn": tool_goal_plan,
+        "desc": "Convert a high-level goal into a structured step-by-step tool plan.",
+        "params": {
+            "goal": {"type": "string", "description": "High-level goal or task description"},
+            "context": {"type": "string", "description": "Current project context"},
+            "constraints": {"type": "string", "description": "Known limitations or constraints"},
+        },
+        "required": ["goal"],
+        "category": "workflow",
+    },
+    "self_reflect": {
+        "fn": tool_self_reflect,
+        "desc": "Analyze last tool output to assess progress and suggest what to do next.",
+        "params": {
+            "last_output": {"type": "string", "description": "The last tool's output to analyze"},
+            "goal": {"type": "string", "description": "Current task goal for context"},
+        },
+        "required": ["last_output"],
+        "category": "workflow",
+    },
+    "generate_report": {
+        "fn": tool_generate_report,
+        "desc": "Generate a structured report (markdown/html/plain) from a sections spec.",
+        "params": {
+            "title": {"type": "string", "description": "Report title"},
+            "sections": {"type": "string", "description": "JSON array of {heading, content} objects"},
+            "format": {"type": "string", "description": "markdown | html | plain"},
+        },
+        "required": ["title", "sections"],
+        "category": "workflow",
     },
 
     # ── Phase AS ──────────────────────────────────────────────────────────────
