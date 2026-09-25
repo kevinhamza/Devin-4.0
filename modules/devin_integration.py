@@ -93,7 +93,7 @@ def _build_new_tools(caps) -> Dict[str, Any]:
             'category': 'OS Control',
         }
         tools['os_observe_screen'] = {
-            'fn': lambda: oa.observe(),
+            'fn': lambda: _s(oa.observe()),
             'desc': 'Capture and return a detailed description of the entire current screen',
             'params': {},
             'required': [],
@@ -114,7 +114,7 @@ def _build_new_tools(caps) -> Dict[str, Any]:
             'category': 'OS Control',
         }
         tools['os_find_element'] = {
-            'fn': lambda description='': str(oa.find_element(str(description))),
+            'fn': lambda description='': _s(oa.find_element(str(description))),
             'desc': 'Find a UI element by visual description and return its (x,y) pixel coordinates',
             'params': {'description': {'type': 'string', 'description': 'Description of the element'}},
             'required': ['description'],
@@ -142,10 +142,10 @@ def _build_new_tools(caps) -> Dict[str, Any]:
             'category': 'OS Control',
         }
         tools['os_execute_task_steps'] = {
-            'fn': lambda task='', steps='[]': oa.execute_task_with_vision(
+            'fn': lambda task='', steps='[]': _s(oa.execute_task_with_vision(
                 str(task),
                 __import__('json').loads(str(steps)) if isinstance(steps, str) else steps
-            ),
+            )),
             'desc': 'Execute a multi-step OS automation task with vision verification',
             'params': {
                 'task': {'type': 'string', 'description': 'Description of the overall task'},
@@ -206,7 +206,7 @@ def _find_agent_tools() -> Optional[Dict]:
         frame = sys._getframe()
         while frame is not None:
             fname = frame.f_code.co_filename or ''
-            if fname.endswith('agent.py') or '/agent.py' in fname or '\\\\agent.py' in fname:
+            if fname.endswith('agent.py') or '/agent.py' in fname or '\\agent.py' in fname:
                 globs = frame.f_globals
                 if 'TOOLS' in globs and isinstance(globs['TOOLS'], dict):
                     return globs['TOOLS']
