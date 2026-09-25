@@ -12,13 +12,26 @@ import os
 
 try:
     import pyttsx3 as _pyttsx3
-    _tts_engine = _pyttsx3.init()
-    _tts_engine.setProperty('rate', 170)
-    _tts_engine.setProperty('volume', 0.95)
     HAS_TTS = True
 except Exception:
     HAS_TTS = False
-    _tts_engine = None
+    _pyttsx3 = None
+
+_tts_engine = None  # lazy-initialized on first speak() call to avoid import-time hang
+
+def _get_tts_engine():
+    global _tts_engine
+    if _tts_engine is not None:
+        return _tts_engine
+    if not HAS_TTS:
+        return None
+    try:
+        _tts_engine = _pyttsx3.init()
+        _tts_engine.setProperty('rate', 170)
+        _tts_engine.setProperty('volume', 0.95)
+    except Exception:
+        _tts_engine = None
+    return _tts_engine
 
 # ── STT ───────────────────────────────────────────────────────────────────────
 
@@ -47,13 +60,14 @@ def speak(text: str, rate: int = 170, volume: float = 0.95) -> bool:
     """Speak text aloud. Returns True on success."""
     if not text:
         return False
-    # Try pyttsx3
-    if HAS_TTS and _tts_engine:
+    # Try pyttsx3 (lazy-initialized)
+    engine = _get_tts_engine()
+    if engine:
         try:
-            _tts_engine.setProperty('rate', rate)
-            _tts_engine.setProperty('volume', volume)
-            _tts_engine.say(str(text))
-            _tts_engine.runAndWait()
+            engine.setProperty('rate', rate)
+            engine.setProperty('volume', volume)
+            engine.say(str(text))
+            engine.runAndWait()
             return True
         except Exception:
             pass

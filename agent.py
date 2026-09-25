@@ -1039,6 +1039,59 @@ try:
 except BaseException:
     pass
 
+# ── Dynamic bulk loader: every remaining first-party directory ────────────────
+# Covers ai_ethics/, ai_integrations/, chaos_engineering/, community/,
+# cross_border_data_flow/, cyber_law/, cyber_range/, databases/, digital_twins/,
+# edge/, edge_ai/, enterprise/, experimental/, hardware/, hexstrike-ai/, hmi/,
+# infra/, legal/, mlops/, monitoring/, plugins/, privacy/, prototypes/, quantum/,
+# recovery/, scripts/, threat_intel/, xr_env/ — any .py file not already loaded.
+
+_BULK_SCAN_DIRS: List[str] = [
+    'ai_ethics', 'ai_integrations', 'chaos_engineering', 'community',
+    'cross_border_data_flow', 'cyber_law', 'cyber_range', 'databases',
+    'digital_twins', 'edge', 'edge_ai', 'enterprise', 'experimental',
+    'hardware', 'hexstrike-ai', 'hmi', 'infra', 'legal', 'mlops',
+    'monitoring', 'plugins', 'privacy', 'prototypes', 'quantum', 'recovery',
+    'scripts', 'threat_intel', 'xr_env',
+]
+
+_bulk_loaded: Dict[str, Any] = {}
+
+def _bulk_load_dir(directory: 'Path') -> Dict[str, Any]:
+    """Load every .py (non-__init__, non-pycache) file under directory."""
+    result: Dict[str, Any] = {}
+    if not directory.is_dir():
+        return result
+    _skip = {'__pycache__', '.git', 'node_modules'}
+    for pyfile in directory.rglob('*.py'):
+        if any(s in pyfile.parts for s in _skip):
+            continue
+        if pyfile.name == '__init__.py':
+            continue
+        rel = str(pyfile.relative_to(_ROOT))
+        mod_name = rel.replace(os.sep, '.').replace('/', '.')[:-3]
+        if mod_name in sys.modules:
+            result[rel] = sys.modules[mod_name]
+            continue
+        try:
+            spec = _ilu2.spec_from_file_location(mod_name, str(pyfile))
+            if spec is None or spec.loader is None:
+                continue
+            mod = _ilu2.module_from_spec(spec)
+            spec.loader.exec_module(mod)   # type: ignore
+            sys.modules[mod_name] = mod
+            result[rel] = mod
+        except BaseException:
+            result[rel] = None
+    return result
+
+for _bdir_name in _BULK_SCAN_DIRS:
+    _bdir = _ROOT / _bdir_name
+    _s = str(_bdir)
+    if _bdir.is_dir() and _s not in sys.path:
+        sys.path.insert(0, _s)
+    _bulk_loaded.update(_bulk_load_dir(_bdir))
+
 # Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
@@ -1154,6 +1207,9 @@ def _modules_status() -> Dict[str, bool]:
         'aws':               _aws_mod               is not None,
         'azure':             _azure_mod             is not None,
         'gcp':               _gcp_mod               is not None,
+        # ── bulk-loaded directories ───────────────────────────────────────────
+        **{k.replace('/', '.').replace(os.sep, '.'): (v is not None)
+           for k, v in _bulk_loaded.items()},
     }
 
 # ═══════════════════════════════════════════════════════════════════════════════
