@@ -642,6 +642,53 @@ def t_format_table():
     assert '2 rows' in r, f"row count: {r}"
 
 
+# ─── Phase AI: Text processing tools ─────────────────────────────────────────
+
+def t_ai_tools_registered():
+    for name in ('encode_decode', 'regex_extract', 'text_stats', 'markdown_to_text', 'count_tokens'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_encode_decode():
+    b64 = _agent.tool_encode_decode('hello', 'base64_encode')
+    assert b64 == 'aGVsbG8=', f"b64 encode: {b64}"
+    dec = _agent.tool_encode_decode(b64, 'base64_decode')
+    assert dec == 'hello', f"b64 decode: {dec}"
+    h = _agent.tool_encode_decode('test', 'sha256')
+    assert len(h) == 64, f"sha256 len: {len(h)}"
+    url = _agent.tool_encode_decode('hello world', 'url_encode')
+    assert 'hello%20world' == url or '+' in url or '%20' in url, f"url_encode: {url}"
+    r = _agent.tool_encode_decode('x', 'unknown_op')
+    assert 'ERROR' in r
+
+
+def t_regex_extract():
+    r = _agent.tool_regex_extract('foo123bar456', r'\d+')
+    assert '123' in r and '456' in r, f"got: {r}"
+    r2 = _agent.tool_regex_extract('no digits here', r'\d+')
+    assert 'No matches' in r2, f"got: {r2}"
+
+
+def t_text_stats():
+    r = _agent.tool_text_stats('Hello world. This is a test sentence.')
+    assert 'Words:' in r and 'Characters:' in r and 'Reading time:' in r, f"got: {r}"
+
+
+def t_markdown_to_text():
+    md = '# Heading\n\n**bold** and *italic* [link](http://x.com)\n\n```\ncode\n```'
+    r = _agent.tool_markdown_to_text(md)
+    assert 'Heading' in r and 'bold' in r and 'link' in r, f"got: {r}"
+    assert '#' not in r and '**' not in r and '[' not in r, f"still has markdown: {r}"
+
+
+def t_count_tokens():
+    r = _agent.tool_count_tokens('hello world ' * 100, 'claude')
+    assert 'tokens' in r.lower() and 'claude' in r.lower(), f"got: {r}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -774,6 +821,15 @@ def main():
     test("parse_html", t_parse_html)
     test("csv_query", t_csv_query)
     test("format_table", t_format_table)
+
+    # Phase 16: Text processing tools (Phase AI)
+    print("\n── Phase 16: Text Processing Tools ──")
+    test("Phase AI tools registered", t_ai_tools_registered)
+    test("encode_decode (base64/sha256/url)", t_encode_decode)
+    test("regex_extract", t_regex_extract)
+    test("text_stats", t_text_stats)
+    test("markdown_to_text", t_markdown_to_text)
+    test("count_tokens", t_count_tokens)
 
     # Summary
     total = PASS + FAIL + SKIP
