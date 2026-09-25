@@ -6,6 +6,7 @@
 #   ./devin "do something"       One-shot prompt via agent.py
 #   ./devin --main               Full module loader → agent.py REPL via main.py
 #   ./devin --status             Show loaded module status (via main.py)
+#   ./devin --caps               Capability summary per directory (via main.py)
 #   ./devin --provider claude    Use Claude as AI provider
 #   ./devin --provider hf        Use HuggingFace (free tier, default)
 #   ./devin --test               Run 130 core tests
@@ -65,6 +66,10 @@ case "${1:-}" in
   --status)
     # Show module status
     exec "$_PYTHON" main.py --status "$@"
+    ;;
+  --caps)
+    # Capability summary per directory
+    exec "$_PYTHON" main.py --caps "$@"
     ;;
   --install-deps|--setup)
     # Install Python dependencies

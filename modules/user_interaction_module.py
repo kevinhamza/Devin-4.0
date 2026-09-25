@@ -15,10 +15,18 @@ import sys
 import os
 from typing import Optional
 
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.prompt import Prompt
+try:
+    from rich.console import Console
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+    _HAS_RICH = True
+except ImportError:
+    _HAS_RICH = False
+    Console = None  # type: ignore
+    Markdown = None  # type: ignore
+    Panel = None  # type: ignore
+    Prompt = None  # type: ignore
 
 # Try to import speech recognition
 try:
@@ -36,7 +44,7 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 logger.propagate = False
 
-console = Console()
+console = Console() if _HAS_RICH and Console else None
 
 # --- ANSI Color Codes for Formatted Output ---
 # Kept for any code that still references Colors directly; display_message

@@ -53,8 +53,11 @@ checks["adb"] = check_dependency("Android Debug Bridge", check_command="adb")
 checks["ros2"] = check_dependency("ROS 2", check_command="ros2")
 
 print("\n--- Checking API Credentials ---")
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not installed; env vars loaded manually
 checks["OPENAI_API_KEY"] = check_env_var("OPENAI_API_KEY")
 checks["VIRUSTOTAL_API_KEY"] = check_env_var("VIRUSTOTAL_API_KEY")
 
