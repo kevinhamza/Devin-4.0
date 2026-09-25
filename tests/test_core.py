@@ -344,12 +344,33 @@ def t_checkpoint_roundtrip():
 def t_workflow_tools_registered():
     for name in ('multi_step_workflow', 'wait_for_condition',
                  'checkpoint_save', 'checkpoint_load', 'checkpoint_list',
-                 'run_workflow_file'):
+                 'run_workflow_file', 'batch_execute', 'decompose_task'):
         assert name in _agent.TOOLS, f"tool '{name}' not registered"
         spec = _agent.TOOLS[name]
         for key in ('fn', 'desc', 'params', 'required', 'category'):
             assert key in spec, f"tool '{name}' missing key '{key}'"
         assert spec['category'] == 'workflow'
+
+
+def t_batch_execute_parallel():
+    items = json.dumps([
+        {"tool": "execute_python", "args": {"code": "print('bA')"}, "id": "A"},
+        {"tool": "execute_python", "args": {"code": "print('bB')"}, "id": "B"},
+        {"tool": "execute_shell",  "args": {"command": "echo bC"},   "id": "C"},
+    ])
+    r = _agent.tool_batch_execute(items)
+    assert 'bA' in r, f"A not in result: {r[:200]}"
+    assert 'bB' in r, f"B not in result: {r[:200]}"
+    assert 'bC' in r, f"C not in result: {r[:200]}"
+    assert '3/3' in r
+
+
+def t_decompose_task():
+    r = _agent.tool_decompose_task("install nginx")
+    assert 'GOAL' in r
+    assert 'SUB-TASK' in r or 'install' in r.lower()
+    # Should contain a tool suggestion
+    assert 'execute_shell' in r or 'write_file' in r
 
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
@@ -437,6 +458,8 @@ def main():
     test("wait_for_condition true", t_wait_for_condition_true)
     test("wait_for_condition timeout", t_wait_for_condition_timeout)
     test("checkpoint save/load/list roundtrip", t_checkpoint_roundtrip)
+    test("batch_execute parallel 3 tools", t_batch_execute_parallel)
+    test("decompose_task structure", t_decompose_task)
 
     # Summary
     total = PASS + FAIL + SKIP

@@ -3204,6 +3204,144 @@ def tool_run_workflow_file(path: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AB — PARALLEL BATCH EXECUTION + TASK DECOMPOSER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_batch_execute(tools_json: str) -> str:
+    """
+    Execute multiple independent tool calls in parallel (via threading).
+    Each item: {"tool": "name", "args": {...}, "id": "optional_label"}.
+    All tools run concurrently; results are collected and returned together.
+    Use when multiple operations are independent (e.g. run 3 shell commands,
+    search 3 URLs, write 3 files at once).
+
+    Example:
+      tools_json = '[
+        {"tool":"execute_shell","args":{"command":"uname -a"},"id":"os"},
+        {"tool":"execute_shell","args":{"command":"python3 --version"},"id":"py"},
+        {"tool":"execute_shell","args":{"command":"git --version"},"id":"git"}
+      ]'
+    """
+    import threading
+    try:
+        items = json.loads(tools_json)
+    except json.JSONDecodeError as e:
+        return f"ERROR: tools_json must be a valid JSON array: {e}"
+
+    if not isinstance(items, list) or not items:
+        return "ERROR: tools_json must be a non-empty JSON array"
+
+    results = [None] * len(items)
+    errors = [None] * len(items)
+
+    def _run(idx: int, item: dict) -> None:
+        tool_name = item.get("tool", "")
+        args = item.get("args", {})
+        if not tool_name:
+            results[idx] = "SKIP: no tool specified"
+            return
+        try:
+            results[idx] = _dispatch_tool(tool_name, args)
+        except Exception as e:
+            errors[idx] = str(e)
+            results[idx] = f"ERROR: {e}"
+
+    threads = []
+    for i, item in enumerate(items):
+        t = threading.Thread(target=_run, args=(i, item), daemon=True)
+        threads.append(t)
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    lines = []
+    for i, item in enumerate(items):
+        label = item.get("id", item.get("tool", f"item_{i}"))
+        result = results[i] or "(no result)"
+        lines.append(f"[{label}]: {str(result)[:300]}")
+
+    ok_count = sum(1 for r in results if r and not str(r).startswith("ERROR"))
+    lines.append(f"\nBATCH DONE: {ok_count}/{len(items)} succeeded")
+    return "\n".join(lines)
+
+
+def tool_decompose_task(goal: str, context: str = '') -> str:
+    """
+    Break a complex goal into a numbered list of concrete sub-tasks,
+    each with a suggested tool. Returns a ready-to-execute plan as JSON.
+    This is a PURE LOGIC tool — it doesn't call any AI provider, just
+    structures the task based on pattern matching and heuristics so you
+    can reason about it before acting.
+    """
+    import re as _re
+    lines = [
+        f"GOAL: {goal}",
+        "",
+        "SUB-TASK DECOMPOSITION:",
+    ]
+
+    # Detect task type and suggest steps
+    g = goal.lower()
+    if any(w in g for w in ('install', 'setup', 'configure')):
+        lines += [
+            "  1. Check if already installed: execute_shell('which pkg || pkg --version')",
+            "  2. Install: execute_shell('apt/pip/brew install pkg')",
+            "  3. Verify: execute_shell('pkg --version')",
+            "  4. Configure if needed: write_file('/etc/pkg.conf', config)",
+        ]
+    elif any(w in g for w in ('build', 'compile', 'make')):
+        lines += [
+            "  1. Read build file: read_file('Makefile/package.json/Cargo.toml')",
+            "  2. Install dependencies: execute_shell('npm install / pip install -r ...')",
+            "  3. Build: execute_shell('make / npm run build / cargo build')",
+            "  4. Verify output: execute_shell('ls -la dist/ build/ target/')",
+        ]
+    elif any(w in g for w in ('test', 'check', 'verify', 'audit')):
+        lines += [
+            "  1. List tests: execute_shell('find . -name test*.py -o -name *.test.ts')",
+            "  2. Run tests: execute_shell('pytest / npm test / cargo test')",
+            "  3. Check output: look for failures in stdout",
+            "  4. Fix failures if found",
+        ]
+    elif any(w in g for w in ('search', 'find', 'look up', 'research')):
+        lines += [
+            "  1. Web search: web_search(query)",
+            "  2. Fetch top result: web_fetch(url)",
+            "  3. Extract relevant info: execute_python(parsing code)",
+            "  4. Summarize findings",
+        ]
+    elif any(w in g for w in ('open', 'launch', 'start', 'run app')):
+        lines += [
+            "  1. Check if running: app_is_running(app_name)",
+            "  2. Launch: open_application(app_name)",
+            "  3. Wait for load: wait_and_verify(2, 'app window visible')",
+            "  4. Screenshot verify: screenshot_and_analyze('Did app open?')",
+        ]
+    elif any(w in g for w in ('write', 'create', 'generate', 'produce')):
+        lines += [
+            "  1. Plan content structure: think_and_plan(goal)",
+            "  2. Write content: write_file(path, content)",
+            "  3. Verify: read_file(path)",
+            "  4. Run if script: execute_shell(f'python3 {path}')",
+        ]
+    else:
+        lines += [
+            "  1. Understand current state: platform_info() or execute_shell('ls -la')",
+            "  2. Plan: think_and_plan(goal)",
+            "  3. Execute first step with appropriate tool",
+            "  4. Verify and continue until done",
+            "  5. Call task_complete(summary) when verified",
+        ]
+
+    if context:
+        lines.append(f"\nCONTEXT: {context}")
+
+    lines.append(f"\nPLATFORM: {_PLATFORM} | GUI: {'available' if _HAS_DISPLAY else 'headless'}")
+    lines.append("→ NOW call the first tool above and proceed step by step.")
+    return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TOOL REGISTRY
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -4570,6 +4708,37 @@ TOOLS: Dict[str, Dict] = {
         "required": ["path"],
         "category": "workflow",
     },
+
+    # ── Parallel + task decomposition (Phase AB) ─────────────────────────────
+    "batch_execute": {
+        "fn": tool_batch_execute,
+        "desc": (
+            "Execute multiple INDEPENDENT tool calls in parallel (threads). "
+            "Each item: {\"tool\": \"name\", \"args\": {...}, \"id\": \"label\"}. "
+            "Use when operations don't depend on each other (parallel shell commands, "
+            "multi-URL fetches, multi-file writes). Much faster than sequential execution."
+        ),
+        "params": {
+            "tools_json": {"type": "string", "description": "JSON array of {tool, args, id?} objects to run in parallel"},
+        },
+        "required": ["tools_json"],
+        "category": "workflow",
+    },
+
+    "decompose_task": {
+        "fn": tool_decompose_task,
+        "desc": (
+            "Break a complex goal into numbered sub-tasks with suggested tools. "
+            "Returns a structured action plan. Use at the start of any multi-step task "
+            "to reason about what to do before acting. No AI call — pure local logic."
+        ),
+        "params": {
+            "goal": {"type": "string", "description": "The goal or task to decompose"},
+            "context": {"type": "string", "description": "Optional extra context (current state, constraints)"},
+        },
+        "required": ["goal"],
+        "category": "workflow",
+    },
 }
 
 def _dispatch_tool(name: str, args: dict) -> str:
@@ -5177,6 +5346,10 @@ Multi-step plan        → think_and_plan(task) → then execute steps one by on
 GUI task (any)         → observe_and_plan(goal) → get screen state + action plan
 Check if app running   → app_is_running(name)
 Focus app window       → focus_app(name)
+Complex multi-step     → decompose_task(goal) → multi_step_workflow(steps_json)
+Independent parallel   → batch_execute(tools_json) — run tools simultaneously
+Wait for event         → wait_for_condition("os.path.exists('/tmp/out')", timeout=30)
+Save progress          → checkpoint_save("step3", data) → checkpoint_load("step3")
 
 ════════════════════════════════════════════════════════
 GUI AUTOMATION WORKFLOW (EXACT STEPS)
@@ -5200,12 +5373,17 @@ For MENUS: keyboard_hotkey or right-click at correct coords
 AGENTIC REASONING LOOP
 ════════════════════════════════════════════════════════
 For EVERY non-trivial task:
-  1. THINK  → What is the goal? What tools exist? What is the plan?
+  1. THINK   → What is the goal? What tools exist? What is the plan?
+             → For complex tasks: decompose_task(goal) to get a structured plan first
   2. OBSERVE → screenshot() or read_file() or get_system_info() — see current state
-  3. ACT    → Execute the next step
-  4. VERIFY → Confirm step succeeded (screenshot, read output, check file)
-  5. LOOP   → Repeat 3-4 until all steps done
-  6. COMPLETE → Call task_complete("summary of what was done and verified")
+  3. ACT     → Execute the next step with the right tool
+             → Independent steps: batch_execute([...]) to run them all at once
+             → Sequential steps: multi_step_workflow([...]) for verified execution
+  4. VERIFY  → Confirm step succeeded (screenshot, read output, check file)
+             → wait_for_condition("os.path.exists(path)") to wait on async events
+  5. SAVE    → checkpoint_save("step_N", status) for long tasks so progress is preserved
+  6. LOOP    → Repeat 3-5 until all steps done
+  7. COMPLETE → Call task_complete("summary of what was done and verified")
 
 For CONVERSATIONAL queries (questions, explanations, advice):
   → Answer directly. Use tools only if current system state is needed.
