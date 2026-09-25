@@ -8763,24 +8763,31 @@ class OllamaProvider:
 class HuggingFaceProvider:
     """
     HuggingFace Inference API provider using the OpenAI-compatible endpoint.
-    Supports function calling for capable models (LLaMA-3, Qwen, Mixtral).
+    Supports function calling for capable models (Qwen3, DeepSeek-V3, LLaMA-3).
     Falls back to ReAct-style text parsing for models without native tool support.
+    Uses HF_MODEL env var or defaults to Qwen3-235B (best free reasoning, 2025).
     """
     URL = "https://api-inference.huggingface.co/v1/chat/completions"
-    # Best free-tier models ordered by capability
+    # Best free-tier models ordered by capability (2025 lineup)
     MODELS = [
-        'Qwen/Qwen2.5-72B-Instruct',             # best free reasoning + code
-        'meta-llama/Llama-3.3-70B-Instruct',     # latest Meta, excellent instruction following
-        'meta-llama/Meta-Llama-3.1-70B-Instruct',# Meta 70B stable
-        'deepseek-ai/DeepSeek-R1-Distill-Llama-70B',  # reasoning distill
-        'Qwen/Qwen2.5-Coder-32B-Instruct',       # best for code tasks
-        'mistralai/Mistral-Nemo-Instruct-2407',  # compact capable model
-        'mistralai/Mixtral-8x7B-Instruct-v0.1',  # MOE model
-        'meta-llama/Meta-Llama-3.1-8B-Instruct', # fast small model
-        'microsoft/Phi-3.5-mini-instruct',        # tiny but capable
+        'Qwen/Qwen3-235B-A22B',                   # #1 free reasoning model 2025 (235B MoE)
+        'deepseek-ai/DeepSeek-V3-0324',            # DeepSeek V3 — excellent all-around
+        'Qwen/Qwen3-32B',                          # Qwen3 32B — fast + capable
+        'Qwen/Qwen2.5-72B-Instruct',               # Qwen2.5 72B — strong reasoning + code
+        'meta-llama/Llama-3.3-70B-Instruct',       # Llama 3.3 70B — great instruction following
+        'deepseek-ai/DeepSeek-R1-Distill-Llama-70B', # R1 reasoning distilled
+        'Qwen/Qwen2.5-Coder-32B-Instruct',         # best free code model
+        'mistralai/Mistral-Small-3.1-24B-Instruct-2503',  # compact capable
+        'mistralai/Mixtral-8x7B-Instruct-v0.1',   # MoE proven stable
+        'meta-llama/Meta-Llama-3.1-70B-Instruct',  # Meta 70B stable fallback
+        'meta-llama/Meta-Llama-3.1-8B-Instruct',  # fast small fallback
+        'microsoft/Phi-3.5-mini-instruct',          # tiny but capable last resort
     ]
     # Models known to support native function/tool calling
     TOOL_CALL_MODELS = {
+        'Qwen/Qwen3-235B-A22B',
+        'Qwen/Qwen3-32B',
+        'deepseek-ai/DeepSeek-V3-0324',
         'Qwen/Qwen2.5-72B-Instruct',
         'Qwen/Qwen2.5-Coder-32B-Instruct',
         'meta-llama/Llama-3.3-70B-Instruct',
@@ -8793,8 +8800,29 @@ class HuggingFaceProvider:
 
     def __init__(self, api_key: str, model: str = ''):
         self.api_key = api_key
-        self.model   = model or self.MODELS[0]
+        # Env var HF_MODEL overrides default, then passed model, then MODELS[0]
+        env_model = os.environ.get('HF_MODEL', '')
+        self.model   = model or env_model or self.MODELS[0]
         self.name    = f"huggingface/{self.model.split('/')[-1]}"
+
+    def _select_model_for_task(self, system_prompt: str, first_message: str) -> str:
+        """Choose the best model for the task type. Returns model name."""
+        combined = (system_prompt + ' ' + first_message).lower()
+        # Code-heavy tasks → Coder model
+        code_signals = ('write code', 'debug', 'python', 'javascript', 'typescript',
+                        'function', 'class', 'script', 'program', '.py', '.js', '.ts')
+        if any(s in combined for s in code_signals):
+            for m in self.MODELS:
+                if 'coder' in m.lower() or 'code' in m.lower():
+                    return m
+        # Reasoning / math / planning → R1 or Qwen3
+        reasoning_signals = ('reason', 'think', 'analyze', 'plan', 'math', 'proof',
+                              'logic', 'step by step', 'calculate', 'solve')
+        if any(s in combined for s in reasoning_signals):
+            for m in self.MODELS:
+                if 'r1' in m.lower() or 'qwen3' in m.lower() or 'deepseek' in m.lower():
+                    return m
+        return self.model
 
     def _headers(self) -> dict:
         return {
@@ -8914,6 +8942,73 @@ class HuggingFaceProvider:
                 raise
         raise ValueError(f"HuggingFace: max retries exceeded for model {self.model}")
 
+# ─── Free Claude Code proxy provider ─────────────────────────────────────────
+
+class FreeClaude:
+    """
+    OpenAI-compatible provider that routes through a local free-claude-code (FCC)
+    proxy server.  FCC maps Claude API calls to free/OSS providers transparently.
+    Start the server with: fcc-server   (pip install free-claude-code first)
+    Default: http://127.0.0.1:3000  Override with FCC_BASE_URL env var.
+    """
+    DEFAULT_BASE = "http://127.0.0.1:3000"
+    DEFAULT_MODEL = "claude-sonnet-4-5"
+
+    def __init__(self, base_url: str = '', model: str = ''):
+        self.base_url = (base_url or os.environ.get('FCC_BASE_URL', '') or self.DEFAULT_BASE).rstrip('/')
+        self.model    = model or os.environ.get('FCC_MODEL', '') or self.DEFAULT_MODEL
+        self.name     = f"fcc/{self.model}"
+
+    @classmethod
+    def is_running(cls) -> bool:
+        """Return True if the FCC server is accessible."""
+        base = os.environ.get('FCC_BASE_URL', cls.DEFAULT_BASE).rstrip('/')
+        try:
+            req = urllib.request.Request(f"{base}/v1/models", method='GET')
+            with urllib.request.urlopen(req, timeout=2):
+                return True
+        except Exception:
+            return False
+
+    def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
+        url = f"{self.base_url}/v1/chat/completions"
+        msgs: List[dict] = []
+        if system:
+            msgs.append({"role": "system", "content": system})
+        for m in messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
+            msgs.append({"role": m["role"], "content": content})
+
+        body = {"model": self.model, "messages": msgs, "max_tokens": 4096,
+                "tools": _tool_schema_openai()}
+        headers = {"Content-Type": "application/json"}
+        api_key = os.environ.get('ANTHROPIC_API_KEY', 'fcc-no-key')
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        headers["x-api-key"] = api_key
+
+        try:
+            resp = _http_post(url, headers, body, timeout=120)
+            if "error" in resp:
+                raise ValueError(f"FCC error: {resp['error']}")
+            msg_obj = resp["choices"][0]["message"]
+            text = msg_obj.get("content") or ""
+            calls = []
+            for tc in (msg_obj.get("tool_calls") or []):
+                fn = tc.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except Exception:
+                    args = {}
+                calls.append({"id": tc.get("id", f"fcc_{fn.get('name','')}"),
+                               "name": fn.get("name"), "args": args})
+            return text or "", calls
+        except Exception as e:
+            raise ValueError(f"FreeClaude/FCC: {e}")
+
+
 # ─── Provider selector ────────────────────────────────────────────────────────
 
 def _pick_provider(name: str = '', model: str = ''):
@@ -8932,22 +9027,30 @@ def _pick_provider(name: str = '', model: str = ''):
         if not ok: raise ValueError("OPENAI_API_KEY not set")
         return OpenAIProvider(ok, model or 'gpt-4o-mini')
     if name in ('huggingface', 'hf', 'hface'):
-        if not hfk: raise ValueError("HF_TOKEN not set (get one free at huggingface.co/settings/tokens)")
+        if not hfk: raise ValueError("HF_TOKEN not set (get free one at huggingface.co/settings/tokens)")
         return HuggingFaceProvider(hfk, model or '')
     if name in ('ollama', 'local'):
         return OllamaProvider(model=model or 'llama3.2')
+    if name in ('fcc', 'freeclaude', 'free-claude', 'free_claude'):
+        if not FreeClaude.is_running():
+            raise ValueError("FCC server not running. Start it: pip install free-claude-code && fcc-server")
+        return FreeClaude(model=model)
 
+    # Auto-select: prefer highest-quality available key
     if gk:  return GeminiProvider(gk, model or 'gemini-3.6-flash')
     if ak:  return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
     if ok:  return OpenAIProvider(ok, model or 'gpt-4o-mini')
     if hfk: return HuggingFaceProvider(hfk, model or '')
+    # Last resort: check if FCC proxy is running
+    if FreeClaude.is_running():
+        return FreeClaude(model=model)
     raise ValueError(
-        "No API key found.\n"
-        "  Set one of these in .env:\n"
-        "    GEMINI_API_KEY      — https://aistudio.google.com/app/apikey  (free)\n"
-        "    ANTHROPIC_API_KEY   — https://console.anthropic.com/\n"
-        "    OPENAI_API_KEY      — https://platform.openai.com/api-keys\n"
-        "    HF_TOKEN            — https://huggingface.co/settings/tokens  (free)"
+        "No AI provider available.\n"
+        "  Option 1 (free): Set HF_TOKEN in .env  →  huggingface.co/settings/tokens\n"
+        "  Option 2 (free): Set GEMINI_API_KEY in .env  →  aistudio.google.com\n"
+        "  Option 3 (free): Install & run FCC proxy  →  pip install free-claude-code && fcc-server\n"
+        "  Option 4: Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env\n"
+        "  Option 5 (local): Install Ollama  →  ollama.ai, then: ./devin --provider ollama"
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8959,40 +9062,56 @@ _DISPLAY_NOTE = ("DISPLAY: AVAILABLE — mouse, keyboard, screenshot, and window
                  "DISPLAY: HEADLESS — GUI tools unavailable. Focus on shell/file/web tasks.")
 
 SYSTEM_PROMPT = f"""\
-You are Devin — a deeply autonomous AI agent that operates a real computer like a senior engineer.
+You are Devin — a deeply autonomous AI agent that operates a real computer like a world-class engineer.
 You have {len(TOOLS)} tools. Platform: {_PLATFORM}. {_DISPLAY_NOTE}
 
 ════════════════════════════════════════════════════════
 IDENTITY — WHO YOU ARE
 ════════════════════════════════════════════════════════
-You are a full-stack AI engineer that can:
-• Write, debug, and run code in any language (Python, JS, TS, bash, PowerShell, Go, Rust…)
-• Control the entire OS: mouse, keyboard, windows, applications, clipboard
-• Browse the web, fill forms, click buttons, extract data — with or without a browser
-• Audit git repositories, write reports, run security scans (with authorization)
-• Manage files, processes, network, cloud services, and databases
-• Engage in natural conversation — direct, thorough, no filler
+You are an AI engineer at the level of a senior staff engineer at a top tech company.
+You think deeply, plan carefully, execute precisely, and verify everything.
+
+Core capabilities:
+• Write, debug, test, and deploy code in any language (Python, JS, TS, bash, PowerShell, Go, Rust, C, Java…)
+• Control the entire OS: mouse, keyboard, windows, applications, clipboard — like a human user
+• Browse, interact with, and automate any website or web app using real browser control
+• Reason about complex multi-step problems and break them into executable plans
+• Audit git repos, scan for vulnerabilities, run security tests (with user authorization)
+• Manage files, processes, services, network, cloud services, and databases
+• Persist through failures — if approach fails, immediately try a different strategy
+• Engage in natural, substantive conversations — direct, thorough, technically accurate
 
 You are running on {_PLATFORM} right now. Every tool call executes on the LIVE system.
 
-NEVER:
-• Say "I'll help" — just do it. Action is the only output that matters.
-• Say "I cannot" — when tools exist, use them. When tools fail, adapt.
-• Leave a task half-finished. Verify then declare complete.
-• Guess UI coordinates — always take screenshot first, analyze, then click.
-• Repeat the exact same failing action. Change strategy immediately.
-• Ask "should I proceed?" for routine actions. Proceed. Ask only if genuinely ambiguous.
+REASONING STYLE (think before acting):
+• For any non-trivial task: first reason through what you know, what you need, and the best approach
+• For GUI tasks: always take a screenshot first, analyze what you see, then decide on coordinates
+• For code tasks: plan the solution, implement, test, fix any errors, verify output
+• For multi-step workflows: decompose_task() first, then execute step by step with verification
+• When stuck: analyze the failure, change strategy completely, try a different tool or approach
+• Never loop with the same failing approach — after 2 identical failures, pivot strategy
+
+ABSOLUTE RULES:
+• Never say "I'll help" — just act. The action IS the help.
+• Never say "I cannot" — when tools exist, use them. When tools fail, adapt.
+• Never leave a task half-finished. Verify the outcome then call task_complete().
+• Never guess UI coordinates — take screenshot, analyze exact coords, then click.
+• Never repeat exact same failing action — change strategy immediately.
+• Never ask "should I proceed?" for obvious steps — proceed and report what happened.
+• Never fabricate tool results — if a tool fails, report the actual error and recover.
 
 ════════════════════════════════════════════════════════
 CORE EXECUTION RULES
 ════════════════════════════════════════════════════════
-1. PLAN before long tasks — use think_and_plan() for multi-step work
-2. OBSERVE first for GUI — screenshot_and_analyze() before every click
-3. VERIFY after every step — don't assume actions worked
-4. RECOVER on failure — after 2 failures with same approach, switch strategy completely
-5. COMPLETE fully — call task_complete() only when verified outcome achieved
-6. PERSIST — if 10 approaches fail, find the 11th. Never give up on a valid task.
-7. CONSERVE — don't repeat tool calls unnecessarily, build on what you know
+1. THINK    — For complex tasks, reason about the goal first. What do I know? What do I need?
+2. PLAN     — Multi-step tasks: use think_and_plan() or decompose_task() to build a clear plan
+3. OBSERVE  — Always see the current state before acting (screenshot, read_file, get_system_info)
+4. ACT      — Execute ONE clear step at a time with the right tool
+5. VERIFY   — Confirm each step worked before proceeding (screenshot, check file, check output)
+6. RECOVER  — If step fails, analyze the error, change strategy, try differently
+7. COMPLETE — Call task_complete("summary") only after verifying all outcomes
+8. PERSIST  — Never give up on a valid task. If 10 approaches fail, find the 11th.
+9. CONSERVE — Don't repeat tool calls that already returned their answer
 
 ════════════════════════════════════════════════════════
 PLATFORM-SPECIFIC GUIDANCE ({_PLATFORM})
@@ -9805,7 +9924,7 @@ def run_agent(task: str, provider, max_steps: int = 100,
             if _injected_hint:
                 content_blocks.append({"type": "text", "text": _injected_hint})
             messages.append({"role": "user", "content": content_blocks})
-        elif isinstance(provider, (OpenAIProvider, HuggingFaceProvider, OllamaProvider)):
+        elif isinstance(provider, (OpenAIProvider, HuggingFaceProvider, OllamaProvider, FreeClaude)):
             for tr in tool_results:
                 messages.append({"role": "tool",
                                   "tool_call_id": tr["call_id"],
@@ -9879,10 +9998,11 @@ def _make_help() -> str:
   {cyan('/exit')} {cyan('/quit')}           Exit
 
 {bold('API keys')}  (.env or environment variables)
-  GEMINI_API_KEY       https://aistudio.google.com/app/apikey  (free)
+  HF_TOKEN             https://huggingface.co/settings/tokens  {green('(free)')} Qwen3/DeepSeek-V3/Llama3
+  GEMINI_API_KEY       https://aistudio.google.com/app/apikey  {green('(free)')}
   ANTHROPIC_API_KEY    https://console.anthropic.com/
   OPENAI_API_KEY       https://platform.openai.com/api-keys
-  HF_TOKEN             https://huggingface.co/settings/tokens  (free, LLaMA/Mixtral/Qwen)
+  {dim('(FCC proxy: pip install free-claude-code && fcc-server  — no key needed)')}
 
 {bold('Examples')}
   {dim('open Firefox and search for "Python tutorials"')}
@@ -9907,6 +10027,7 @@ def _banner(provider=None):
         elif isinstance(provider, OpenAIProvider):      ptype = 'openai'
         elif isinstance(provider, HuggingFaceProvider): ptype = 'huggingface'
         elif isinstance(provider, OllamaProvider):      ptype = 'ollama'
+        elif isinstance(provider, FreeClaude):          ptype = 'fcc'
         else:                                           ptype = 'unknown'
         model_display = provider.name.split('/')[-1] if '/' in provider.name else provider.name
         p_line = f"model: {bold(model_display)}  provider: {cyan(ptype)}  mode: auto"
@@ -9932,9 +10053,13 @@ def _banner(provider=None):
 
     if provider:
         print(f"  {green('✓')} Connected to {green(ptype.capitalize())} ({dim(model_display)})")
+        if ptype == 'huggingface':
+            print(f"  {dim('Free tier  ·  Qwen3-235B · DeepSeek-V3 · Llama3.3 · 1000s more')}")
+        elif ptype == 'fcc':
+            print(f"  {dim('Free Claude Code proxy  ·  Routes to 55 free providers')}")
     else:
         print(f"  {red('✗')} No provider. Add API key to .env and restart.")
-        print(f"  {dim('GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or HF_TOKEN')}")
+        print(f"  {dim('Fastest free setup: HF_TOKEN=<token> in .env  →  huggingface.co/settings/tokens')}")
     print()
 
 def _status_line(provider):
@@ -10092,21 +10217,25 @@ def repl(provider_name: str = '', model: str = ''):
 
             elif cmd == '/providers':
                 entries = [
-                    ('gemini',       'GEMINI_API_KEY',       'gemini-3.6-flash (default)',        True),
-                    ('claude',       'ANTHROPIC_API_KEY',    'claude-sonnet-4-6 (default)',        True),
-                    ('openai',       'OPENAI_API_KEY',       'gpt-4o-mini (default)',              True),
-                    ('huggingface',  'HF_TOKEN',             'Meta-Llama-3.1-70B (free tier)',     True),
-                    ('ollama',       '',                     'llama3.2 (local, no key required)', False),
+                    ('huggingface',  'HF_TOKEN',             'Qwen3-235B/DeepSeek-V3 (free)',     True),
+                    ('gemini',       'GEMINI_API_KEY',       'gemini-3.6-flash (free tier)',       True),
+                    ('claude',       'ANTHROPIC_API_KEY',    'claude-sonnet-4-6',                  True),
+                    ('openai',       'OPENAI_API_KEY',       'gpt-4o-mini',                        True),
+                    ('fcc',          '',                     'free-claude-code proxy (auto-detect)',False),
+                    ('ollama',       '',                     'llama3.2 (local, no key required)',  False),
                 ]
                 for p, key_env, note, needs_key in entries:
-                    if not needs_key:
+                    if p == 'fcc':
+                        running = FreeClaude.is_running()
+                        s = green('✓ running') if running else dim('✗ not started')
+                    elif not needs_key:
                         s = dim('local (no key)')
                     else:
                         has_key = bool(os.environ.get(key_env) or
                                        (p == 'huggingface' and os.environ.get('HUGGINGFACE_API_KEY')))
                         s = green('✓ available') if has_key else dim('✗ no key')
                     print(f"  {bold(p):<16} {s}  {dim(note)}")
-                print(f"\n  {dim('Use /provider <name> to switch. Add keys to .env')}")
+                print(f"\n  {dim('Use /provider <name> to switch. Recommended free: huggingface (HF_TOKEN in .env)')}")
                 print()
 
             elif cmd == '/model':
