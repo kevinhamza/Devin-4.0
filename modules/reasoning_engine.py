@@ -99,7 +99,6 @@ def _call_gemini(messages: List[Dict], system: str) -> Tuple[str, List]:
         genai.configure(api_key=key)
         model_name = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
         model = genai.GenerativeModel(model_name, system_instruction=system)
-        # Convert messages to Gemini format
         history = []
         for m in messages[:-1]:
             role = "user" if m["role"] == "user" else "model"
@@ -148,7 +147,7 @@ def _call_openai(messages: List[Dict], system: str, tools: Optional[List] = None
 def _call_huggingface(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List]:
     """Call HuggingFace Inference API. Returns (text, tool_calls)."""
     try:
-        from modules.hf_provider import chat as hf_chat  # type: ignore
+        from modules.hf_enhanced_provider import chat as hf_chat  # type: ignore
         result = hf_chat(messages, tool_schemas=tools, system_prompt=system)
         return result["text"], result.get("tool_calls", [])
     except ImportError:
@@ -195,10 +194,9 @@ def _call_best_available(messages: List[Dict], system: str, tools: Optional[List
         order = ["gemini", "claude", "openai", "huggingface"]
     elif preferred == "openai":
         order = ["openai", "claude", "gemini", "huggingface"]
-    elif preferred == "huggingface" or preferred == "hf":
+    elif preferred in ("huggingface", "hf"):
         order = ["huggingface", "gemini", "claude", "openai"]
     else:
-        # Auto: pick by available keys
         order = []
         if os.environ.get("ANTHROPIC_API_KEY"):
             order.append("claude")
@@ -346,18 +344,16 @@ class ReasoningEngine:
         action = None
         action_input = None
 
-        # Extract thought
-        t_match = __import__("re").search(r"Thought:\s*(.*?)(?=\nAction:|\nFinal Answer:|$)", text, __import__("re").DOTALL)
+        import re
+        t_match = re.search(r"Thought:\s*(.*?)(?=\nAction:|\nFinal Answer:|$)", text, re.DOTALL)
         if t_match:
             thought = t_match.group(1).strip()
 
-        # Extract action
-        a_match = __import__("re").search(r"Action:\s*(\w+)", text)
+        a_match = re.search(r"Action:\s*(\w+)", text)
         if a_match:
             action = a_match.group(1).strip()
 
-        # Extract action input
-        ai_match = __import__("re").search(r"Action Input:\s*(\{.*?\}|.*?)(?=\nObservation:|\nThought:|$)", text, __import__("re").DOTALL)
+        ai_match = re.search(r"Action Input:\s*(\{.*?\}|.*?)(?=\nObservation:|\nThought:|$)", text, re.DOTALL)
         if ai_match:
             raw = ai_match.group(1).strip()
             try:
@@ -365,8 +361,7 @@ class ReasoningEngine:
             except Exception:
                 action_input = {"input": raw}
 
-        # Final answer
-        fa_match = __import__("re").search(r"Final Answer:\s*(.*?)$", text, __import__("re").DOTALL)
+        fa_match = re.search(r"Final Answer:\s*(.*?)$", text, re.DOTALL)
         if fa_match:
             return fa_match.group(1).strip(), "__final__", {}
 
@@ -407,7 +402,6 @@ class ReasoningEngine:
                 )
 
             if tool_calls:
-                # Process each tool call
                 messages.append({"role": "assistant", "content": text or "Processing..."})
                 all_tool_results = []
                 for tc in tool_calls:
@@ -429,23 +423,19 @@ class ReasoningEngine:
                 messages.append({"role": "user", "content": f"Tool results:\n{tool_result_text}\n\nContinue with the task."})
 
             elif text:
-                # No tool calls — this is (likely) the final answer
                 step = ThoughtStep(thought=text, is_final=True)
                 steps.append(step)
                 final_answer = text
 
-                # Check if the model itself says it's done
                 done_signals = ["task complete", "task is complete", "i have completed", "done.", "finished."]
                 if any(s in text.lower() for s in done_signals) or iteration >= self._max_iterations - 1:
                     break
 
-                # Otherwise continue conversation
                 messages.append({"role": "assistant", "content": text})
                 messages.append({"role": "user", "content": "Continue. If the task is fully complete, say 'Task complete: <summary>'. Otherwise continue with the next step."})
             else:
                 break
 
-        # Update conversation history for continuity
         if final_answer:
             self._conversation_history.append({"role": "user", "content": task})
             self._conversation_history.append({"role": "assistant", "content": final_answer})
@@ -484,6 +474,10 @@ def get_engine(tools: Optional[Dict] = None) -> ReasoningEngine:
     if _engine is None:
         _engine = ReasoningEngine(tools=tools)
     return _engine
+
+
+# Alias — external code (main.py, bootstrap.py) imports this name
+get_reasoning_engine = get_engine
 
 
 def think(task: str, context: str = "") -> str:

@@ -29,7 +29,7 @@ if _ENV.exists():
         _l = _l.strip()
         if _l and not _l.startswith('#') and '=' in _l:
             _k, _, _v = _l.partition('=')
-            os.environ.setdefault(_k.strip(), _v.strip().strip('"\''  ))
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"\'' ))
 
 # ── sys.path bootstrap ───────────────────────────────────────────────────────────────────────
 def _add_path(p: Path) -> None:
@@ -82,7 +82,6 @@ def _load_file(path: Path, mod_name: Optional[str] = None) -> Optional[Any]:
         if spec is None or spec.loader is None:
             return None
         mod = _ilu.module_from_spec(spec)
-        # Register before exec so circular imports see a partial module
         sys.modules.setdefault(name, mod)
         spec.loader.exec_module(mod)  # type: ignore
         sys.modules[name] = mod
@@ -128,7 +127,7 @@ class _Capabilities:
     free_claude    = None   # modules.free_claude_provider (module)
     system_monitor = None   # modules.system_monitor_enhanced.SystemMonitor
     voice          = None   # modules.voice_engine.VoiceEngine
-    browser        = None   # modules.browser_agent.BrowserAgent
+    browser        = None   # modules.browser_agent (module, lazy)
 
 
 CAPS = _Capabilities()
@@ -144,14 +143,18 @@ def _bootstrap_capabilities() -> None:
     except BaseException:
         pass
 
-    # Reasoning Engine
+    # Reasoning Engine — try both names for robustness
     try:
-        from modules.reasoning_engine import get_reasoning_engine
+        from modules.reasoning_engine import get_reasoning_engine  # type: ignore
         CAPS.reasoning = get_reasoning_engine()
     except BaseException:
-        pass
+        try:
+            from modules.reasoning_engine import get_engine
+            CAPS.reasoning = get_engine()
+        except BaseException:
+            pass
 
-    # Conversation Engine (wires reasoning + os_agent tools)
+    # Conversation Engine
     try:
         from modules.conversation_engine import get_conversation_engine
         CAPS.conversation = get_conversation_engine()
@@ -193,17 +196,47 @@ def _bootstrap_capabilities() -> None:
     except BaseException:
         pass
 
-    # Register OS agent tools into reasoning engine
+    # Register OS agent tools into reasoning engine (with string-returning wrappers)
     if CAPS.reasoning and CAPS.os_agent:
         try:
             oa = CAPS.os_agent
-            CAPS.reasoning.register_tool('screenshot',    oa.screenshot,    'Take a screenshot')
-            CAPS.reasoning.register_tool('click',         oa.click,         'Click at (x, y)')
-            CAPS.reasoning.register_tool('type_text',     oa.type_text,     'Type text on keyboard')
-            CAPS.reasoning.register_tool('press_key',     oa.press_key,     'Press a key')
-            CAPS.reasoning.register_tool('hotkey',        oa.hotkey,        'Keyboard shortcut')
-            CAPS.reasoning.register_tool('observe_screen',oa.observe,       'Describe current screen')
-            CAPS.reasoning.register_tool('open_app',      oa.open_app,      'Open application by name')
+
+            def _r(result) -> str:
+                """Extract string from ActionResult or return as-is."""
+                if hasattr(result, 'vision_result') and result.vision_result:
+                    return result.vision_result
+                if hasattr(result, 'message'):
+                    return result.message
+                return str(result)
+
+            CAPS.reasoning.register_tool(
+                'screenshot',
+                lambda prompt='Describe the screen': _r(oa.screenshot(str(prompt))),
+                'Take a screenshot and describe what is on screen')
+            CAPS.reasoning.register_tool(
+                'click',
+                lambda x=0, y=0, button='left': _r(oa.click(int(x), int(y), str(button))),
+                'Click at pixel coordinates (x, y)')
+            CAPS.reasoning.register_tool(
+                'type_text',
+                lambda text='': _r(oa.type_text(str(text))),
+                'Type text on keyboard')
+            CAPS.reasoning.register_tool(
+                'press_key',
+                lambda key='': _r(oa.press_key(str(key))),
+                'Press a keyboard key')
+            CAPS.reasoning.register_tool(
+                'hotkey',
+                lambda keys='ctrl+c': _r(oa.hotkey(*str(keys).split('+'))),
+                'Keyboard shortcut (e.g. ctrl+c, alt+f4)')
+            CAPS.reasoning.register_tool(
+                'observe_screen',
+                oa.observe,
+                'Describe current screen state')
+            CAPS.reasoning.register_tool(
+                'open_app',
+                lambda app_name='': _r(oa.open_application(str(app_name))),
+                'Open application by name')
         except BaseException:
             pass
 
@@ -219,10 +252,26 @@ def _bootstrap_capabilities() -> None:
     if CAPS.reasoning and CAPS.voice:
         try:
             ve = CAPS.voice
-            CAPS.reasoning.register_tool('speak', ve.speak,       'Speak text aloud')
-            CAPS.reasoning.register_tool('listen', ve.listen_once, 'Listen for voice input')
+            CAPS.reasoning.register_tool('speak',  ve.speak,        'Speak text aloud')
+            CAPS.reasoning.register_tool('listen', ve.listen_once,  'Listen for voice input')
         except BaseException:
             pass
+
+    # Register CAPS in sys.modules so modules loaded by agent.py can access singletons
+    try:
+        import types as _types
+        _caps_mod = _types.ModuleType('_devin_caps')
+        _caps_mod.os_agent       = CAPS.os_agent        # type: ignore
+        _caps_mod.reasoning      = CAPS.reasoning       # type: ignore
+        _caps_mod.conversation   = CAPS.conversation    # type: ignore
+        _caps_mod.system_monitor = CAPS.system_monitor  # type: ignore
+        _caps_mod.voice          = CAPS.voice           # type: ignore
+        _caps_mod.browser        = CAPS.browser         # type: ignore
+        _caps_mod.hf_provider    = CAPS.hf_provider     # type: ignore
+        _caps_mod.free_claude    = CAPS.free_claude     # type: ignore
+        sys.modules['_devin_caps'] = _caps_mod
+    except BaseException:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -472,7 +521,6 @@ def _banner(devin: DevinAGI) -> None:
           f'Python {platform.python_version()}  ·  '
           f'Modules: {devin.loaded_count()}/{devin.total_count()}  ·  '
           f'Dirs: {len(devin.SCAN_DIRS)}') + _c('36;1', ''))
-    # Capability status line
     caps_str = '  '
     for label, obj in [
         ('OS', CAPS.os_agent), ('Reason', CAPS.reasoning),
@@ -501,15 +549,12 @@ def main():
     p.add_argument('--provider',   default='',          help='Force AI provider: claude|gemini|openai|hf|ollama|free')
     args, remaining = p.parse_known_args()
 
-    # Apply provider override before loading anything
     if args.provider:
         os.environ['DEVIN_PROVIDER'] = args.provider
 
-    # Apply voice mode
     if args.voice:
         os.environ['DEVIN_VOICE_MODE'] = '1'
 
-    # Load ALL modules + bootstrap capabilities
     devin = get_devin()
 
     if args.status:
@@ -527,13 +572,11 @@ def main():
 
     _banner(devin)
 
-    # Locate agent.py
     agent_py = ROOT / 'agent.py'
     if not agent_py.exists():
         print(f'ERROR: {agent_py} not found.')
         sys.exit(1)
 
-    # Build argv for agent.py
     agent_argv = [str(agent_py)]
     if args.test:
         agent_argv.append('--test')
@@ -542,13 +585,11 @@ def main():
     agent_argv.extend(remaining)
     sys.argv = agent_argv
 
-    # Inject capability singletons into agent.py's exec namespace so it can
-    # reference them directly without re-importing.
+    # Inject capability singletons into agent.py's exec namespace
     exec_globals = {
         '__file__':  str(agent_py),
         '__name__':  '__main__',
         '__doc__':   None,
-        # Capability singletons
         '_DEVIN_OS_AGENT':        CAPS.os_agent,
         '_DEVIN_REASONING':       CAPS.reasoning,
         '_DEVIN_CONVERSATION':    CAPS.conversation,
@@ -557,9 +598,7 @@ def main():
         '_DEVIN_BROWSER_MOD':     CAPS.browser,
         '_DEVIN_HF_PROVIDER':     CAPS.hf_provider,
         '_DEVIN_FREE_CLAUDE':     CAPS.free_claude,
-        # The DevinAGI instance itself
         '_DEVIN_AGI':             devin,
-        # sys is available inside agent.py's exec context
         'sys': sys,
         'os':  os,
     }
