@@ -3454,6 +3454,161 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AR — PROCESS CONTROL: LIST, KILL, SPAWN, RESOURCE LIMITS, ENV INJECT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_list_processes(filter: str = '', limit: int = 30) -> str:
+    """
+    List running processes. filter: substring match on name/cmdline.
+    Returns PID, name, CPU%, memory%, and status.
+    """
+    try:
+        import psutil
+        procs = []
+        for p in psutil.process_iter(['pid', 'name', 'status', 'cpu_percent', 'memory_percent', 'cmdline']):
+            try:
+                info = p.info
+                if filter:
+                    cmdline = ' '.join(info.get('cmdline') or [])
+                    if filter.lower() not in info.get('name', '').lower() and filter.lower() not in cmdline.lower():
+                        continue
+                procs.append(info)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        procs = procs[:int(limit)]
+        if not procs:
+            return "No processes found" + (f" matching {filter!r}" if filter else "")
+        lines = [f"{'PID':>7} {'CPU%':>6} {'MEM%':>6} {'STATUS':<10} NAME"]
+        lines.append('─' * 60)
+        for p in procs:
+            lines.append(f"{p['pid']:>7} {p['cpu_percent'] or 0:>6.1f} {p['memory_percent'] or 0:>6.1f} {p['status']:<10} {p['name']}")
+        return "\n".join(lines)
+    except ImportError:
+        # Fallback: parse ps output
+        import subprocess
+        cmd = ['ps', 'aux']
+        if filter:
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                lines = [l for l in result.stdout.splitlines() if filter.lower() in l.lower() or l.startswith('USER')]
+                return "\n".join(lines[:int(limit)+1])
+            except Exception as e:
+                return f"ERROR: {e}"
+        try:
+            result = subprocess.run(cmd + ['--sort=-%cpu'], capture_output=True, text=True, timeout=10)
+            lines = result.stdout.splitlines()[:int(limit)+1]
+            return "\n".join(lines)
+        except Exception as e:
+            return f"ERROR: {e}"
+
+
+def tool_kill_process(pid: int, signal: str = 'TERM') -> str:
+    """
+    Send a signal to a process by PID.
+    signal: TERM (graceful) | KILL (force) | HUP | INT | STOP | CONT
+    """
+    import os
+    import signal as _signal
+    sig_map = {
+        'TERM': _signal.SIGTERM,
+        'KILL': _signal.SIGKILL,
+        'HUP':  _signal.SIGHUP,
+        'INT':  _signal.SIGINT,
+        'STOP': _signal.SIGSTOP,
+        'CONT': _signal.SIGCONT,
+    }
+    sig = sig_map.get(signal.upper())
+    if sig is None:
+        return f"ERROR: unknown signal {signal!r}. Use TERM|KILL|HUP|INT|STOP|CONT."
+    try:
+        os.kill(int(pid), sig)
+        return f"Signal {signal.upper()} sent to PID {pid}."
+    except ProcessLookupError:
+        return f"ERROR: no process with PID {pid}"
+    except PermissionError:
+        return f"ERROR: permission denied to signal PID {pid}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+def tool_spawn_process(command: str, cwd: str = '.', env_extra: str = '',
+                       detach: bool = False) -> str:
+    """
+    Spawn a subprocess and return its PID.
+    env_extra: JSON dict of extra environment variables to inject.
+    detach=True: launch in background (no stdout capture).
+    detach=False: wait up to 5s and capture first 2000 chars of output.
+    """
+    import subprocess, os
+    env = os.environ.copy()
+    if env_extra:
+        try:
+            extras = json.loads(env_extra)
+            env.update({str(k): str(v) for k, v in extras.items()})
+        except json.JSONDecodeError as e:
+            return f"ERROR: invalid env_extra JSON: {e}"
+    try:
+        if detach:
+            proc = subprocess.Popen(
+                command, shell=True, cwd=cwd, env=env,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                start_new_session=True)
+            return f"Process spawned (detached), PID {proc.pid}."
+        else:
+            proc = subprocess.Popen(
+                command, shell=True, cwd=cwd, env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            try:
+                out, _ = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                out, _ = proc.communicate()
+                return f"Process timed out (PID {proc.pid}). Partial output:\n{out[:2000]}"
+            return f"Exit code {proc.returncode}.\n{out[:2000]}"
+    except Exception as e:
+        return f"ERROR spawning process: {e}"
+
+
+def tool_process_info(pid: int) -> str:
+    """
+    Return detailed info for a single process by PID:
+    name, status, CPU%, memory, open files, start time, command line.
+    """
+    try:
+        import psutil, datetime
+        p = psutil.Process(int(pid))
+        with p.oneshot():
+            info = {
+                'pid': p.pid,
+                'name': p.name(),
+                'status': p.status(),
+                'cpu_percent': p.cpu_percent(interval=0.1),
+                'memory_mb': p.memory_info().rss / (1024 * 1024),
+                'started': datetime.datetime.fromtimestamp(p.create_time()).isoformat(),
+                'cmdline': ' '.join(p.cmdline()),
+                'num_threads': p.num_threads(),
+            }
+            try:
+                info['open_files'] = len(p.open_files())
+            except psutil.AccessDenied:
+                info['open_files'] = 'N/A'
+        lines = [f"Process {pid} info:"]
+        for k, v in info.items():
+            lines.append(f"  {k:14s}: {v}")
+        return "\n".join(lines)
+    except ImportError:
+        import subprocess
+        try:
+            result = subprocess.run(['ps', '-p', str(pid), '-o', 'pid,comm,stat,pcpu,pmem,lstart,args'],
+                                    capture_output=True, text=True, timeout=5)
+            return result.stdout.strip() or f"No process with PID {pid}"
+        except Exception as e:
+            return f"ERROR: {e}"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AQ — NETWORK: PING, PORT SCAN, DNS LOOKUP, HTTP HEADERS, IP INFO
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7655,6 +7810,49 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AR ──────────────────────────────────────────────────────────────
+    "list_processes": {
+        "fn": tool_list_processes,
+        "desc": "List running processes filtered by name/cmdline. Shows PID, CPU%, MEM%, status.",
+        "params": {
+            "filter": {"type": "string", "description": "Substring to filter by name or cmdline"},
+            "limit": {"type": "integer", "description": "Max processes to show (default 30)"},
+        },
+        "required": [],
+        "category": "system",
+    },
+    "kill_process": {
+        "fn": tool_kill_process,
+        "desc": "Send a signal to a process by PID (TERM|KILL|HUP|INT|STOP|CONT).",
+        "params": {
+            "pid": {"type": "integer", "description": "Process ID to signal"},
+            "signal": {"type": "string", "description": "Signal name (default TERM)"},
+        },
+        "required": ["pid"],
+        "category": "system",
+    },
+    "spawn_process": {
+        "fn": tool_spawn_process,
+        "desc": "Spawn a subprocess. detach=True for background launch. Returns PID or output.",
+        "params": {
+            "command": {"type": "string", "description": "Shell command to run"},
+            "cwd": {"type": "string", "description": "Working directory"},
+            "env_extra": {"type": "string", "description": "JSON dict of extra env vars"},
+            "detach": {"type": "boolean", "description": "Launch in background (True) or wait (False)"},
+        },
+        "required": ["command"],
+        "category": "system",
+    },
+    "process_info": {
+        "fn": tool_process_info,
+        "desc": "Get detailed info for a single process (name, CPU%, memory, files, cmdline).",
+        "params": {
+            "pid": {"type": "integer", "description": "Process ID to inspect"},
+        },
+        "required": ["pid"],
+        "category": "system",
     },
 
     # ── Phase AQ ──────────────────────────────────────────────────────────────
