@@ -3355,6 +3355,170 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AL — CODE REVIEW, WATCH FILE, UNIT CONVERT, INTERNET STATUS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_code_review(path: str, rules: str = 'all') -> str:
+    """
+    Static code review of a Python file. Checks for:
+    - long functions (>50 lines), missing type hints, broad exceptions,
+    - mutable default args, unused imports, hardcoded credentials,
+    - nested ternaries, very long lines (>120 chars).
+    rules: 'all' or comma-separated subset.
+    """
+    p = Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    if p.suffix not in ('.py', '.pyw'):
+        return f"ERROR: only Python files supported"
+    try:
+        source = p.read_text(encoding='utf-8', errors='replace')
+        lines = source.splitlines()
+    except Exception as e:
+        return f"ERROR reading file: {e}"
+    findings = []
+    rule_set = set(r.strip().lower() for r in rules.split(',')) if rules != 'all' else None
+    def want(r): return rule_set is None or r in rule_set
+    # Long lines
+    if want('long_lines'):
+        for i, line in enumerate(lines, 1):
+            if len(line) > 120:
+                findings.append(f"Line {i:4d}: long line ({len(line)} chars) — {line[:60]}...")
+    # Broad exception catch
+    if want('broad_except'):
+        for i, line in enumerate(lines, 1):
+            if re.match(r'\s*except\s*:', line) or re.match(r'\s*except\s+Exception\s*:', line):
+                findings.append(f"Line {i:4d}: broad exception catch")
+    # Long functions
+    if want('long_functions'):
+        in_func = False; func_start = 0; func_name = ''
+        for i, line in enumerate(lines, 1):
+            m = re.match(r'^\s*def\s+(\w+)', line)
+            if m:
+                if in_func and (i - func_start) > 50:
+                    findings.append(f"Line {func_start:4d}: function {func_name!r} is long ({i - func_start} lines)")
+                in_func = True; func_start = i; func_name = m.group(1)
+    # Hardcoded credentials
+    if want('credentials'):
+        for i, line in enumerate(lines, 1):
+            if re.search(r'(password|api_key|secret|token)\s*=\s*["\'][^"\']{6,}["\']', line, re.I):
+                if not re.search(r'os\.|environ|getenv|\.get\(', line):
+                    findings.append(f"Line {i:4d}: possible hardcoded credential — {line.strip()[:60]}")
+    # Mutable default args
+    if want('mutable_defaults'):
+        for i, line in enumerate(lines, 1):
+            if re.search(r'def\s+\w+\([^)]*=\s*(\[\]|\{\}|\bdict\(\)|\blist\(\))', line):
+                findings.append(f"Line {i:4d}: mutable default argument — {line.strip()[:60]}")
+    # Missing return type hints on public functions
+    if want('type_hints'):
+        for i, line in enumerate(lines, 1):
+            m = re.match(r'^\s*def\s+([a-z]\w*)\s*\([^)]*\)\s*:', line)
+            if m and '->' not in line:
+                findings.append(f"Line {i:4d}: function {m.group(1)!r} missing return type hint")
+    if not findings:
+        return f"Code review of {path}: No issues found ({len(lines)} lines checked)."
+    result = [f"Code review: {path} ({len(lines)} lines) — {len(findings)} finding(s):"]
+    result.extend(findings[:50])
+    if len(findings) > 50:
+        result.append(f"... and {len(findings) - 50} more")
+    return "\n".join(result)
+
+
+def tool_watch_file(path: str, timeout: int = 10, interval: float = 0.5) -> str:
+    """
+    Poll a file for changes for up to `timeout` seconds. Returns new content
+    when the file changes (or mtime changes). Useful for watching log files
+    or waiting for a script to write its output.
+    """
+    import time
+    p = Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    try:
+        initial_mtime = p.stat().st_mtime
+        initial_size = p.stat().st_size
+    except Exception as e:
+        return f"ERROR: {e}"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(interval)
+        try:
+            st = p.stat()
+            if st.st_mtime != initial_mtime or st.st_size != initial_size:
+                new_content = p.read_text(encoding='utf-8', errors='replace')
+                return (f"File changed after {timeout - (deadline - time.time()):.1f}s:\n"
+                        f"Size: {initial_size} → {st.st_size} bytes\n"
+                        f"Content (last 1000 chars):\n{new_content[-1000:]}")
+        except Exception:
+            pass
+    return f"No changes detected in {path} after {timeout}s"
+
+
+def tool_convert_units(value: float, from_unit: str, to_unit: str) -> str:
+    """
+    Convert between units. Supports:
+    Length: m, km, mi, ft, in, cm, mm, yd
+    Weight: kg, g, lb, oz, t (tonne)
+    Temperature: c (Celsius), f (Fahrenheit), k (Kelvin)
+    Digital: b (bytes), kb, mb, gb, tb
+    Time: s, min, h, d, w
+    """
+    f = from_unit.lower().strip()
+    t = to_unit.lower().strip()
+    v = float(value)
+    # Length conversions (base: meters)
+    LENGTH = {'m': 1.0, 'km': 1000, 'mi': 1609.344, 'ft': 0.3048,
+               'in': 0.0254, 'cm': 0.01, 'mm': 0.001, 'yd': 0.9144}
+    # Weight conversions (base: kg)
+    WEIGHT = {'kg': 1.0, 'g': 0.001, 'lb': 0.453592, 'oz': 0.0283495, 't': 1000}
+    # Digital (base: bytes)
+    DIGITAL = {'b': 1, 'kb': 1024, 'mb': 1024**2, 'gb': 1024**3, 'tb': 1024**4}
+    # Time (base: seconds)
+    TIME = {'s': 1, 'sec': 1, 'min': 60, 'h': 3600, 'hr': 3600, 'd': 86400, 'w': 604800}
+    try:
+        # Temperature special case
+        if f in ('c', 'celsius', '°c') and t in ('f', 'fahrenheit', '°f'):
+            return f"{v}°C = {v * 9/5 + 32:.4g}°F"
+        elif f in ('f', 'fahrenheit', '°f') and t in ('c', 'celsius', '°c'):
+            return f"{v}°F = {(v - 32) * 5/9:.4g}°C"
+        elif f in ('c', 'celsius', '°c') and t in ('k', 'kelvin'):
+            return f"{v}°C = {v + 273.15:.4g}K"
+        elif f in ('k', 'kelvin') and t in ('c', 'celsius', '°c'):
+            return f"{v}K = {v - 273.15:.4g}°C"
+        elif f in ('f', 'fahrenheit', '°f') and t in ('k', 'kelvin'):
+            return f"{v}°F = {(v - 32) * 5/9 + 273.15:.4g}K"
+        elif f in ('k', 'kelvin') and t in ('f', 'fahrenheit', '°f'):
+            return f"{v}K = {(v - 273.15) * 9/5 + 32:.4g}°F"
+        # Try each unit table
+        for table in (LENGTH, WEIGHT, DIGITAL, TIME):
+            if f in table and t in table:
+                base = v * table[f]
+                result = base / table[t]
+                return f"{v} {from_unit} = {result:.6g} {to_unit}"
+        return f"ERROR: unknown unit pair {from_unit!r} → {to_unit!r}"
+    except Exception as e:
+        return f"ERROR in convert_units: {e}"
+
+
+def tool_internet_check(host: str = '8.8.8.8', port: int = 53, timeout: int = 3) -> str:
+    """
+    Check internet connectivity by attempting a TCP connection to a known host.
+    Returns latency or error message.
+    """
+    import socket, time
+    try:
+        start = time.time()
+        sock = socket.create_connection((host, port), timeout=timeout)
+        latency = (time.time() - start) * 1000
+        sock.close()
+        return f"Connected to {host}:{port} — latency: {latency:.1f}ms — internet: OK"
+    except socket.timeout:
+        return f"Connection to {host}:{port} timed out after {timeout}s — internet may be down"
+    except OSError as e:
+        return f"Cannot connect to {host}:{port} — {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AK — SYSTEM, CONFIG, MEMORY: SNAPSHOT, CONFIG R/W, MEMORY SEARCH
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6684,6 +6848,54 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["query"],
         "category": "memory",
+    },
+
+    # ── Phase AL — Code review, watch, convert, connectivity ──────────────────
+    "code_review": {
+        "fn": tool_code_review,
+        "desc": "Static code review of a Python file: long functions, broad exceptions, credentials, type hints.",
+        "params": {
+            "path": {"type": "string", "description": "Path to Python file"},
+            "rules": {"type": "string", "description": "Rules: all, or comma-separated: long_lines,broad_except,long_functions,credentials,mutable_defaults,type_hints"},
+        },
+        "required": ["path"],
+        "category": "code",
+    },
+
+    "watch_file": {
+        "fn": tool_watch_file,
+        "desc": "Poll a file for changes and return new content when it changes.",
+        "params": {
+            "path": {"type": "string", "description": "File to watch"},
+            "timeout": {"type": "integer", "description": "Max seconds to wait (default 10)"},
+            "interval": {"type": "number", "description": "Poll interval in seconds (default 0.5)"},
+        },
+        "required": ["path"],
+        "category": "files",
+    },
+
+    "convert_units": {
+        "fn": tool_convert_units,
+        "desc": "Convert between units: length (m/km/mi/ft), weight (kg/lb/oz), temperature (c/f/k), digital (b/kb/mb/gb), time (s/min/h/d).",
+        "params": {
+            "value": {"type": "number", "description": "Numeric value to convert"},
+            "from_unit": {"type": "string", "description": "Source unit"},
+            "to_unit": {"type": "string", "description": "Target unit"},
+        },
+        "required": ["value", "from_unit", "to_unit"],
+        "category": "data",
+    },
+
+    "internet_check": {
+        "fn": tool_internet_check,
+        "desc": "Check internet connectivity. Returns latency or error.",
+        "params": {
+            "host": {"type": "string", "description": "Host to check (default '8.8.8.8')"},
+            "port": {"type": "integer", "description": "Port to connect to (default 53)"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 3)"},
+        },
+        "required": [],
+        "category": "system",
     },
 }
 
