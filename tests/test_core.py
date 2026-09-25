@@ -453,6 +453,51 @@ def t_ad_tools_registered():
         for key in ('fn', 'desc', 'params', 'required', 'category'):
             assert key in spec, f"'{name}' missing key '{key}'"
 
+
+# ─── Phase AE: Retry + verify + template + archives ──────────────────────────
+
+def t_verify_output():
+    assert 'PASS' in _agent.tool_verify_output('hello world', 'world', 'contains')
+    assert 'FAIL' in _agent.tool_verify_output('hello world', 'missing', 'contains')
+    assert 'PASS' in _agent.tool_verify_output('HELLO', 'hello', 'icontains')
+    assert 'PASS' in _agent.tool_verify_output('ERROR: bad', '', 'is_error')
+    assert 'FAIL' in _agent.tool_verify_output('OK result', '', 'is_error')
+    assert 'PASS' in _agent.tool_verify_output('version 1.2.3', r'\d+\.\d+', 'regex')
+
+
+def t_template_fill():
+    result = _agent.tool_template_fill('Hello {name}!', '{"name": "Devin"}')
+    assert result == 'Hello Devin!', f"got: {result}"
+    # Unfilled placeholder warns
+    r2 = _agent.tool_template_fill('{a} {b}', '{"a": "x"}')
+    assert 'x' in r2 and ('b' in r2 or 'WARNING' in r2)
+
+
+def t_retry_on_failure():
+    # Should succeed on first attempt
+    r = _agent.tool_retry_on_failure('execute_python', '{"code": "print(99)"}', max_retries=2)
+    assert '99' in r and 'SUCCESS' in r
+    # Should exhaust retries on unknown tool
+    r2 = _agent.tool_retry_on_failure('nonexistent_tool_xyz', '{}', max_retries=2)
+    assert 'failed' in r2.lower() or 'ERROR' in r2
+
+
+def t_zip_unzip_roundtrip():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a test file
+        test_file = os.path.join(tmpdir, 'test.txt')
+        open(test_file, 'w').write('zip test content')
+        zip_path = os.path.join(tmpdir, 'out.zip')
+        # Zip it
+        zr = _agent.tool_zip_files(zip_path, json.dumps([test_file]))
+        assert 'Created' in zr or 'bytes' in zr, f"zip failed: {zr}"
+        # Unzip it
+        dest = os.path.join(tmpdir, 'extracted')
+        os.makedirs(dest)
+        uzr = _agent.tool_unzip(zip_path, dest)
+        assert 'Extracted' in uzr or 'file' in uzr.lower(), f"unzip failed: {uzr}"
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -554,6 +599,13 @@ def main():
     test("tail_file last N lines", t_tail_file)
     test("json_query dot-path", t_json_query)
     test("get_env + secret redaction", t_get_env)
+
+    # Phase 12: Retry + verify + template + archives (Phase AE)
+    print("\n── Phase 12: Retry, Verify & Archive Tools ──")
+    test("verify_output modes", t_verify_output)
+    test("template_fill", t_template_fill)
+    test("retry_on_failure", t_retry_on_failure)
+    test("zip/unzip roundtrip", t_zip_unzip_roundtrip)
 
     # Summary
     total = PASS + FAIL + SKIP

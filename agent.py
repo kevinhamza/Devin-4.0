@@ -3204,6 +3204,157 @@ def tool_run_workflow_file(path: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AE — RETRY META-TOOL + TEMPLATE + ARCHIVE + OUTPUT VERIFICATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_retry_on_failure(tool_name: str, tool_args: str, max_retries: int = 3,
+                           delay: float = 1.0) -> str:
+    """
+    Call a tool and automatically retry up to max_retries times if it returns an ERROR.
+    tool_args must be a JSON object string. Returns the first successful result,
+    or the last error if all retries fail. Use for flaky operations (network, GUI timing).
+    """
+    import time as _time
+    try:
+        args = json.loads(tool_args) if tool_args.strip() else {}
+    except json.JSONDecodeError as e:
+        return f"ERROR: tool_args must be valid JSON: {e}"
+
+    last_result = ""
+    for attempt in range(1, max_retries + 1):
+        result = _dispatch_tool(tool_name, args)
+        is_err = (result.startswith("ERROR") or
+                  result.startswith("Traceback") or
+                  "Error:" in result[:200])
+        if not is_err:
+            return f"[attempt {attempt}/{max_retries}] SUCCESS:\n{result}"
+        last_result = result
+        if attempt < max_retries:
+            _time.sleep(delay)
+
+    return f"[all {max_retries} attempts failed]\nLast error: {last_result[:500]}"
+
+
+def tool_verify_output(output: str, expected_pattern: str,
+                        mode: str = 'contains') -> str:
+    """
+    Verify that a tool's output matches an expected pattern.
+    Modes:
+      contains  — output contains the string (case-sensitive)
+      icontains — output contains the string (case-insensitive)
+      regex     — output matches the regex pattern
+      startswith — output starts with the string
+      not_empty — output is non-empty and not an ERROR
+      is_error  — output starts with ERROR (for negative testing)
+    Returns PASS or FAIL with details.
+    """
+    mode = mode.lower()
+    try:
+        if mode == 'contains':
+            ok = expected_pattern in output
+        elif mode == 'icontains':
+            ok = expected_pattern.lower() in output.lower()
+        elif mode == 'regex':
+            ok = bool(re.search(expected_pattern, output))
+        elif mode == 'startswith':
+            ok = output.strip().startswith(expected_pattern)
+        elif mode == 'not_empty':
+            ok = bool(output.strip()) and not output.startswith('ERROR')
+        elif mode == 'is_error':
+            ok = output.startswith('ERROR')
+        else:
+            return f"ERROR: unknown mode '{mode}'. Use: contains|icontains|regex|startswith|not_empty|is_error"
+    except re.error as e:
+        return f"ERROR: invalid regex '{expected_pattern}': {e}"
+
+    status = "PASS" if ok else "FAIL"
+    preview = output[:200].replace('\n', '↵')
+    return f"{status}: '{expected_pattern}' ({mode}) in output: '{preview}'"
+
+
+def tool_template_fill(template: str, variables: str) -> str:
+    """
+    Fill a text template with variables from a JSON object.
+    Uses {variable_name} placeholders. Safe — no code execution.
+
+    Example:
+      template = "Hello {name}! You have {count} messages."
+      variables = '{"name": "Alice", "count": "5"}'
+      → "Hello Alice! You have 5 messages."
+    """
+    try:
+        vars_dict = json.loads(variables)
+    except json.JSONDecodeError as e:
+        return f"ERROR: variables must be a valid JSON object: {e}"
+
+    if not isinstance(vars_dict, dict):
+        return "ERROR: variables must be a JSON object (not an array)"
+
+    try:
+        result = template
+        for key, val in vars_dict.items():
+            result = result.replace(f'{{{key}}}', str(val))
+        # Check for unfilled placeholders
+        remaining = re.findall(r'\{([^}]+)\}', result)
+        if remaining:
+            return result + f"\n\nWARNING: unfilled placeholders: {remaining}"
+        return result
+    except Exception as e:
+        return f"ERROR filling template: {e}"
+
+
+def tool_zip_files(output_path: str, source_paths: str, compression: str = 'deflated') -> str:
+    """
+    Create a ZIP archive from a list of file/directory paths.
+    source_paths is a JSON array of paths: '["/path/to/file", "/path/to/dir"]'.
+    Directories are added recursively.
+    """
+    import zipfile
+    try:
+        sources = json.loads(source_paths)
+    except json.JSONDecodeError as e:
+        return f"ERROR: source_paths must be a JSON array: {e}"
+
+    comp = zipfile.ZIP_DEFLATED if compression == 'deflated' else zipfile.ZIP_STORED
+    added = 0
+    try:
+        with zipfile.ZipFile(output_path, 'w', compression=comp) as zf:
+            for src in sources:
+                p = Path(src)
+                if not p.exists():
+                    return f"ERROR: source not found: {src}"
+                if p.is_file():
+                    zf.write(p, p.name)
+                    added += 1
+                elif p.is_dir():
+                    for sub in p.rglob('*'):
+                        if sub.is_file():
+                            zf.write(sub, sub.relative_to(p.parent))
+                            added += 1
+        size = Path(output_path).stat().st_size
+        return f"Created {output_path} ({size:,} bytes, {added} files)"
+    except Exception as e:
+        return f"ERROR creating ZIP: {e}"
+
+
+def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
+    """Extract a ZIP archive to a destination directory."""
+    import zipfile
+    try:
+        p = Path(archive_path)
+        if not p.exists():
+            return f"ERROR: archive not found: {archive_path}"
+        with zipfile.ZipFile(str(p), 'r') as zf:
+            names = zf.namelist()
+            zf.extractall(dest_dir)
+        return f"Extracted {len(names)} files from {archive_path} to {dest_dir}"
+    except zipfile.BadZipFile:
+        return f"ERROR: not a valid ZIP file: {archive_path}"
+    except Exception as e:
+        return f"ERROR extracting: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AC — FILE SUMMARIZER + DIFF TOOL + CODE SEARCH
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -5151,6 +5302,73 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["json_str", "query"],
         "category": "data",
+    },
+
+    # ── Retry + verify + template + archives (Phase AE) ──────────────────────
+    "retry_on_failure": {
+        "fn": tool_retry_on_failure,
+        "desc": (
+            "Call a tool and auto-retry up to N times if it returns an ERROR. "
+            "Use for flaky operations like network requests, GUI timing, or CI checks."
+        ),
+        "params": {
+            "tool_name": {"type": "string", "description": "Name of the tool to call"},
+            "tool_args": {"type": "string", "description": "JSON object of args to pass to the tool"},
+            "max_retries": {"type": "integer", "description": "Max retry attempts (default: 3)"},
+            "delay": {"type": "number", "description": "Seconds between retries (default: 1.0)"},
+        },
+        "required": ["tool_name", "tool_args"],
+        "category": "workflow",
+    },
+
+    "verify_output": {
+        "fn": tool_verify_output,
+        "desc": (
+            "Verify a tool's output matches an expectation. "
+            "Modes: contains, icontains, regex, startswith, not_empty, is_error. "
+            "Returns PASS or FAIL — useful for automated verification steps."
+        ),
+        "params": {
+            "output": {"type": "string", "description": "The output string to verify"},
+            "expected_pattern": {"type": "string", "description": "Pattern/string to match against"},
+            "mode": {"type": "string", "description": "Match mode: contains|icontains|regex|startswith|not_empty|is_error (default: contains)"},
+        },
+        "required": ["output", "expected_pattern"],
+        "category": "workflow",
+    },
+
+    "template_fill": {
+        "fn": tool_template_fill,
+        "desc": "Fill a text template {variable} placeholders from a JSON object of variables. Safe, no code execution.",
+        "params": {
+            "template": {"type": "string", "description": "Template string with {variable} placeholders"},
+            "variables": {"type": "string", "description": "JSON object: {\"var\": \"value\", ...}"},
+        },
+        "required": ["template", "variables"],
+        "category": "data",
+    },
+
+    "zip_files": {
+        "fn": tool_zip_files,
+        "desc": "Create a ZIP archive from a list of files/directories. source_paths is a JSON array of paths.",
+        "params": {
+            "output_path": {"type": "string", "description": "Path for the output .zip file"},
+            "source_paths": {"type": "string", "description": "JSON array of file/directory paths to add"},
+            "compression": {"type": "string", "description": "deflated (default) or stored"},
+        },
+        "required": ["output_path", "source_paths"],
+        "category": "files",
+    },
+
+    "unzip": {
+        "fn": tool_unzip,
+        "desc": "Extract a ZIP archive to a destination directory.",
+        "params": {
+            "archive_path": {"type": "string", "description": "Path to the .zip file"},
+            "dest_dir": {"type": "string", "description": "Directory to extract to (default: '.')"},
+        },
+        "required": ["archive_path"],
+        "category": "files",
     },
 }
 
