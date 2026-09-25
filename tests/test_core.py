@@ -876,6 +876,64 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AO tests ──────────────────────────────────────────────────────────
+
+def t_ao_tools_registered():
+    for name in ('pipe', 'string_ops', 'sleep', 'generate_uuid', 'random_value', 'timestamp'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_pipe():
+    # write a file then read it back via pipe
+    import tempfile, os
+    steps = json.dumps([
+        {"tool": "execute_python", "args": {"code": "print('pipe_test')"}},
+        {"tool": "string_ops", "args": {"operation": "upper"}},
+    ])
+    r = _agent.tool_pipe(steps)
+    assert 'PIPE_TEST' in r, f"got: {r}"
+
+def t_string_ops():
+    assert _agent.tool_string_ops('Hello World', 'upper') == 'HELLO WORLD'
+    assert _agent.tool_string_ops('Hello World', 'lower') == 'hello world'
+    assert _agent.tool_string_ops('abc', 'repeat', '3') == 'abcabcabc'
+    r = _agent.tool_string_ops('hello world python', 'split')
+    data = json.loads(r)
+    assert 'python' in data, f"got: {r}"
+    assert _agent.tool_string_ops('my file name', 'slugify') == 'my-file-name'
+
+def t_sleep():
+    import time
+    start = time.time()
+    r = _agent.tool_sleep(0.1)
+    elapsed = time.time() - start
+    assert 'Slept' in r, f"got: {r}"
+    assert elapsed >= 0.05, f"sleep too short: {elapsed}"
+
+def t_generate_uuid():
+    r = _agent.tool_generate_uuid()
+    assert len(r) == 36, f"got: {r}"
+    parts = r.split('-')
+    assert len(parts) == 5, f"got: {r}"
+    r5 = _agent.tool_generate_uuid(5, 'dns', 'example.com')
+    assert len(r5) == 36, f"got: {r5}"
+
+def t_random_value():
+    r = _agent.tool_random_value('int', 1, 10)
+    assert 1 <= int(r) <= 10, f"got: {r}"
+    rs = _agent.tool_random_value('string', length=12)
+    assert len(rs) == 12, f"got: {rs}"
+    rc = _agent.tool_random_value('choice', choices='["a","b","c"]')
+    assert rc in ('a', 'b', 'c'), f"got: {rc}"
+
+def t_timestamp():
+    r = _agent.tool_timestamp('iso')
+    assert 'T' in r or '-' in r, f"got: {r}"
+    ru = _agent.tool_timestamp('unix')
+    assert ru.isdigit(), f"got: {ru}"
+    rd = _agent.tool_timestamp('date')
+    assert len(rd) == 10 and rd[4] == '-', f"got: {rd}"
+
+
 # ─── Phase AN tests ──────────────────────────────────────────────────────────
 
 def t_an_tools_registered():
@@ -1084,6 +1142,16 @@ def main():
     test("summarize_changes", t_summarize_changes)
     test("task_complete", t_task_complete)
     test("format_output", t_format_output)
+
+    # Phase 22: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
+    print("\n── Phase 22: Pipe, String Ops, Utilities ──")
+    test("Phase AO tools registered", t_ao_tools_registered)
+    test("pipe tool chain", t_pipe)
+    test("string_ops", t_string_ops)
+    test("sleep", t_sleep)
+    test("generate_uuid", t_generate_uuid)
+    test("random_value", t_random_value)
+    test("timestamp", t_timestamp)
 
     # Summary
     total = PASS + FAIL + SKIP
