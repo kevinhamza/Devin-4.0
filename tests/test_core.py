@@ -689,6 +689,57 @@ def t_count_tokens():
     assert 'tokens' in r.lower() and 'claude' in r.lower(), f"got: {r}"
 
 
+# ─── Phase AJ: Task planning & navigation ────────────────────────────────────
+
+def t_aj_tools_registered():
+    for name in ('task_plan', 'file_tree', 'extract_todos', 'make_executable'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_task_plan():
+    r = _agent.tool_task_plan('build a REST API', 4)
+    assert '1.' in r or '[ ] 1' in r, f"got: {r}"
+    r2 = _agent.tool_task_plan('fix the login bug', format='checklist')
+    assert '[ ]' in r2 and 'bug' not in r2.split('\n')[0].lower() or 'Goal:' in r2, f"got: {r2}"
+    r3 = _agent.tool_task_plan('deploy to production', format='json')
+    data = json.loads(r3)
+    assert 'steps' in data and len(data['steps']) > 0
+
+
+def t_file_tree():
+    r = _agent.tool_file_tree('.', max_depth=1, file_limit=20)
+    assert 'agent.py' in r or 'item(s)' in r, f"got: {r}"
+    r2 = _agent.tool_file_tree('/nonexistent_path_xyz')
+    assert 'ERROR' in r2
+
+
+def t_extract_todos():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p = os.path.join(tmpdir, 'test.py')
+        with open(p, 'w') as f:
+            f.write('# TODO: fix this\nx = 1  # FIXME: needs work\n')
+        r = _agent.tool_extract_todos(tmpdir, '*.py')
+        assert 'TODO' in r and 'FIXME' in r, f"got: {r}"
+
+
+def t_make_executable():
+    import tempfile, os, stat
+    with tempfile.NamedTemporaryFile(suffix='.sh', delete=False) as f:
+        f.write(b'#!/bin/bash\necho hi\n')
+        tmp = f.name
+    try:
+        r = _agent.tool_make_executable(tmp)
+        assert 'executable' in r.lower(), f"got: {r}"
+        mode = os.stat(tmp).st_mode
+        assert mode & stat.S_IXUSR, "file should be executable"
+    finally:
+        os.unlink(tmp)
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -830,6 +881,14 @@ def main():
     test("text_stats", t_text_stats)
     test("markdown_to_text", t_markdown_to_text)
     test("count_tokens", t_count_tokens)
+
+    # Phase 17: Task planning & navigation (Phase AJ)
+    print("\n── Phase 17: Task Planning & Navigation ──")
+    test("Phase AJ tools registered", t_aj_tools_registered)
+    test("task_plan (numbered/checklist/json)", t_task_plan)
+    test("file_tree", t_file_tree)
+    test("extract_todos", t_extract_todos)
+    test("make_executable", t_make_executable)
 
     # Summary
     total = PASS + FAIL + SKIP

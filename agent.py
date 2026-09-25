@@ -3355,6 +3355,160 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AJ — TASK PLANNING: TASK_PLAN, FILE_TREE, COMPARE_FILES, TODOS, CHMOD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_task_plan(goal: str, steps: int = 5, format: str = 'numbered') -> str:
+    """
+    Generate a structured task plan from a goal description using keyword-based
+    decomposition. Returns a numbered or checklist plan with time estimates.
+    format: 'numbered' | 'checklist' | 'json'
+    """
+    goal_lower = goal.lower()
+    # Keyword-based step templates
+    phases = []
+    if any(w in goal_lower for w in ('understand', 'analyze', 'review', 'read', 'check')):
+        phases.append(('Understand & Analyze', 'Read relevant files, understand the codebase structure', '10-20 min'))
+    elif any(w in goal_lower for w in ('build', 'create', 'develop', 'write', 'implement', 'add')):
+        phases.append(('Research & Plan', 'Research requirements, review existing code', '10-15 min'))
+        phases.append(('Design', 'Design the solution architecture and data structures', '15-20 min'))
+        phases.append(('Implement', 'Write the code following the design plan', '30-60 min'))
+        phases.append(('Test', 'Write and run tests to verify correctness', '15-20 min'))
+        phases.append(('Document', 'Update README and comments', '10 min'))
+    elif any(w in goal_lower for w in ('fix', 'debug', 'resolve', 'repair', 'solve')):
+        phases.append(('Reproduce', 'Reproduce the issue and understand the failure', '5-10 min'))
+        phases.append(('Identify Root Cause', 'Trace through code to find the cause', '15-20 min'))
+        phases.append(('Fix', 'Implement the minimal fix', '10-30 min'))
+        phases.append(('Test Fix', 'Verify the fix and run regression tests', '10-15 min'))
+    elif any(w in goal_lower for w in ('deploy', 'release', 'ship', 'publish')):
+        phases.append(('Pre-flight Check', 'Run tests, linting, and build', '15 min'))
+        phases.append(('Package', 'Build release artifacts', '10 min'))
+        phases.append(('Deploy', 'Push to target environment', '5-10 min'))
+        phases.append(('Verify', 'Smoke test in target environment', '10 min'))
+        phases.append(('Notify', 'Update changelog and notify stakeholders', '5 min'))
+    else:
+        phases.append(('Understand', 'Clarify requirements and constraints', '10 min'))
+        phases.append(('Plan', 'Create a step-by-step approach', '10 min'))
+        phases.append(('Execute', 'Carry out the plan systematically', '30-60 min'))
+        phases.append(('Verify', 'Check results against requirements', '10 min'))
+        phases.append(('Wrap Up', 'Document what was done', '5 min'))
+    # Trim/pad to requested steps
+    while len(phases) < steps:
+        phases.append((f'Step {len(phases)+1}', 'Additional step as needed', '10 min'))
+    phases = phases[:steps]
+    # Format
+    if format == 'json':
+        plan = [{'step': i+1, 'title': t, 'description': d, 'estimate': e}
+                for i, (t, d, e) in enumerate(phases)]
+        return json.dumps({'goal': goal, 'steps': plan}, indent=2)
+    elif format == 'checklist':
+        lines = [f"Goal: {goal}", ""]
+        for i, (title, desc, est) in enumerate(phases):
+            lines.append(f"[ ] {i+1}. {title} ({est})")
+            lines.append(f"     → {desc}")
+        return "\n".join(lines)
+    else:
+        lines = [f"Goal: {goal}", ""]
+        for i, (title, desc, est) in enumerate(phases):
+            lines.append(f"{i+1}. {title} — {est}")
+            lines.append(f"   {desc}")
+        return "\n".join(lines)
+
+
+def tool_file_tree(path: str = '.', max_depth: int = 3,
+                   include_hidden: bool = False, file_limit: int = 200) -> str:
+    """
+    Display a directory tree (like the `tree` command). max_depth limits recursion.
+    include_hidden shows dotfiles. file_limit caps total entries shown.
+    """
+    root = Path(path)
+    if not root.exists():
+        return f"ERROR: path not found: {path}"
+    if not root.is_dir():
+        return f"ERROR: not a directory: {path}"
+    lines = [str(root)]
+    count = [0]
+    def _walk(p: Path, prefix: str, depth: int):
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+        except PermissionError:
+            lines.append(prefix + "└── [permission denied]")
+            return
+        visible = [e for e in entries if include_hidden or not e.name.startswith('.')]
+        for i, entry in enumerate(visible):
+            if count[0] >= file_limit:
+                lines.append(prefix + "└── ... (limit reached)")
+                return
+            connector = '└── ' if i == len(visible) - 1 else '├── '
+            lines.append(prefix + connector + entry.name + ('/' if entry.is_dir() else ''))
+            count[0] += 1
+            if entry.is_dir():
+                extension = '    ' if i == len(visible) - 1 else '│   '
+                _walk(entry, prefix + extension, depth + 1)
+    _walk(root, '', 1)
+    lines.append(f"\n{count[0]} item(s)")
+    return "\n".join(lines)
+
+
+def tool_extract_todos(directory: str = '.', file_glob: str = '*.py',
+                       tags: str = 'TODO,FIXME,HACK,NOTE,XXX') -> str:
+    """
+    Scan source files for TODO/FIXME/HACK/NOTE/XXX comments and return them
+    grouped by file with line numbers.
+    """
+    root = Path(directory)
+    if not root.exists():
+        return f"ERROR: directory not found: {directory}"
+    tag_list = [t.strip().upper() for t in tags.split(',')]
+    pattern = re.compile(r'#\s*(' + '|'.join(tag_list) + r')\s*[:\-]?\s*(.+)', re.IGNORECASE)
+    results: dict = {}
+    total = 0
+    for filepath in root.rglob(file_glob):
+        if not filepath.is_file():
+            continue
+        try:
+            lines = filepath.read_text(encoding='utf-8', errors='replace').splitlines()
+        except Exception:
+            continue
+        for lineno, line in enumerate(lines, 1):
+            m = pattern.search(line)
+            if m:
+                tag, msg = m.group(1).upper(), m.group(2).strip()
+                key = str(filepath.relative_to(root) if root != Path('.') else filepath)
+                results.setdefault(key, []).append((lineno, tag, msg))
+                total += 1
+    if not results:
+        return f"No {tags} comments found in {directory}"
+    output = [f"Found {total} todo(s) in {len(results)} file(s):"]
+    for fpath, items in sorted(results.items()):
+        output.append(f"\n{fpath}:")
+        for lineno, tag, msg in items:
+            output.append(f"  Line {lineno:4d}  [{tag}]  {msg}")
+    return "\n".join(output)
+
+
+def tool_make_executable(path: str) -> str:
+    """
+    Make a file executable (chmod +x). Returns confirmation or error.
+    """
+    import stat
+    p = Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    if p.is_dir():
+        return f"ERROR: {path} is a directory; use on files only"
+    try:
+        current = p.stat().st_mode
+        p.chmod(current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        new_mode = oct(p.stat().st_mode)[-3:]
+        return f"Made executable: {path} (mode: {new_mode})"
+    except Exception as e:
+        return f"ERROR setting permissions: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AI — TEXT PROCESSING: ENCODE/DECODE, REGEX, STATS, MARKDOWN, TOKENS
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6260,6 +6414,54 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["text"],
         "category": "reasoning",
+    },
+
+    # ── Phase AJ — Task planning & navigation ─────────────────────────────────
+    "task_plan": {
+        "fn": tool_task_plan,
+        "desc": "Generate a structured task plan from a goal: numbered steps with time estimates.",
+        "params": {
+            "goal": {"type": "string", "description": "Goal or task description"},
+            "steps": {"type": "integer", "description": "Number of steps (default 5)"},
+            "format": {"type": "string", "description": "Output format: numbered, checklist, json (default 'numbered')"},
+        },
+        "required": ["goal"],
+        "category": "reasoning",
+    },
+
+    "file_tree": {
+        "fn": tool_file_tree,
+        "desc": "Display a directory as a visual tree (like the `tree` command).",
+        "params": {
+            "path": {"type": "string", "description": "Root directory (default '.')"},
+            "max_depth": {"type": "integer", "description": "Max recursion depth (default 3)"},
+            "include_hidden": {"type": "boolean", "description": "Include dotfiles (default false)"},
+            "file_limit": {"type": "integer", "description": "Max entries to show (default 200)"},
+        },
+        "required": [],
+        "category": "files",
+    },
+
+    "extract_todos": {
+        "fn": tool_extract_todos,
+        "desc": "Scan source files for TODO/FIXME/HACK/NOTE/XXX comments with line numbers.",
+        "params": {
+            "directory": {"type": "string", "description": "Directory to scan (default '.')"},
+            "file_glob": {"type": "string", "description": "File pattern (default '*.py')"},
+            "tags": {"type": "string", "description": "Comma-separated tags to find (default 'TODO,FIXME,HACK,NOTE,XXX')"},
+        },
+        "required": [],
+        "category": "code",
+    },
+
+    "make_executable": {
+        "fn": tool_make_executable,
+        "desc": "Make a file executable (chmod +x).",
+        "params": {
+            "path": {"type": "string", "description": "Path to file to make executable"},
+        },
+        "required": ["path"],
+        "category": "files",
     },
 }
 
