@@ -39,17 +39,18 @@
 | AL    | code_review, watch_file, convert_units, internet_check + 93 tests | `538b82a8` | done |
 | AM    | calculate, list_tools, diff_json, parse_args + 98 tests | `517876c0` | done |
 | AN    | summarize_changes, task_complete, format_output + 102 tests | `f349e7b8` | done |
-| AO    | pipe, string_ops, sleep, generate_uuid, random_value, timestamp + 109 tests | this commit | done |
+| AO    | pipe, string_ops, sleep, generate_uuid, random_value, timestamp + 109 tests | `935c0b55` | done |
+| AP    | bulk_rename, folder_sync, archive_info, checksum + 114 tests | this commit | done |
 
 ---
 
 ## Current Runtime Snapshot
 
 **agent.py:** ~9,400 lines, single-file Python entry point
-**Tools registered:** 195 across 28 categories (workflow, files, system, data, archives, devtools, code, web, memory)
+**Tools registered:** 199 across 28 categories (workflow, files, system, data, archives, devtools, code, web, memory)
 **Modules loaded (this env):** 33/41 tracked, 53/91 discoverable
 **Providers:** 5 (Gemini, Claude, OpenAI, HuggingFace, Ollama)
-**Test suite:** 109/109 automated tests pass (via `./devin --test`)
+**Test suite:** 114/114 automated tests pass (via `./devin --test`)
 **Demo:** `tests/demo_workflow.py` — 11-step end-to-end health check
 **TypeScript:** `npx tsc --noEmit` — 0 errors across 38 .ts files
 

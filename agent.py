@@ -3454,6 +3454,155 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AP — FILE WATCHER LOOP, BULK RENAME, FOLDER SYNC, ARCHIVE INFO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_bulk_rename(directory: str, pattern: str, replacement: str,
+                     file_glob: str = '*', dry_run: bool = True) -> str:
+    """
+    Rename files in a directory by replacing a regex pattern with a replacement.
+    dry_run=True previews changes without applying them.
+    """
+    import pathlib, re as _re
+    d = pathlib.Path(directory)
+    if not d.is_dir():
+        return f"ERROR: not a directory: {directory}"
+    results = []
+    count = 0
+    for f in sorted(d.glob(file_glob)):
+        if not f.is_file():
+            continue
+        new_name = _re.sub(pattern, replacement, f.name)
+        if new_name == f.name:
+            continue
+        dest = f.parent / new_name
+        if dest.exists():
+            results.append(f"SKIP  {f.name} → {new_name} (destination exists)")
+            continue
+        if not dry_run:
+            f.rename(dest)
+        results.append(f"{'RENAME' if not dry_run else 'WOULD'} {f.name} → {new_name}")
+        count += 1
+    if not results:
+        return f"No files matched rename pattern in {directory}"
+    header = f"{'DRY RUN — ' if dry_run else ''}{count} file(s) to rename in {directory}:"
+    return header + "\n" + "\n".join(results)
+
+
+def tool_folder_sync(src: str, dst: str, dry_run: bool = True, delete: bool = False) -> str:
+    """
+    Sync files from src directory to dst directory (one-way, src→dst).
+    Copies new/updated files. If delete=True, removes files in dst not in src.
+    dry_run=True previews without making changes.
+    """
+    import pathlib, shutil, hashlib
+    sp = pathlib.Path(src)
+    dp = pathlib.Path(dst)
+    if not sp.is_dir():
+        return f"ERROR: source not a directory: {src}"
+    actions = []
+    def file_hash(p):
+        h = hashlib.md5()
+        with open(p, 'rb') as f:
+            for chunk in iter(lambda: f.read(65536), b''):
+                h.update(chunk)
+        return h.hexdigest()
+    # Copy new/changed files
+    for sf in sorted(sp.rglob('*')):
+        if sf.is_dir():
+            continue
+        rel = sf.relative_to(sp)
+        df = dp / rel
+        if not df.exists() or file_hash(sf) != file_hash(df):
+            actions.append(('COPY', str(rel)))
+            if not dry_run:
+                df.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(sf, df)
+    # Optionally delete extra files in dst
+    if delete and dp.exists():
+        for df in sorted(dp.rglob('*')):
+            if df.is_dir():
+                continue
+            rel = df.relative_to(dp)
+            if not (sp / rel).exists():
+                actions.append(('DELETE', str(rel)))
+                if not dry_run:
+                    df.unlink()
+    if not actions:
+        return f"Directories are already in sync ({src} → {dst})."
+    prefix = 'DRY RUN — ' if dry_run else ''
+    lines = [f"{prefix}{len(actions)} action(s) for sync {src} → {dst}:"]
+    lines += [f"  {act} {rel}" for act, rel in actions]
+    return "\n".join(lines)
+
+
+def tool_archive_info(path: str) -> str:
+    """
+    Return metadata and file listing for a ZIP or TAR archive without extracting it.
+    """
+    import pathlib, zipfile, tarfile
+    p = pathlib.Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    size_mb = p.stat().st_size / (1024 * 1024)
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path, 'r') as z:
+            infos = z.infolist()
+            total = sum(i.file_size for i in infos)
+            lines = [
+                f"ZIP archive: {path}",
+                f"  Compressed size: {size_mb:.2f} MB",
+                f"  Uncompressed:    {total/(1024*1024):.2f} MB",
+                f"  Files:           {len(infos)}",
+                "",
+                "Contents (first 50):",
+            ]
+            for info in infos[:50]:
+                lines.append(f"  {info.filename}  ({info.file_size:,} bytes)")
+            if len(infos) > 50:
+                lines.append(f"  ... and {len(infos)-50} more files")
+            return "\n".join(lines)
+    if tarfile.is_tarfile(path):
+        with tarfile.open(path, 'r:*') as t:
+            members = t.getmembers()
+            total = sum(m.size for m in members if m.isfile())
+            lines = [
+                f"TAR archive: {path}",
+                f"  Compressed size: {size_mb:.2f} MB",
+                f"  Uncompressed:    {total/(1024*1024):.2f} MB",
+                f"  Entries:         {len(members)}",
+                "",
+                "Contents (first 50):",
+            ]
+            for m in members[:50]:
+                lines.append(f"  {m.name}  ({m.size:,} bytes)")
+            if len(members) > 50:
+                lines.append(f"  ... and {len(members)-50} more entries")
+            return "\n".join(lines)
+    return f"ERROR: {path} is not a recognised ZIP or TAR archive."
+
+
+def tool_checksum(path: str, algorithm: str = 'sha256') -> str:
+    """
+    Compute the checksum of a file.
+    algorithm: md5 | sha1 | sha256 | sha512
+    """
+    import hashlib
+    import pathlib
+    p = pathlib.Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    algo = algorithm.lower()
+    if algo not in ('md5', 'sha1', 'sha256', 'sha512'):
+        return f"ERROR: unsupported algorithm {algorithm!r}. Use md5|sha1|sha256|sha512."
+    h = hashlib.new(algo)
+    with open(p, 'rb') as f:
+        for chunk in iter(lambda: f.read(65536), b''):
+            h.update(chunk)
+    return f"{algo.upper()}({path}) = {h.hexdigest()}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AO — PIPE, STRING OPS, SLEEP, UUID, RANDOM, TIMESTAMP
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7384,6 +7533,52 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AP ──────────────────────────────────────────────────────────────
+    "bulk_rename": {
+        "fn": tool_bulk_rename,
+        "desc": "Rename files in a directory by regex pattern. dry_run=True previews.",
+        "params": {
+            "directory": {"type": "string", "description": "Directory containing files to rename"},
+            "pattern": {"type": "string", "description": "Regex pattern to match in filenames"},
+            "replacement": {"type": "string", "description": "Replacement string"},
+            "file_glob": {"type": "string", "description": "Glob filter (default '*')"},
+            "dry_run": {"type": "boolean", "description": "Preview without applying (default True)"},
+        },
+        "required": ["directory", "pattern", "replacement"],
+        "category": "files",
+    },
+    "folder_sync": {
+        "fn": tool_folder_sync,
+        "desc": "One-way sync files from src to dst. dry_run previews; delete removes extras.",
+        "params": {
+            "src": {"type": "string", "description": "Source directory"},
+            "dst": {"type": "string", "description": "Destination directory"},
+            "dry_run": {"type": "boolean", "description": "Preview without applying (default True)"},
+            "delete": {"type": "boolean", "description": "Delete files in dst not present in src"},
+        },
+        "required": ["src", "dst"],
+        "category": "files",
+    },
+    "archive_info": {
+        "fn": tool_archive_info,
+        "desc": "Show metadata and file listing for a ZIP or TAR archive.",
+        "params": {
+            "path": {"type": "string", "description": "Path to ZIP or TAR archive"},
+        },
+        "required": ["path"],
+        "category": "archives",
+    },
+    "checksum": {
+        "fn": tool_checksum,
+        "desc": "Compute the checksum of a file (md5|sha1|sha256|sha512).",
+        "params": {
+            "path": {"type": "string", "description": "File path"},
+            "algorithm": {"type": "string", "description": "md5|sha1|sha256|sha512"},
+        },
+        "required": ["path"],
+        "category": "files",
     },
 
     # ── Phase AO ──────────────────────────────────────────────────────────────
