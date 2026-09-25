@@ -1,22 +1,87 @@
 #!/usr/bin/env bash
 # Devin AGI 4.0 — Universal launcher
-# Always uses agent.py (the unified agentic CLI) — no TypeScript dependency.
+#
+# Usage:
+#   ./devin                      Interactive REPL via agent.py (default)
+#   ./devin "do something"       One-shot prompt via agent.py
+#   ./devin --main               Full module loader → agent.py REPL via main.py
+#   ./devin --status             Show loaded module status (via main.py)
+#   ./devin --provider claude    Use Claude as AI provider
+#   ./devin --provider hf        Use HuggingFace (free tier, default)
+#   ./devin --test               Run 130 core tests
+#   ./devin --voice              Start in voice mode
+#
+# Environment: API keys in .env (never in this script).
 
-set -e
+set -euo pipefail
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Load .env
+# ── Load .env (export all vars) ───────────────────────────────────────────────
 if [ -f .env ]; then
   set -a
+  # shellcheck disable=SC1091
   source .env 2>/dev/null || true
   set +a
 fi
 
-# Activate venv if present
-if [ -d venv/bin ]; then
-  source venv/bin/activate 2>/dev/null || true
+# ── Set DISPLAY default on Linux if not set ───────────────────────────────────
+if [ "$(uname -s)" = "Linux" ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
+  export DISPLAY=:0
 fi
 
-# Use agent.py as the primary entry point
-exec python3 agent.py "$@"
+# ── Activate virtualenv if present ───────────────────────────────────────────
+for _VENV in venv .venv env; do
+  if [ -d "$_VENV/bin/activate" ] || [ -f "$_VENV/bin/activate" ]; then
+    # shellcheck disable=SC1090
+    source "$_VENV/bin/activate" 2>/dev/null || true
+    break
+  fi
+done
+
+# ── Pick Python ───────────────────────────────────────────────────────────────
+_PYTHON="${PYTHON_CMD:-}"
+if [ -z "$_PYTHON" ]; then
+  for _py in python3.12 python3.11 python3.10 python3 python; do
+    if command -v "$_py" >/dev/null 2>&1; then
+      _PYTHON="$_py"
+      break
+    fi
+  done
+fi
+if [ -z "$_PYTHON" ]; then
+  echo "ERROR: Python 3 not found. Install Python 3.10+ first." >&2
+  exit 1
+fi
+
+# ── Route to the right entry point ───────────────────────────────────────────
+case "${1:-}" in
+  --main)
+    # Full module loader via main.py (loads ALL repo modules then launches REPL)
+    shift
+    exec "$_PYTHON" main.py "$@"
+    ;;
+  --status)
+    # Show module status
+    exec "$_PYTHON" main.py --status "$@"
+    ;;
+  --install-deps|--setup)
+    # Install Python dependencies
+    echo "Installing dependencies..."
+    "$_PYTHON" -m pip install --upgrade pip
+    if [ -f requirements.txt ]; then
+      "$_PYTHON" -m pip install -r requirements.txt
+    fi
+    echo "Done."
+    exit 0
+    ;;
+  --version|-V)
+    echo "Devin AGI v4.0.0"
+    exit 0
+    ;;
+  *)
+    # Default: agent.py (full REPL with 213+ tools, 5 AI providers)
+    exec "$_PYTHON" agent.py "$@"
+    ;;
+esac
