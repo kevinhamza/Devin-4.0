@@ -2,24 +2,33 @@
 # Devin AGI 4.0 — Universal launcher
 #
 # Usage:
-#   ./devin                      Interactive REPL via agent.py (default)
-#   ./devin "do something"       One-shot prompt via agent.py
-#   ./devin --main               Full module loader → agent.py REPL via main.py
-#   ./devin --status             Show loaded module status (via main.py)
-#   ./devin --caps               Capability summary per directory (via main.py)
-#   ./devin --provider claude    Use Claude as AI provider
-#   ./devin --provider hf        Use HuggingFace (free tier, default)
-#   ./devin --test               Run 130 core tests
-#   ./devin --voice              Start in voice mode
+#   ./devin                        Interactive REPL (full module load + agent)
+#   ./devin "do something"         One-shot prompt
+#   ./devin --voice                Start in voice command mode
+#   ./devin --provider hf          Use HuggingFace free tier (default)
+#   ./devin --provider claude      Use Claude API
+#   ./devin --provider gemini      Use Gemini API
+#   ./devin --provider openai      Use OpenAI API
+#   ./devin --provider ollama      Use local Ollama
+#   ./devin --provider free        Use free-claude-code fallback
+#   ./devin --test                 Run core test suite
+#   ./devin --status               Show module load status
+#   ./devin --caps                 Capability summary per directory
+#   ./devin --no-agent             Load modules only (no REPL)
+#   ./devin --setup                Install Python dependencies
+#   ./devin --version              Show version
+#   ./devin --help                 Show this help
 #
-# Environment: API keys in .env (never in this script).
+# Environment variables (set in .env, never here):
+#   HF_TOKEN, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+#   OLLAMA_BASE_URL, CLAUDE_SESSION_KEY, DEVIN_PROVIDER, DEVIN_MODEL
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Load .env (export all vars) ───────────────────────────────────────────────
+# ── Load .env (export all vars) ───────────────────────────────────────────────────────────
 if [ -f .env ]; then
   set -a
   # shellcheck disable=SC1091
@@ -27,66 +36,100 @@ if [ -f .env ]; then
   set +a
 fi
 
-# ── Set DISPLAY default on Linux if not set ───────────────────────────────────
+# ── Set DISPLAY default on Linux if not already set ────────────────────────────────
 if [ "$(uname -s)" = "Linux" ] && [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
   export DISPLAY=:0
 fi
 
-# ── Activate virtualenv if present ───────────────────────────────────────────
+# ── Activate virtualenv if present ─────────────────────────────────────────────────────
 for _VENV in venv .venv env; do
-  if [ -d "$_VENV/bin/activate" ] || [ -f "$_VENV/bin/activate" ]; then
+  if [ -f "$_VENV/bin/activate" ]; then
     # shellcheck disable=SC1090
     source "$_VENV/bin/activate" 2>/dev/null || true
     break
   fi
 done
 
-# ── Pick Python ───────────────────────────────────────────────────────────────
-_PYTHON="${PYTHON_CMD:-}"
-if [ -z "$_PYTHON" ]; then
-  for _py in python3.12 python3.11 python3.10 python3 python; do
+# ── Pick Python ──────────────────────────────────────────────────────────────────────────────
+PYTHON="${PYTHON_CMD:-}"
+if [ -z "$PYTHON" ]; then
+  for _py in python3.12 python3.11 python3.10 python3.9 python3 python; do
     if command -v "$_py" >/dev/null 2>&1; then
-      _PYTHON="$_py"
+      PYTHON="$_py"
       break
     fi
   done
 fi
-if [ -z "$_PYTHON" ]; then
-  echo "ERROR: Python 3 not found. Install Python 3.10+ first." >&2
+if [ -z "$PYTHON" ]; then
+  echo "ERROR: Python 3 not found. Install Python 3.9+ first." >&2
   exit 1
 fi
 
-# ── Route to the right entry point ───────────────────────────────────────────
+# ── Argument parsing ───────────────────────────────────────────────────────────────────────
 case "${1:-}" in
-  --main)
-    # Full module loader via main.py (loads ALL repo modules then launches REPL)
-    shift
-    exec "$_PYTHON" main.py "$@"
-    ;;
-  --status)
-    # Show module status
-    exec "$_PYTHON" main.py --status "$@"
-    ;;
-  --caps)
-    # Capability summary per directory
-    exec "$_PYTHON" main.py --caps "$@"
-    ;;
-  --install-deps|--setup)
-    # Install Python dependencies
-    echo "Installing dependencies..."
-    "$_PYTHON" -m pip install --upgrade pip
-    if [ -f requirements.txt ]; then
-      "$_PYTHON" -m pip install -r requirements.txt
-    fi
-    echo "Done."
+  --help|-h)
+    head -n 20 "$0" | grep '^#' | sed 's/^# \?//'
     exit 0
     ;;
+
   --version|-V)
     echo "Devin AGI v4.0.0"
     exit 0
     ;;
+
+  --setup|--install-deps)
+    echo "Installing dependencies..."
+    "$PYTHON" -m pip install --upgrade pip
+    if [ -f requirements.txt ]; then
+      "$PYTHON" -m pip install -r requirements.txt
+    fi
+    echo "Done."
+    exit 0
+    ;;
+
+  --test)
+    # Run core test suite directly via agent.py
+    exec "$PYTHON" agent.py --test "${@:2}"
+    ;;
+
+  --status)
+    exec "$PYTHON" main.py --status "${@:2}"
+    ;;
+
+  --caps)
+    exec "$PYTHON" main.py --caps "${@:2}"
+    ;;
+
+  --no-agent)
+    exec "$PYTHON" main.py --no-agent "${@:2}"
+    ;;
+
+  --voice)
+    # Voice mode: export flag, then full module load + agent REPL
+    export DEVIN_VOICE_MODE=1
+    exec "$PYTHON" main.py --voice "${@:2}"
+    ;;
+
+  --provider)
+    # Set provider and start REPL
+    if [ -z "${2:-}" ]; then
+      echo "ERROR: --provider requires an argument (claude|gemini|openai|hf|ollama|free)" >&2
+      exit 1
+    fi
+    export DEVIN_PROVIDER="$2"
+    exec "$PYTHON" main.py --provider "$2" "${@:3}"
+    ;;
+
+  --provider=*)
+    # --provider=hf style
+    PROV="${1#--provider=}"
+    export DEVIN_PROVIDER="$PROV"
+    exec "$PYTHON" main.py --provider "$PROV" "${@:2}"
+    ;;
+
   *)
-    # Default: agent.py (full REPL with 213+ tools, 5 AI providers)
-    exec "$_PYTHON" agent.py "$@"
+    # Default: full module load via main.py then agent.py REPL
+    # This ensures EVERY capability module is loaded for every session.
+    exec "$PYTHON" main.py "$@"
     ;;
 esac
