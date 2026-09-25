@@ -26,17 +26,18 @@
 | Y+Z   | Final compliance audit + phase status update | `3b5f52f9` | done |
 | post-Z | `--doctor` deep diagnostic CLI flag (8 sections, 5 self-checks) | `acd09aed` | done |
 | AA    | 6 workflow tools (multi_step, wait_for_condition, checkpoints), 46 tests | `862dda93` | done |
-| AB    | batch_execute (parallel), decompose_task, enhanced SYSTEM_PROMPT, 48 tests | this commit | done |
+| AB    | batch_execute (parallel), decompose_task, enhanced SYSTEM_PROMPT, 48 tests | `4f0b67b2` | done |
+| AC    | summarize_file, diff_files, search_in_files + smarter _compact_messages, 51 tests | this commit | done |
 
 ---
 
 ## Current Runtime Snapshot
 
-**agent.py:** ~6,830 lines, single-file Python entry point
-**Tools registered:** 144 across 25 categories (new: workflow)
+**agent.py:** ~7,120 lines, single-file Python entry point
+**Tools registered:** 146 across 25 categories (new: workflow, expanded files)
 **Modules loaded (this env):** 33/41 tracked, 53/91 discoverable
 **Providers:** 5 (Gemini, Claude, OpenAI, HuggingFace, Ollama)
-**Test suite:** 48/48 automated tests pass (via `./devin --test`)
+**Test suite:** 51/51 automated tests pass (via `./devin --test`)
 **Demo:** `tests/demo_workflow.py` — 11-step end-to-end health check
 **TypeScript:** `npx tsc --noEmit` — 0 errors across 38 .ts files
 
