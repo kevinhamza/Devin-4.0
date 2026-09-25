@@ -56,6 +56,7 @@ psutil
 watchdog
 pynput
 selenium
+playwright
 pyautogui
 mss
 pygetwindow; sys_platform != 'linux'
@@ -66,8 +67,10 @@ google-cloud-storage
 google-cloud-compute
 pywin32; sys_platform == 'win32'
 SpeechRecognition
+openai-whisper
 PyAudio
 pyttsx3
+gtts
 simpleaudio
 
 # --- Robotics ---
@@ -93,6 +96,7 @@ pure-python-adb
 dataclasses
 google-genai
 hf_xet
+GPUtil
 
 # --- Extended Capabilities (quantum, privacy, reality/XR, plugins, ops) ---
 # All of these are individually optional -- every facade in modules/*_tools.py
