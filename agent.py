@@ -3355,6 +3355,198 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AH — DATA & NETWORK: HTTP, HTML PARSE, JSON VALIDATE, CSV QUERY, TABLE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_http_request(url: str, method: str = 'GET', headers: str = '',
+                      body: str = '', timeout: int = 15) -> str:
+    """
+    Make an HTTP request (GET/POST/PUT/PATCH/DELETE) and return status + response body.
+    headers: JSON object string. body: request body string (use for POST/PUT).
+    """
+    import urllib.request, urllib.error
+    method = method.upper()
+    if method not in ('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD'):
+        return f"ERROR: unsupported method {method!r}"
+    try:
+        hdr = {}
+        if headers:
+            try:
+                hdr = json.loads(headers)
+            except json.JSONDecodeError as e:
+                return f"ERROR: invalid headers JSON: {e}"
+        data = body.encode() if body else None
+        req = urllib.request.Request(url, data=data, headers=hdr, method=method)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.getcode()
+            content = resp.read(32768).decode('utf-8', errors='replace')
+            ctype = resp.headers.get('Content-Type', '')
+            return f"HTTP {status} {method} {url}\nContent-Type: {ctype}\n\n{content[:4000]}"
+    except urllib.error.HTTPError as e:
+        body_err = e.read(2000).decode('utf-8', errors='replace')
+        return f"HTTP {e.code} {e.reason}\n{body_err[:2000]}"
+    except urllib.error.URLError as e:
+        return f"ERROR: {e.reason}"
+    except Exception as e:
+        return f"ERROR in http_request: {e}"
+
+
+def tool_parse_html(html: str, extract: str = 'text') -> str:
+    """
+    Parse an HTML string and extract: 'text' (readable text), 'links' (href URLs),
+    'headings' (h1-h6 text), 'all' (text + links + headings).
+    """
+    # Remove scripts and styles
+    clean = re.sub(r'<(script|style)[^>]*>.*?</(script|style)>', '', html, flags=re.DOTALL | re.I)
+    parts = {}
+    if extract in ('headings', 'all'):
+        headings = re.findall(r'<h[1-6][^>]*>(.*?)</h[1-6]>', clean, re.DOTALL | re.I)
+        parts['headings'] = [re.sub(r'<[^>]+>', '', h).strip() for h in headings[:20]]
+    if extract in ('links', 'all'):
+        links = re.findall(r'href=["\']([^"\']+)["\']', clean, re.I)
+        parts['links'] = links[:50]
+    if extract in ('text', 'all'):
+        text = re.sub(r'<[^>]+>', ' ', clean)
+        text = re.sub(r'&[a-z]+;', ' ', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        parts['text'] = text[:3000]
+    if not parts:
+        return f"ERROR: unknown extract mode {extract!r}. Use: text, links, headings, all"
+    result = []
+    for k, v in parts.items():
+        if isinstance(v, list):
+            result.append(f"[{k}] ({len(v)} items):")
+            result.extend(f"  {item}" for item in v[:20])
+        else:
+            result.append(f"[{k}]:\n{v}")
+    return "\n".join(result)
+
+
+def tool_validate_json(json_str: str, schema: str = '') -> str:
+    """
+    Validate a JSON string and return its structure summary.
+    If schema is a JSON object string, validate keys against it.
+    Also pretty-prints the JSON.
+    """
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        return f"INVALID JSON: {e}\n  At position {e.pos}: {json_str[max(0,e.pos-20):e.pos+20]!r}"
+    def describe(obj, depth=0):
+        if isinstance(obj, dict):
+            return f"object({len(obj)} keys: {', '.join(list(obj.keys())[:5])}{'...' if len(obj)>5 else ''})"
+        elif isinstance(obj, list):
+            if obj:
+                return f"array({len(obj)} items, first: {describe(obj[0], depth+1)})"
+            return "array(empty)"
+        return type(obj).__name__
+    summary = [f"Valid JSON — {describe(data)}"]
+    if schema:
+        try:
+            schema_obj = json.loads(schema)
+            if isinstance(schema_obj, dict) and isinstance(data, dict):
+                missing = [k for k in schema_obj if k not in data]
+                extra = [k for k in data if k not in schema_obj]
+                if missing:
+                    summary.append(f"Missing keys: {', '.join(missing)}")
+                if extra:
+                    summary.append(f"Extra keys: {', '.join(extra)}")
+                if not missing and not extra:
+                    summary.append("Schema match: all keys present")
+        except json.JSONDecodeError:
+            summary.append("WARNING: schema is not valid JSON — skipped validation")
+    pretty = json.dumps(data, indent=2, ensure_ascii=False)
+    if len(pretty) > 2000:
+        pretty = pretty[:2000] + "\n... (truncated)"
+    summary.append(pretty)
+    return "\n".join(summary)
+
+
+def tool_csv_query(csv_str: str, columns: str = '', filter_expr: str = '',
+                   max_rows: int = 50) -> str:
+    """
+    Query CSV data. columns: comma-separated column names to include.
+    filter_expr: Python expression using column name as variable (e.g. 'age > 30').
+    Returns matching rows as a compact table.
+    """
+    import csv, io
+    try:
+        reader = csv.DictReader(io.StringIO(csv_str.strip()))
+        rows = list(reader)
+        if not rows:
+            return "Empty CSV — no rows found"
+        headers = list(rows[0].keys())
+        # Column selection
+        sel_cols = [c.strip() for c in columns.split(',')] if columns else headers
+        invalid = [c for c in sel_cols if c not in headers]
+        if invalid:
+            return f"ERROR: unknown columns: {', '.join(invalid)}. Available: {', '.join(headers)}"
+        # Filter
+        filtered = []
+        for row in rows:
+            if not filter_expr:
+                filtered.append(row)
+                continue
+            try:
+                ctx = {k: (int(v) if v.isdigit() else (float(v) if re.match(r'^\d+\.\d+$', v) else v))
+                       for k, v in row.items()}
+                if eval(filter_expr, {"__builtins__": {}}, ctx):
+                    filtered.append(row)
+            except Exception:
+                filtered.append(row)
+        # Render
+        if not filtered:
+            return f"No rows matched filter: {filter_expr!r}"
+        result_rows = filtered[:max_rows]
+        widths = {c: max(len(c), max(len(str(r.get(c, ''))) for r in result_rows)) for c in sel_cols}
+        header_line = ' | '.join(c.ljust(widths[c]) for c in sel_cols)
+        sep = '-+-'.join('-' * widths[c] for c in sel_cols)
+        data_lines = [' | '.join(str(r.get(c, '')).ljust(widths[c]) for c in sel_cols) for r in result_rows]
+        summary = f"Rows: {len(filtered)}/{len(rows)}" + (f" (showing {max_rows})" if len(filtered) > max_rows else "")
+        return "\n".join([summary, header_line, sep] + data_lines)
+    except Exception as e:
+        return f"ERROR in csv_query: {e}"
+
+
+def tool_format_table(data: str, headers: str = '', separator: str = ',') -> str:
+    """
+    Format delimited data (CSV, TSV, or custom separator) as an ASCII table.
+    headers: comma-separated column headers if not in first row.
+    """
+    import io
+    try:
+        lines = [line.strip() for line in data.strip().splitlines() if line.strip()]
+        if not lines:
+            return "ERROR: no data provided"
+        sep = '\t' if separator == 'tab' else separator
+        parsed = [line.split(sep) for line in lines]
+        if headers:
+            cols = [h.strip() for h in headers.split(',')]
+            rows = parsed
+        else:
+            cols = [c.strip() for c in parsed[0]]
+            rows = parsed[1:]
+        if not rows:
+            return "ERROR: no data rows (only header found)"
+        # Normalize row lengths
+        n = len(cols)
+        rows = [r + [''] * (n - len(r)) for r in rows]
+        rows = [r[:n] for r in rows]
+        widths = [max(len(cols[i]), max(len(r[i]) for r in rows)) for i in range(n)]
+        def fmt_row(r):
+            return '│ ' + ' │ '.join(str(r[i]).ljust(widths[i]) for i in range(n)) + ' │'
+        top = '┌─' + '─┬─'.join('─' * w for w in widths) + '─┐'
+        hdr = fmt_row(cols)
+        mid = '├─' + '─┼─'.join('─' * w for w in widths) + '─┤'
+        bot = '└─' + '─┴─'.join('─' * w for w in widths) + '─┘'
+        lines_out = [top, hdr, mid] + [fmt_row(r) for r in rows] + [bot]
+        lines_out.append(f"({len(rows)} rows × {n} cols)")
+        return "\n".join(lines_out)
+    except Exception as e:
+        return f"ERROR in format_table: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AG — CODE ANALYSIS: EXPLAIN, REFACTOR, GENERATE TESTS, LINT, PROFILE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -5790,6 +5982,68 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["code"],
         "category": "code",
+    },
+
+    # ── Phase AH — Data & network tools ────────────────────────────────────────
+    "http_request": {
+        "fn": tool_http_request,
+        "desc": "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) and return status + response body.",
+        "params": {
+            "url": {"type": "string", "description": "URL to request"},
+            "method": {"type": "string", "description": "HTTP method (default GET)"},
+            "headers": {"type": "string", "description": "JSON object of request headers"},
+            "body": {"type": "string", "description": "Request body (for POST/PUT)"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 15)"},
+        },
+        "required": ["url"],
+        "category": "web",
+    },
+
+    "parse_html": {
+        "fn": tool_parse_html,
+        "desc": "Extract text, links, or headings from an HTML string.",
+        "params": {
+            "html": {"type": "string", "description": "HTML content to parse"},
+            "extract": {"type": "string", "description": "What to extract: text, links, headings, all (default 'text')"},
+        },
+        "required": ["html"],
+        "category": "web",
+    },
+
+    "validate_json": {
+        "fn": tool_validate_json,
+        "desc": "Validate a JSON string, describe its structure, and optionally check against a schema.",
+        "params": {
+            "json_str": {"type": "string", "description": "JSON string to validate"},
+            "schema": {"type": "string", "description": "Optional JSON schema object to check keys against"},
+        },
+        "required": ["json_str"],
+        "category": "data",
+    },
+
+    "csv_query": {
+        "fn": tool_csv_query,
+        "desc": "Query CSV data with column selection and filter expression.",
+        "params": {
+            "csv_str": {"type": "string", "description": "CSV content as string"},
+            "columns": {"type": "string", "description": "Comma-separated column names to include"},
+            "filter_expr": {"type": "string", "description": "Python filter expression (e.g. 'age > 30')"},
+            "max_rows": {"type": "integer", "description": "Max rows to return (default 50)"},
+        },
+        "required": ["csv_str"],
+        "category": "data",
+    },
+
+    "format_table": {
+        "fn": tool_format_table,
+        "desc": "Format delimited data (CSV, TSV) as a Unicode ASCII table.",
+        "params": {
+            "data": {"type": "string", "description": "Delimited data string"},
+            "headers": {"type": "string", "description": "Comma-separated column headers (if not in first row)"},
+            "separator": {"type": "string", "description": "Column separator: ',' (default), 'tab', or any char"},
+        },
+        "required": ["data"],
+        "category": "data",
     },
 }
 

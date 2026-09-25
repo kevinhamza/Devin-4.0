@@ -597,6 +597,51 @@ def t_generate_tests():
     assert 'import pytest' in r
 
 
+# ─── Phase AH: Data & network tools ──────────────────────────────────────────
+
+def t_ah_tools_registered():
+    for name in ('http_request', 'parse_html', 'validate_json', 'csv_query', 'format_table'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_validate_json():
+    r = _agent.tool_validate_json('{"name": "devin", "version": 4}')
+    assert 'Valid JSON' in r and 'name' in r, f"got: {r}"
+    r2 = _agent.tool_validate_json('{invalid}')
+    assert 'INVALID' in r2, f"should fail: {r2}"
+    # Schema check
+    r3 = _agent.tool_validate_json('{"a": 1, "b": 2}', '{"a": null, "c": null}')
+    assert 'Missing' in r3 and 'Extra' in r3, f"got: {r3}"
+
+
+def t_parse_html():
+    html = '<html><h1>Title</h1><p>Hello <b>world</b></p><a href="https://x.com">link</a></html>'
+    r = _agent.tool_parse_html(html, 'text')
+    assert 'Hello' in r and 'world' in r, f"got: {r}"
+    r2 = _agent.tool_parse_html(html, 'links')
+    assert 'https://x.com' in r2, f"got: {r2}"
+    r3 = _agent.tool_parse_html(html, 'headings')
+    assert 'Title' in r3, f"got: {r3}"
+
+
+def t_csv_query():
+    csv_data = "name,age,city\nAlice,30,NYC\nBob,25,LA\nCarol,35,NYC"
+    r = _agent.tool_csv_query(csv_data, 'name,age')
+    assert 'Alice' in r and 'age' in r, f"got: {r}"
+    r2 = _agent.tool_csv_query(csv_data, '', 'city == "NYC"')
+    assert 'Alice' in r2 and 'Carol' in r2 and 'Bob' not in r2, f"filter: {r2}"
+
+
+def t_format_table():
+    data = "name,score\nAlice,95\nBob,87"
+    r = _agent.tool_format_table(data)
+    assert '│' in r and 'Alice' in r and 'score' in r, f"got: {r}"
+    assert '2 rows' in r, f"row count: {r}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -721,6 +766,14 @@ def main():
     test("explain_code", t_explain_code)
     test("profile_code", t_profile_code)
     test("generate_tests stubs", t_generate_tests)
+
+    # Phase 15: Data & network tools (Phase AH)
+    print("\n── Phase 15: Data & Network Tools ──")
+    test("Phase AH tools registered", t_ah_tools_registered)
+    test("validate_json", t_validate_json)
+    test("parse_html", t_parse_html)
+    test("csv_query", t_csv_query)
+    test("format_table", t_format_table)
 
     # Summary
     total = PASS + FAIL + SKIP
