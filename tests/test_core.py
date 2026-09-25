@@ -408,6 +408,51 @@ def t_search_in_files():
     r = _agent.tool_search_in_files('def tool_', directory='.', file_glob='agent.py', max_results=5)
     assert 'def tool_' in r or 'matches' in r.lower()
 
+
+# ─── Phase AD: Process monitoring + env + JSON tools ─────────────────────────
+
+def t_tail_file():
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
+        f.write("line1\nline2\nline3\nline4\nline5\n")
+        fpath = f.name
+    try:
+        r = _agent.tool_tail_file(fpath, lines=3)
+        assert 'line3' in r or 'line4' in r or 'line5' in r, f"tail didn't show last lines: {r}"
+        assert 'line1' not in r.split('last 3 lines')[1] if 'last 3 lines' in r else True
+    finally:
+        os.unlink(fpath)
+
+
+def t_json_query():
+    data = '{"name": "Devin", "version": 4, "tools": [{"id": 1}, {"id": 2}]}'
+    assert _agent.tool_json_query(data, 'name') == 'Devin'
+    assert _agent.tool_json_query(data, 'version') == '4'
+    assert _agent.tool_json_query(data, 'tools[0].id') == '1'
+    # Bad key returns ERROR
+    r = _agent.tool_json_query(data, 'missing_key')
+    assert 'ERROR' in r or 'not found' in r
+
+
+def t_get_env():
+    # Should return PATH (almost always set)
+    r = _agent.tool_get_env('PATH')
+    assert 'PATH=' in r
+    # Secret keys should be redacted
+    import os as _os
+    _os.environ['TEST_SECRET_KEY_FOR_DEVIN'] = 'should_be_hidden'
+    r2 = _agent.tool_get_env('TEST_SECRET_KEY_FOR_DEVIN')
+    assert 'REDACTED' in r2, f"secret not redacted: {r2}"
+    del _os.environ['TEST_SECRET_KEY_FOR_DEVIN']
+
+
+def t_ad_tools_registered():
+    for name in ('monitor_process', 'tail_file', 'get_env', 'set_env', 'json_query'):
+        assert name in _agent.TOOLS, f"'{name}' not registered"
+        spec = _agent.TOOLS[name]
+        for key in ('fn', 'desc', 'params', 'required', 'category'):
+            assert key in spec, f"'{name}' missing key '{key}'"
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -502,6 +547,13 @@ def main():
     test("summarize_file", t_summarize_file)
     test("diff_files", t_diff_files)
     test("search_in_files", t_search_in_files)
+
+    # Phase 11: Process monitoring + env + JSON tools (Phase AD)
+    print("\n── Phase 11: System Monitoring & Data Tools ──")
+    test("Phase AD tools registered", t_ad_tools_registered)
+    test("tail_file last N lines", t_tail_file)
+    test("json_query dot-path", t_json_query)
+    test("get_env + secret redaction", t_get_env)
 
     # Summary
     total = PASS + FAIL + SKIP
