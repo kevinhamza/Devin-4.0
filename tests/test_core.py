@@ -829,6 +829,53 @@ def t_internet_check():
     assert 'latency' in r.lower() or 'connect' in r.lower() or 'down' in r.lower(), f"got: {r}"
 
 
+# ─── Phase AM: Calculate, list_tools, diff_json, parse_args ──────────────────
+
+def t_am_tools_registered():
+    for name in ('calculate', 'list_tools', 'diff_json', 'parse_args'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_calculate():
+    r = _agent.tool_calculate('2 + 2 * 3')
+    assert '8' in r, f"got: {r}"
+    r2 = _agent.tool_calculate('sqrt(16)')
+    assert '4' in r2, f"got: {r2}"
+    r3 = _agent.tool_calculate('pi * 2')
+    assert '6.28' in r3, f"got: {r3}"
+    r4 = _agent.tool_calculate('import os')
+    assert 'ERROR' in r4, f"should block: {r4}"
+
+
+def t_list_tools():
+    r = _agent.tool_list_tools()
+    assert 'Tools' in r and 'calculate' in r, f"got: {r[:200]}"
+    r2 = _agent.tool_list_tools(category='code')
+    assert 'code' in r2.lower(), f"got: {r2[:200]}"
+    r3 = _agent.tool_list_tools(search='git')
+    assert 'git_ops' in r3, f"got: {r3}"
+
+
+def t_diff_json():
+    a = '{"name": "Alice", "age": 30}'
+    b = '{"name": "Bob", "age": 30, "city": "NYC"}'
+    r = _agent.tool_diff_json(a, b)
+    assert 'CHANGED' in r and 'Alice' in r and 'ADDED' in r and 'city' in r, f"got: {r}"
+    r2 = _agent.tool_diff_json(a, a)
+    assert 'identical' in r2.lower(), f"got: {r2}"
+
+
+def t_parse_args():
+    r = _agent.tool_parse_args('--name Alice --age 30 positional_val')
+    data = json.loads(r.split('\n\n')[0])
+    assert data.get('name') == 'Alice', f"got: {r}"
+    assert data.get('age') == '30', f"got: {r}"
+    assert 'positional_val' in data.get('_positional', []), f"got: {r}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -992,6 +1039,14 @@ def main():
     test("code_review", t_code_review)
     test("convert_units", t_convert_units)
     test("internet_check", t_internet_check)
+
+    # Phase 20: Calculate, list_tools, diff_json, parse_args (Phase AM)
+    print("\n── Phase 20: Calculate, List Tools, Diff JSON ──")
+    test("Phase AM tools registered", t_am_tools_registered)
+    test("calculate (math eval)", t_calculate)
+    test("list_tools filter", t_list_tools)
+    test("diff_json", t_diff_json)
+    test("parse_args", t_parse_args)
 
     # Summary
     total = PASS + FAIL + SKIP

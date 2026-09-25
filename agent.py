@@ -3355,6 +3355,160 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AM — CALCULATE, LIST_TOOLS, PARSE_ARGS, DIFF_JSON
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_calculate(expression: str) -> str:
+    """
+    Safely evaluate a mathematical expression. Supports: +,-,*,/,**,//,%,
+    sqrt, abs, round, log, sin, cos, tan, pi, e, and basic Python math.
+    Does NOT allow function calls, imports, or arbitrary code execution.
+    """
+    import math
+    # Allowed names
+    allowed = {
+        'abs': abs, 'round': round, 'min': min, 'max': max,
+        'sqrt': math.sqrt, 'log': math.log, 'log2': math.log2, 'log10': math.log10,
+        'sin': math.sin, 'cos': math.cos, 'tan': math.tan,
+        'asin': math.asin, 'acos': math.acos, 'atan': math.atan, 'atan2': math.atan2,
+        'floor': math.floor, 'ceil': math.ceil, 'pow': math.pow,
+        'pi': math.pi, 'e': math.e, 'inf': math.inf, 'tau': math.tau,
+        'True': True, 'False': False,
+    }
+    # Safety: block anything looking like attribute access, imports, builtins
+    if re.search(r'\b(import|exec|eval|open|__|\bos\b|\bsys\b|\bsubprocess\b)', expression):
+        return f"ERROR: expression contains blocked keywords"
+    try:
+        result = eval(expression, {"__builtins__": {}}, allowed)
+        if isinstance(result, float):
+            return f"{expression} = {result:.10g}"
+        return f"{expression} = {result}"
+    except ZeroDivisionError:
+        return "ERROR: division by zero"
+    except (SyntaxError, NameError) as e:
+        return f"ERROR: {e}"
+    except Exception as e:
+        return f"ERROR evaluating expression: {e}"
+
+
+def tool_list_tools(category: str = '', search: str = '') -> str:
+    """
+    List all available Devin tools. Filter by category or search by name/description.
+    category: e.g. 'workflow', 'files', 'code', 'web', 'system', etc.
+    search: substring to find in tool name or description.
+    """
+    matching = {}
+    for name, info in TOOLS.items():
+        cat = info.get('category', 'unknown')
+        if category and cat.lower() != category.lower():
+            continue
+        if search and search.lower() not in name.lower() and search.lower() not in info.get('desc', '').lower():
+            continue
+        matching[name] = info
+    if not matching:
+        return f"No tools found" + (f" in category {category!r}" if category else "") + (f" matching {search!r}" if search else "")
+    # Group by category
+    by_cat: dict = {}
+    for name, info in matching.items():
+        cat = info.get('category', 'unknown')
+        by_cat.setdefault(cat, []).append((name, info.get('desc', '')))
+    lines = [f"Tools ({len(matching)} matching):"]
+    for cat in sorted(by_cat.keys()):
+        lines.append(f"\n[{cat}]")
+        for name, desc in sorted(by_cat[cat]):
+            short_desc = desc[:70] + '...' if len(desc) > 70 else desc
+            lines.append(f"  {name:<30} {short_desc}")
+    return "\n".join(lines)
+
+
+def tool_diff_json(json1: str, json2: str, path: str = '') -> str:
+    """
+    Diff two JSON values. Shows added, removed, and changed keys recursively.
+    path: optional initial path prefix for nested diffs.
+    """
+    try:
+        a = json.loads(json1)
+        b = json.loads(json2)
+    except json.JSONDecodeError as e:
+        return f"ERROR: invalid JSON: {e}"
+    diffs = []
+    def compare(x, y, p=''):
+        if type(x) != type(y):
+            diffs.append(f"  TYPE CHANGE at {p or '/'}: {type(x).__name__} → {type(y).__name__}")
+            return
+        if isinstance(x, dict):
+            all_keys = set(x) | set(y)
+            for k in sorted(all_keys):
+                pk = f"{p}.{k}" if p else k
+                if k not in x:
+                    diffs.append(f"  ADDED   {pk}: {json.dumps(y[k])[:80]}")
+                elif k not in y:
+                    diffs.append(f"  REMOVED {pk}: {json.dumps(x[k])[:80]}")
+                else:
+                    compare(x[k], y[k], pk)
+        elif isinstance(x, list):
+            if len(x) != len(y):
+                diffs.append(f"  LENGTH  {p or '/'}: {len(x)} → {len(y)}")
+            for i, (xi, yi) in enumerate(zip(x, y)):
+                compare(xi, yi, f"{p}[{i}]")
+        else:
+            if x != y:
+                diffs.append(f"  CHANGED {p or '/'}: {json.dumps(x)[:40]} → {json.dumps(y)[:40]}")
+    compare(a, b, path)
+    if not diffs:
+        return "JSON values are identical"
+    return f"JSON diff ({len(diffs)} difference(s)):\n" + "\n".join(diffs[:50])
+
+
+def tool_parse_args(args_string: str, spec: str = '') -> str:
+    """
+    Parse a command-line argument string into a structured dict.
+    spec: optional JSON schema {name: {type, default, help}} for validation.
+    Returns parsed args as JSON.
+    """
+    import shlex
+    try:
+        tokens = shlex.split(args_string)
+    except ValueError as e:
+        return f"ERROR: could not parse args: {e}"
+    parsed = {'_positional': [], '_flags': []}
+    i = 0
+    while i < len(tokens):
+        t = tokens[i]
+        if t.startswith('--'):
+            key = t[2:]
+            if i + 1 < len(tokens) and not tokens[i+1].startswith('-'):
+                parsed[key] = tokens[i+1]
+                i += 2
+            else:
+                parsed[key] = True
+                i += 1
+        elif t.startswith('-') and len(t) == 2:
+            parsed[t[1:]] = True
+            i += 1
+        else:
+            parsed['_positional'].append(t)
+            i += 1
+    # Validate against spec if given
+    validation = []
+    if spec:
+        try:
+            schema = json.loads(spec)
+            for name, meta in schema.items():
+                if name not in parsed and name not in parsed.get('_positional', []):
+                    if 'default' not in meta:
+                        validation.append(f"Missing required arg: {name!r}")
+                    else:
+                        parsed[name] = meta['default']
+        except json.JSONDecodeError:
+            validation.append("WARNING: spec is not valid JSON")
+    result = json.dumps(parsed, indent=2)
+    if validation:
+        result += "\n\nValidation:\n" + "\n".join(validation)
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AL — CODE REVIEW, WATCH FILE, UNIT CONVERT, INTERNET STATUS
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -6896,6 +7050,51 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": [],
         "category": "system",
+    },
+
+    # ── Phase AM — Calculate, list_tools, diff_json, parse_args ───────────────
+    "calculate": {
+        "fn": tool_calculate,
+        "desc": "Safely evaluate a math expression: +,-,*,/,**,sqrt,log,sin,cos,pi,e,etc.",
+        "params": {
+            "expression": {"type": "string", "description": "Math expression to evaluate"},
+        },
+        "required": ["expression"],
+        "category": "reasoning",
+    },
+
+    "list_tools": {
+        "fn": tool_list_tools,
+        "desc": "List all available tools, optionally filtered by category or search query.",
+        "params": {
+            "category": {"type": "string", "description": "Filter by category (e.g. 'workflow', 'files', 'code', 'web')"},
+            "search": {"type": "string", "description": "Search in tool name or description"},
+        },
+        "required": [],
+        "category": "reasoning",
+    },
+
+    "diff_json": {
+        "fn": tool_diff_json,
+        "desc": "Diff two JSON values and show added/removed/changed keys recursively.",
+        "params": {
+            "json1": {"type": "string", "description": "First JSON string"},
+            "json2": {"type": "string", "description": "Second JSON string"},
+            "path": {"type": "string", "description": "Optional initial path prefix"},
+        },
+        "required": ["json1", "json2"],
+        "category": "data",
+    },
+
+    "parse_args": {
+        "fn": tool_parse_args,
+        "desc": "Parse a command-line argument string into a structured JSON dict.",
+        "params": {
+            "args_string": {"type": "string", "description": "Argument string to parse"},
+            "spec": {"type": "string", "description": "Optional JSON schema for validation"},
+        },
+        "required": ["args_string"],
+        "category": "data",
     },
 }
 
