@@ -498,6 +498,72 @@ def t_zip_unzip_roundtrip():
         uzr = _agent.tool_unzip(zip_path, dest)
         assert 'Extracted' in uzr or 'file' in uzr.lower(), f"unzip failed: {uzr}"
 
+# ─── Phase AF: Dev workflow tools ────────────────────────────────────────────
+
+def t_af_tools_registered():
+    for name in ('find_and_replace', 'run_tests', 'git_ops', 'create_project'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_find_and_replace():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p = os.path.join(tmpdir, 'sample.py')
+        with open(p, 'w') as f:
+            f.write('x = old_value\ny = old_value\n')
+        r = _agent.tool_find_and_replace(tmpdir, 'old_value', 'new_value', '*.py')
+        assert 'new_value' in r or '2' in r, f"got: {r}"
+        assert open(p).read() == 'x = new_value\ny = new_value\n'
+
+
+def t_find_and_replace_dry_run():
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p = os.path.join(tmpdir, 'f.py')
+        with open(p, 'w') as f:
+            f.write('foo = 1\n')
+        r = _agent.tool_find_and_replace(tmpdir, 'foo', 'bar', '*.py', dry_run=True)
+        assert 'DRY RUN' in r or 'dry' in r.lower(), f"got: {r}"
+        assert open(p).read() == 'foo = 1\n', "dry run must not modify file"
+
+
+def t_git_ops():
+    r = _agent.tool_git_ops('status')
+    assert 'On branch' in r or 'nothing to commit' in r or 'branch' in r.lower(), f"got: {r}"
+    # Blocked ops
+    r2 = _agent.tool_git_ops('reset', '--hard HEAD')
+    assert 'not permitted' in r2.lower() or 'ERROR' in r2, f"should block: {r2}"
+
+
+def t_create_project():
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        r = _agent.tool_create_project('myapp', 'python', tmpdir)
+        assert 'myapp' in r and 'Created' in r
+        from pathlib import Path
+        assert (Path(tmpdir) / 'myapp' / 'main.py').exists()
+        assert (Path(tmpdir) / 'myapp' / 'README.md').exists()
+        # Duplicate should error
+        r2 = _agent.tool_create_project('myapp', 'python', tmpdir)
+        assert 'ERROR' in r2
+
+
+def t_run_tests():
+    # Run a small inline test file to verify the runner works
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix='_test.py', mode='w', delete=False) as f:
+        f.write('def test_always_pass():\n    assert 1 + 1 == 2\n')
+        tmp = f.name
+    try:
+        r = _agent.tool_run_tests(tmp, '', 15)
+        assert 'exit' in r.lower() or 'passed' in r.lower() or 'PASS' in r, f"got: {r}"
+    finally:
+        os.unlink(tmp)
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -606,6 +672,15 @@ def main():
     test("template_fill", t_template_fill)
     test("retry_on_failure", t_retry_on_failure)
     test("zip/unzip roundtrip", t_zip_unzip_roundtrip)
+
+    # Phase 13: Dev workflow tools (Phase AF)
+    print("\n── Phase 13: Dev Workflow Tools ──")
+    test("Phase AF tools registered", t_af_tools_registered)
+    test("find_and_replace", t_find_and_replace)
+    test("find_and_replace dry_run", t_find_and_replace_dry_run)
+    test("git_ops status + blocked ops", t_git_ops)
+    test("create_project scaffold", t_create_project)
+    test("run_tests", t_run_tests)
 
     # Summary
     total = PASS + FAIL + SKIP

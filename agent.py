@@ -3355,6 +3355,178 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AF — CODE GENERATION, PROJECT SCAFFOLD, FIND-REPLACE, TEST RUNNER, GIT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_find_and_replace(directory: str, pattern: str, replacement: str,
+                          file_glob: str = '*.py', dry_run: bool = False) -> str:
+    """
+    Find a regex pattern in files and replace it. Returns a summary of
+    changed files and number of replacements. Use dry_run=True to preview.
+    """
+    import glob as _glob
+    try:
+        base = Path(directory)
+        if not base.exists():
+            return f"ERROR: directory not found: {directory}"
+        pat = re.compile(pattern)
+        files_changed = []
+        total_replacements = 0
+        for filepath in base.rglob(file_glob):
+            if not filepath.is_file():
+                continue
+            try:
+                original = filepath.read_text(encoding='utf-8', errors='replace')
+            except Exception:
+                continue
+            new_text, count = pat.subn(replacement, original)
+            if count > 0:
+                files_changed.append((str(filepath), count))
+                total_replacements += count
+                if not dry_run:
+                    filepath.write_text(new_text, encoding='utf-8')
+        if not files_changed:
+            return f"No matches for pattern {pattern!r} in {directory}"
+        mode = "DRY RUN — " if dry_run else ""
+        lines = [f"{mode}Replaced {total_replacements} occurrence(s) in {len(files_changed)} file(s):"]
+        for fpath, cnt in files_changed[:20]:
+            lines.append(f"  {fpath}: {cnt} replacement(s)")
+        if len(files_changed) > 20:
+            lines.append(f"  ... and {len(files_changed) - 20} more")
+        return "\n".join(lines)
+    except re.error as e:
+        return f"ERROR: invalid regex pattern: {e}"
+    except Exception as e:
+        return f"ERROR in find_and_replace: {e}"
+
+
+def tool_run_tests(test_path: str = 'tests/', args: str = '', timeout: int = 60) -> str:
+    """
+    Run a test suite via pytest or python and parse the results.
+    Returns pass/fail/skip counts and any failure details.
+    """
+    import subprocess
+    try:
+        p = Path(test_path)
+        if not p.exists():
+            return f"ERROR: test path not found: {test_path}"
+        # Build command
+        if p.suffix == '.py':
+            cmd = ['python3', str(p)]
+        else:
+            cmd = ['python3', '-m', 'pytest', str(p), '-v', '--tb=short']
+        if args:
+            cmd.extend(args.split())
+        result = subprocess.run(
+            cmd, capture_output=True, text=True,
+            timeout=timeout, cwd=str(Path('.').resolve())
+        )
+        output = result.stdout + result.stderr
+        # Parse results
+        passed = len(re.findall(r'PASS|passed|✓', output))
+        failed = len(re.findall(r'FAIL|failed|✗', output))
+        skipped = len(re.findall(r'SKIP|skipped|⊘', output))
+        lines = [f"Exit code: {result.returncode}",
+                 f"Passed: {passed}  Failed: {failed}  Skipped: {skipped}",
+                 "─" * 40]
+        lines.append(output[-3000:] if len(output) > 3000 else output)
+        return "\n".join(lines)
+    except subprocess.TimeoutExpired:
+        return f"ERROR: tests timed out after {timeout}s"
+    except FileNotFoundError:
+        return "ERROR: python3/pytest not found"
+    except Exception as e:
+        return f"ERROR running tests: {e}"
+
+
+def tool_git_ops(operation: str, args: str = '', repo_path: str = '.') -> str:
+    """
+    Run a safe git operation in a repository. Supported operations:
+    status, log, diff, add, commit, push, pull, branch, stash, fetch.
+    Refuses destructive operations (reset --hard, push --force, clean -f).
+    """
+    import subprocess
+    SAFE_OPS = {'status', 'log', 'diff', 'add', 'commit', 'push', 'pull',
+                'branch', 'stash', 'fetch', 'show', 'remote', 'tag'}
+    op = operation.strip().lower()
+    if op not in SAFE_OPS:
+        return f"ERROR: operation {op!r} not permitted. Allowed: {', '.join(sorted(SAFE_OPS))}"
+    # Block destructive flags
+    BLOCKED = ('--force', '-f', '--hard', '--no-verify', '-D')
+    for b in BLOCKED:
+        if b in args:
+            return f"ERROR: flag {b!r} is not permitted for safety"
+    cmd = ['git', op] + (args.split() if args else [])
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30,
+            cwd=str(Path(repo_path).resolve())
+        )
+        out = (result.stdout + result.stderr).strip()
+        status = "OK" if result.returncode == 0 else f"exit {result.returncode}"
+        return f"git {op} [{status}]:\n{out[:3000]}" if out else f"git {op} [{status}]"
+    except subprocess.TimeoutExpired:
+        return f"ERROR: git {op} timed out"
+    except FileNotFoundError:
+        return "ERROR: git not found"
+    except Exception as e:
+        return f"ERROR in git_ops: {e}"
+
+
+def tool_create_project(name: str, project_type: str = 'python',
+                        base_dir: str = '.') -> str:
+    """
+    Scaffold a new project directory with standard structure.
+    Types: python, node, web, bash.
+    Creates: directory structure, README, .gitignore, entry point.
+    """
+    try:
+        base = Path(base_dir) / name
+        if base.exists():
+            return f"ERROR: directory already exists: {base}"
+        base.mkdir(parents=True)
+        created = [str(base)]
+
+        def write(rel: str, content: str):
+            p = base / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content)
+            created.append(str(p))
+
+        if project_type == 'python':
+            write('README.md', f'# {name}\n\nA Python project.\n')
+            write('.gitignore', '__pycache__/\n*.pyc\n.env\ndist/\nbuild/\n*.egg-info/\n')
+            write('main.py', f'#!/usr/bin/env python3\n"""Entry point for {name}."""\n\ndef main():\n    print("Hello from {name}!")\n\nif __name__ == "__main__":\n    main()\n')
+            write('requirements.txt', '# Add dependencies here\n')
+            write('tests/__init__.py', '')
+            write('tests/test_main.py', f'"""Tests for {name}."""\nfrom main import main\n\ndef test_main():\n    main()\n')
+        elif project_type == 'node':
+            write('README.md', f'# {name}\n\nA Node.js project.\n')
+            write('.gitignore', 'node_modules/\n.env\ndist/\n*.log\n')
+            write('package.json', json.dumps({"name": name, "version": "1.0.0", "main": "index.js", "scripts": {"start": "node index.js", "test": "node --test"}}, indent=2) + '\n')
+            write('index.js', f'// Entry point for {name}\nconsole.log("Hello from {name}!");\n')
+        elif project_type == 'web':
+            write('README.md', f'# {name}\n\nA web project.\n')
+            write('.gitignore', '.env\ndist/\nnode_modules/\n')
+            write('index.html', f'<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><title>{name}</title><link rel="stylesheet" href="style.css"></head>\n<body>\n<h1>{name}</h1>\n<script src="app.js"></script>\n</body>\n</html>\n')
+            write('style.css', 'body { font-family: sans-serif; margin: 2rem; }\n')
+            write('app.js', f'// {name} frontend\nconsole.log("{name} loaded");\n')
+        elif project_type == 'bash':
+            write('README.md', f'# {name}\n\nA shell script project.\n')
+            write('.gitignore', '*.log\n.env\n')
+            script = base / 'run.sh'
+            script.write_text(f'#!/bin/bash\n# {name}\nset -euo pipefail\necho "Running {name}..."\n')
+            script.chmod(0o755)
+            created.append(str(script))
+        else:
+            return f"ERROR: unknown project type {project_type!r}. Use: python, node, web, bash"
+
+        return f"Created {project_type} project '{name}' at {base}\nFiles:\n" + "\n".join(f"  {c}" for c in created)
+    except Exception as e:
+        return f"ERROR creating project: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AC — FILE SUMMARIZER + DIFF TOOL + CODE SEARCH
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -5369,6 +5541,57 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["archive_path"],
         "category": "files",
+    },
+
+    # ── Phase AF — Dev workflow tools ──────────────────────────────────────────
+    "find_and_replace": {
+        "fn": tool_find_and_replace,
+        "desc": "Find a regex pattern across files in a directory and replace it.",
+        "params": {
+            "directory": {"type": "string", "description": "Root directory to search"},
+            "pattern": {"type": "string", "description": "Regex pattern to find"},
+            "replacement": {"type": "string", "description": "Replacement string"},
+            "file_glob": {"type": "string", "description": "File glob pattern (default '*.py')"},
+            "dry_run": {"type": "boolean", "description": "Preview without writing (default false)"},
+        },
+        "required": ["directory", "pattern", "replacement"],
+        "category": "files",
+    },
+
+    "run_tests": {
+        "fn": tool_run_tests,
+        "desc": "Run a test suite via pytest or python and return pass/fail/skip summary.",
+        "params": {
+            "test_path": {"type": "string", "description": "Path to test file or directory (default 'tests/')"},
+            "args": {"type": "string", "description": "Extra arguments to pass"},
+            "timeout": {"type": "integer", "description": "Timeout in seconds (default 60)"},
+        },
+        "required": [],
+        "category": "workflow",
+    },
+
+    "git_ops": {
+        "fn": tool_git_ops,
+        "desc": "Run safe git operations: status, log, diff, add, commit, push, pull, branch, stash, fetch.",
+        "params": {
+            "operation": {"type": "string", "description": "Git operation (status/log/diff/add/commit/push/pull/branch/stash/fetch)"},
+            "args": {"type": "string", "description": "Arguments for the operation"},
+            "repo_path": {"type": "string", "description": "Repository path (default '.')"},
+        },
+        "required": ["operation"],
+        "category": "workflow",
+    },
+
+    "create_project": {
+        "fn": tool_create_project,
+        "desc": "Scaffold a new project directory (python/node/web/bash) with standard structure.",
+        "params": {
+            "name": {"type": "string", "description": "Project name (becomes directory name)"},
+            "project_type": {"type": "string", "description": "Type: python, node, web, bash (default 'python')"},
+            "base_dir": {"type": "string", "description": "Parent directory (default '.')"},
+        },
+        "required": ["name"],
+        "category": "workflow",
     },
 }
 
