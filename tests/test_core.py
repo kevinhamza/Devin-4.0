@@ -784,6 +784,51 @@ def t_memory_search():
     assert isinstance(r, str) and len(r) > 0, f"got: {r}"
 
 
+# ─── Phase AL: Code review, watch, convert, internet ─────────────────────────
+
+def t_al_tools_registered():
+    for name in ('code_review', 'watch_file', 'convert_units', 'internet_check'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_code_review():
+    import tempfile, os
+    code = ('def func():\n'
+            '    try:\n'
+            '        pass\n'
+            '    except:\n'
+            '        pass\n'
+            'password = "supersecret123"\n')
+    with tempfile.NamedTemporaryFile(suffix='.py', mode='w', delete=False) as f:
+        f.write(code)
+        tmp = f.name
+    try:
+        r = _agent.tool_code_review(tmp)
+        assert 'broad exception' in r.lower() or 'credential' in r.lower(), f"got: {r}"
+    finally:
+        os.unlink(tmp)
+
+
+def t_convert_units():
+    r = _agent.tool_convert_units(1.0, 'km', 'm')
+    assert '1000' in r, f"got: {r}"
+    r2 = _agent.tool_convert_units(100, 'c', 'f')
+    assert '212' in r2, f"got: {r2}"
+    r3 = _agent.tool_convert_units(1, 'gb', 'mb')
+    assert '1024' in r3, f"got: {r3}"
+    r4 = _agent.tool_convert_units(1, 'kg', 'lb')
+    assert '2.2' in r4 or 'lb' in r4, f"got: {r4}"
+
+
+def t_internet_check():
+    r = _agent.tool_internet_check()
+    # Either connected or not — both are valid results
+    assert 'latency' in r.lower() or 'connect' in r.lower() or 'down' in r.lower(), f"got: {r}"
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -940,6 +985,13 @@ def main():
     test("system_snapshot", t_system_snapshot)
     test("config_read + config_write", t_config_read_write)
     test("memory_search", t_memory_search)
+
+    # Phase 19: Code review, watch, convert, internet (Phase AL)
+    print("\n── Phase 19: Code Review, Units & Connectivity ──")
+    test("Phase AL tools registered", t_al_tools_registered)
+    test("code_review", t_code_review)
+    test("convert_units", t_convert_units)
+    test("internet_check", t_internet_check)
 
     # Summary
     total = PASS + FAIL + SKIP
