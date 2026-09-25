@@ -876,6 +876,36 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AS tests ──────────────────────────────────────────────────────────
+
+def t_as_tools_registered():
+    for name in ('symbol_search', 'find_dead_code', 'count_lines', 'ast_parse'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_symbol_search():
+    import tempfile, pathlib
+    with tempfile.TemporaryDirectory() as td:
+        pathlib.Path(td, 'mod.py').write_text('def my_func(): pass\nmy_func()')
+        r = _agent.tool_symbol_search(td, 'my_func')
+        assert 'my_func' in r, f"got: {r}"
+        assert '1' in r or '2' in r, f"got: {r}"
+
+def t_count_lines():
+    import tempfile, pathlib
+    with tempfile.TemporaryDirectory() as td:
+        pathlib.Path(td, 'a.py').write_text('x = 1\n# comment\n\ny = 2\n')
+        r = _agent.tool_count_lines(td)
+        assert 'TOTAL' in r, f"got: {r}"
+        assert 'Code' in r or 'CODE' in r or 'code' in r.lower(), f"got: {r}"
+
+def t_ast_parse_tool():
+    code = "import os\ndef foo(a, b): pass\nclass Bar: pass"
+    r = _agent.tool_ast_parse(code)
+    assert 'foo' in r, f"got: {r}"
+    assert 'Bar' in r, f"got: {r}"
+    assert 'os' in r, f"got: {r}"
+
+
 # ─── Phase AR tests ──────────────────────────────────────────────────────────
 
 def t_ar_tools_registered():
@@ -1243,30 +1273,37 @@ def main():
     test("task_complete", t_task_complete)
     test("format_output", t_format_output)
 
-    # Phase 22: Process control — list, spawn, info (Phase AR)
-    print("\n── Phase 22: Process Control Tools ──")
+    # Phase 22: Code intelligence — symbol search, dead code, count lines, AST (Phase AS)
+    print("\n── Phase 22: Code Intelligence Tools ──")
+    test("Phase AS tools registered", t_as_tools_registered)
+    test("symbol_search", t_symbol_search)
+    test("count_lines", t_count_lines)
+    test("ast_parse", t_ast_parse_tool)
+
+    # Phase 23: Process control — list, spawn, info (Phase AR)
+    print("\n── Phase 23: Process Control Tools ──")
     test("Phase AR tools registered", t_ar_tools_registered)
     test("list_processes", t_list_processes)
     test("spawn_process", t_spawn_process)
     test("process_info (self)", t_process_info_self)
 
-    # Phase 23: Network tools — ping, port_scan, dns_lookup, http_headers (Phase AQ)
-    print("\n── Phase 23: Network Tools ──")
+    # Phase 24: Network tools — ping, port_scan, dns_lookup, http_headers (Phase AQ)
+    print("\n── Phase 24: Network Tools ──")
     test("Phase AQ tools registered", t_aq_tools_registered)
     test("port_scan", t_port_scan)
     test("dns_lookup", t_dns_lookup)
     test("http_headers", t_http_headers_tool)
 
-    # Phase 24: Bulk rename, folder sync, archive info, checksum (Phase AP)
-    print("\n── Phase 24: File Management Tools ──")
+    # Phase 25: Bulk rename, folder sync, archive info, checksum (Phase AP)
+    print("\n── Phase 25: File Management Tools ──")
     test("Phase AP tools registered", t_ap_tools_registered)
     test("bulk_rename", t_bulk_rename)
     test("folder_sync", t_folder_sync)
     test("archive_info", t_archive_info)
     test("checksum", t_checksum)
 
-    # Phase 25: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
-    print("\n── Phase 25: Pipe, String Ops, Utilities ──")
+    # Phase 26: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
+    print("\n── Phase 26: Pipe, String Ops, Utilities ──")
     test("Phase AO tools registered", t_ao_tools_registered)
     test("pipe tool chain", t_pipe)
     test("string_ops", t_string_ops)
