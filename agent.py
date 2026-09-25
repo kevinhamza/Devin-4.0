@@ -3454,6 +3454,196 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AO — PIPE, STRING OPS, SLEEP, UUID, RANDOM, TIMESTAMP
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_pipe(steps: str) -> str:
+    """
+    Pipe the output of one tool into the next in a chain.
+    steps: JSON array of {tool, args} objects. Each tool's output is passed
+    as the first string argument of the next tool automatically, unless the
+    next step explicitly supplies that argument.
+    Returns the final output.
+    """
+    try:
+        chain = json.loads(steps)
+    except json.JSONDecodeError as e:
+        return f"ERROR: invalid steps JSON: {e}"
+    if not isinstance(chain, list) or not chain:
+        return "ERROR: steps must be a non-empty JSON array"
+    result = ''
+    for i, step in enumerate(chain):
+        name = step.get('tool', '')
+        args = dict(step.get('args', {}))
+        if not name:
+            return f"ERROR: step {i} missing 'tool' key"
+        if i > 0 and result:
+            # Inject previous output as first required param if not already set
+            tool_entry = TOOLS.get(name, {})
+            req = tool_entry.get('required', [])
+            if req and req[0] not in args:
+                args[req[0]] = result
+        result = _dispatch_tool(name, args)
+        if result.startswith('ERROR:'):
+            return f"ERROR at step {i} ({name}): {result}"
+    return result
+
+
+def tool_string_ops(text: str, operation: str, arg: str = '') -> str:
+    """
+    Common string operations.
+    operation: upper | lower | title | strip | reverse | split | join |
+               replace | startswith | endswith | count | pad_left | pad_right |
+               repeat | truncate | slugify
+    arg: second argument where needed (delimiter for split/join, pattern for
+         replace/count, width for pad, times for repeat, max_len for truncate).
+    """
+    op = operation.lower()
+    if op == 'upper':       return text.upper()
+    if op == 'lower':       return text.lower()
+    if op == 'title':       return text.title()
+    if op == 'strip':       return text.strip(arg or None)
+    if op == 'reverse':     return text[::-1]
+    if op == 'split':
+        parts = text.split(arg) if arg else text.split()
+        return json.dumps(parts)
+    if op == 'join':
+        try:
+            parts = json.loads(text)
+            return (arg or '').join(str(p) for p in parts)
+        except json.JSONDecodeError:
+            return f"ERROR: text must be a JSON array for join"
+    if op == 'replace':
+        parts = arg.split('|||', 1)
+        if len(parts) != 2:
+            return "ERROR: arg must be 'old|||new' for replace"
+        return text.replace(parts[0], parts[1])
+    if op == 'startswith':  return str(text.startswith(arg))
+    if op == 'endswith':    return str(text.endswith(arg))
+    if op == 'count':       return str(text.count(arg)) if arg else str(len(text))
+    if op == 'pad_left':
+        try: return text.rjust(int(arg))
+        except ValueError: return "ERROR: arg must be an integer width"
+    if op == 'pad_right':
+        try: return text.ljust(int(arg))
+        except ValueError: return "ERROR: arg must be an integer width"
+    if op == 'repeat':
+        try: return text * int(arg)
+        except ValueError: return "ERROR: arg must be an integer count"
+    if op == 'truncate':
+        try:
+            n = int(arg) if arg else 80
+            return text[:n] + ('…' if len(text) > n else '')
+        except ValueError: return "ERROR: arg must be an integer max length"
+    if op == 'slugify':
+        import re as _re
+        slug = text.lower().strip()
+        slug = _re.sub(r'[^\w\s-]', '', slug)
+        slug = _re.sub(r'[\s_-]+', '-', slug)
+        slug = slug.strip('-')
+        return slug
+    return f"ERROR: unknown operation {operation!r}. Valid: upper|lower|title|strip|reverse|split|join|replace|startswith|endswith|count|pad_left|pad_right|repeat|truncate|slugify"
+
+
+def tool_sleep(seconds: float) -> str:
+    """
+    Pause execution for the given number of seconds (max 60).
+    Useful between retries or rate-limited operations.
+    """
+    import time
+    if seconds < 0:
+        return "ERROR: seconds must be non-negative"
+    secs = min(float(seconds), 60.0)
+    time.sleep(secs)
+    return f"Slept {secs:.2f} seconds."
+
+
+def tool_generate_uuid(version: int = 4, namespace: str = '', name: str = '') -> str:
+    """
+    Generate a UUID.
+    version: 1 (time-based), 3 (MD5 namespace), 4 (random), 5 (SHA1 namespace).
+    namespace / name: required for v3 and v5 (namespace is a UUID string or
+    one of dns|url|oid|x500).
+    """
+    import uuid
+    ns_map = {'dns': uuid.NAMESPACE_DNS, 'url': uuid.NAMESPACE_URL,
+              'oid': uuid.NAMESPACE_OID, 'x500': uuid.NAMESPACE_X500}
+    if version == 1:
+        return str(uuid.uuid1())
+    if version == 4:
+        return str(uuid.uuid4())
+    if version in (3, 5):
+        if not namespace or not name:
+            return "ERROR: namespace and name are required for UUID v3/v5"
+        ns = ns_map.get(namespace.lower())
+        if ns is None:
+            try:
+                ns = uuid.UUID(namespace)
+            except ValueError:
+                return f"ERROR: invalid namespace {namespace!r}"
+        return str(uuid.uuid3(ns, name) if version == 3 else uuid.uuid5(ns, name))
+    return f"ERROR: unsupported UUID version {version}. Use 1, 3, 4, or 5."
+
+
+def tool_random_value(type: str = 'int', min: float = 0, max: float = 100,
+                      length: int = 16, choices: str = '') -> str:
+    """
+    Generate a random value.
+    type: int | float | string | choice | shuffle
+    min/max: range for int/float.
+    length: character count for string.
+    choices: JSON array for choice/shuffle.
+    """
+    import random, string as _string
+    t = type.lower()
+    if t == 'int':
+        return str(random.randint(int(min), int(max)))
+    if t == 'float':
+        return str(round(random.uniform(float(min), float(max)), 6))
+    if t == 'string':
+        alphabet = _string.ascii_letters + _string.digits
+        return ''.join(random.choices(alphabet, k=int(length)))
+    if t in ('choice', 'shuffle'):
+        if not choices:
+            return "ERROR: choices is required for type choice/shuffle"
+        try:
+            items = json.loads(choices)
+        except json.JSONDecodeError:
+            items = [c.strip() for c in choices.split(',')]
+        if t == 'choice':
+            return str(random.choice(items))
+        random.shuffle(items)
+        return json.dumps(items)
+    return f"ERROR: unknown type {type!r}. Use int|float|string|choice|shuffle."
+
+
+def tool_timestamp(format: str = 'iso', timezone: str = 'utc', offset_seconds: int = 0) -> str:
+    """
+    Return the current timestamp or a calculated offset.
+    format: iso | unix | human | date | time | rfc2822
+    timezone: utc | local
+    offset_seconds: add/subtract seconds from now (e.g. -3600 for 1 hour ago).
+    """
+    import datetime as _dt
+    if timezone.lower() == 'utc':
+        now = _dt.datetime.now(_dt.timezone.utc)
+    else:
+        now = _dt.datetime.now()
+    if offset_seconds:
+        now = now + _dt.timedelta(seconds=int(offset_seconds))
+    fmt = format.lower()
+    if fmt == 'iso':       return now.isoformat()
+    if fmt == 'unix':      return str(int(now.timestamp()))
+    if fmt == 'human':     return now.strftime('%B %d, %Y %H:%M:%S %Z')
+    if fmt == 'date':      return now.strftime('%Y-%m-%d')
+    if fmt == 'time':      return now.strftime('%H:%M:%S')
+    if fmt == 'rfc2822':
+        from email.utils import format_datetime
+        return format_datetime(now)
+    return f"ERROR: unknown format {format!r}. Use iso|unix|human|date|time|rfc2822."
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AM — CALCULATE, LIST_TOOLS, PARSE_ARGS, DIFF_JSON
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7193,6 +7383,72 @@ TOOLS: Dict[str, Dict] = {
             "spec": {"type": "string", "description": "Optional JSON schema for validation"},
         },
         "required": ["args_string"],
+        "category": "data",
+    },
+
+    # ── Phase AO ──────────────────────────────────────────────────────────────
+    "pipe": {
+        "fn": tool_pipe,
+        "desc": "Chain tool calls: output of each step feeds into the next.",
+        "params": {
+            "steps": {"type": "string", "description": "JSON array of {tool, args} objects"},
+        },
+        "required": ["steps"],
+        "category": "workflow",
+    },
+    "string_ops": {
+        "fn": tool_string_ops,
+        "desc": "Common string operations: upper/lower/title/strip/reverse/split/join/replace/pad/repeat/truncate/slugify.",
+        "params": {
+            "text": {"type": "string", "description": "Input text"},
+            "operation": {"type": "string", "description": "Operation name"},
+            "arg": {"type": "string", "description": "Optional second argument"},
+        },
+        "required": ["text", "operation"],
+        "category": "data",
+    },
+    "sleep": {
+        "fn": tool_sleep,
+        "desc": "Pause execution for N seconds (max 60). Useful between retries.",
+        "params": {
+            "seconds": {"type": "number", "description": "Seconds to sleep (0–60)"},
+        },
+        "required": ["seconds"],
+        "category": "system",
+    },
+    "generate_uuid": {
+        "fn": tool_generate_uuid,
+        "desc": "Generate a UUID (versions 1, 3, 4, 5).",
+        "params": {
+            "version": {"type": "integer", "description": "UUID version: 1|3|4|5"},
+            "namespace": {"type": "string", "description": "Namespace for v3/v5"},
+            "name": {"type": "string", "description": "Name for v3/v5"},
+        },
+        "required": [],
+        "category": "data",
+    },
+    "random_value": {
+        "fn": tool_random_value,
+        "desc": "Generate a random int, float, string, or pick/shuffle from a list.",
+        "params": {
+            "type": {"type": "string", "description": "int | float | string | choice | shuffle"},
+            "min": {"type": "number", "description": "Minimum value (int/float)"},
+            "max": {"type": "number", "description": "Maximum value (int/float)"},
+            "length": {"type": "integer", "description": "Character count for string type"},
+            "choices": {"type": "string", "description": "JSON array for choice/shuffle"},
+        },
+        "required": [],
+        "category": "data",
+    },
+    "timestamp": {
+        "fn": tool_timestamp,
+        "desc": "Return the current timestamp in iso/unix/human/date/time/rfc2822 format.",
+        "params": {
+            "format": {"type": "string", "description": "iso | unix | human | date | time | rfc2822"},
+            "timezone": {"type": "string", "description": "utc | local"},
+            "offset_seconds": {"type": "integer", "description": "Add/subtract seconds from now"},
+        },
+        "required": [],
         "category": "data",
     },
 
