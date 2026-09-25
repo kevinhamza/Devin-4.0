@@ -3454,6 +3454,128 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AQ — NETWORK: PING, PORT SCAN, DNS LOOKUP, HTTP HEADERS, IP INFO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_ping(host: str, count: int = 4, timeout: int = 5) -> str:
+    """
+    Ping a host and report packet loss + round-trip times.
+    Uses the system ping command. count: number of packets (1–20).
+    """
+    import subprocess, shutil
+    count = max(1, min(int(count), 20))
+    if not shutil.which('ping'):
+        return "ERROR: 'ping' command not found on this system"
+    try:
+        if _IS_WIN:
+            cmd = ['ping', '-n', str(count), '-w', str(timeout * 1000), host]
+        else:
+            cmd = ['ping', '-c', str(count), '-W', str(timeout), host]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout * count + 5)
+        out = result.stdout + result.stderr
+        return out.strip() if out.strip() else f"No output from ping {host}"
+    except subprocess.TimeoutExpired:
+        return f"ERROR: ping {host} timed out after {timeout * count + 5}s"
+    except Exception as e:
+        return f"ERROR: ping failed: {e}"
+
+
+def tool_port_scan(host: str, ports: str = '22,80,443,8080,8443', timeout: float = 1.0) -> str:
+    """
+    Check which TCP ports are open on a host.
+    ports: comma-separated list or range like '80-90'. Max 50 ports.
+    """
+    import socket
+    port_list = []
+    for part in ports.split(','):
+        part = part.strip()
+        if '-' in part:
+            lo, hi = part.split('-', 1)
+            port_list.extend(range(int(lo), int(hi) + 1))
+        else:
+            port_list.append(int(part))
+    port_list = list(dict.fromkeys(port_list))[:50]  # deduplicate, cap at 50
+    results = []
+    for p in sorted(port_list):
+        try:
+            with socket.create_connection((host, p), timeout=float(timeout)):
+                results.append(f"  {p:5d}/tcp  OPEN")
+        except (socket.timeout, ConnectionRefusedError, OSError):
+            results.append(f"  {p:5d}/tcp  closed")
+    if not results:
+        return "No ports to scan"
+    return f"Port scan {host} ({len(port_list)} ports):\n" + "\n".join(results)
+
+
+def tool_dns_lookup(hostname: str, record_type: str = 'A') -> str:
+    """
+    Perform a DNS lookup.
+    record_type: A | AAAA | MX | TXT | NS | CNAME | PTR
+    Uses the system 'dig' or 'nslookup', falling back to Python socket.
+    """
+    import subprocess, shutil, socket
+    rt = record_type.upper()
+    if shutil.which('dig'):
+        try:
+            result = subprocess.run(
+                ['dig', '+short', rt, hostname],
+                capture_output=True, text=True, timeout=10)
+            out = result.stdout.strip()
+            return f"DNS {rt} {hostname}:\n{out}" if out else f"No {rt} records found for {hostname}"
+        except Exception:
+            pass
+    # Python fallback (A only)
+    if rt == 'A':
+        try:
+            addrs = socket.getaddrinfo(hostname, None, socket.AF_INET)
+            ips = list(dict.fromkeys(a[4][0] for a in addrs))
+            return f"DNS A {hostname}:\n" + "\n".join(ips)
+        except socket.gaierror as e:
+            return f"ERROR: DNS lookup failed: {e}"
+    return f"ERROR: 'dig' not available and Python socket only supports A records."
+
+
+def tool_http_headers(url: str, timeout: int = 10) -> str:
+    """
+    Fetch only the HTTP response headers from a URL (HEAD request).
+    Returns status code + all response headers.
+    """
+    try:
+        import urllib.request
+        req = urllib.request.Request(url, method='HEAD')
+        req.add_header('User-Agent', 'Devin-AGI/4.0')
+        with urllib.request.urlopen(req, timeout=int(timeout)) as resp:
+            lines = [f"HTTP {resp.status} {resp.reason}"]
+            for k, v in resp.headers.items():
+                lines.append(f"  {k}: {v}")
+            return "\n".join(lines)
+    except Exception as e:
+        return f"ERROR fetching headers from {url}: {e}"
+
+
+def tool_whois_ip(ip_or_host: str) -> str:
+    """
+    Get basic IP geolocation / ASN info from ip-api.com (no API key required).
+    Returns country, region, city, ISP, ASN for any public IP or hostname.
+    """
+    import urllib.request, json as _json
+    try:
+        url = f"http://ip-api.com/json/{ip_or_host}?fields=status,message,country,regionName,city,isp,org,as,query"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Devin-AGI/4.0'})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = _json.loads(resp.read())
+        if data.get('status') != 'success':
+            return f"ERROR: ip-api returned: {data.get('message', 'unknown error')}"
+        lines = [f"IP info for {data.get('query', ip_or_host)}:"]
+        for key in ('country', 'regionName', 'city', 'isp', 'org', 'as'):
+            if data.get(key):
+                lines.append(f"  {key:12s}: {data[key]}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"ERROR: whois_ip failed: {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AP — FILE WATCHER LOOP, BULK RENAME, FOLDER SYNC, ARCHIVE INFO
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7533,6 +7655,59 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AQ ──────────────────────────────────────────────────────────────
+    "ping": {
+        "fn": tool_ping,
+        "desc": "Ping a host and report packet loss and round-trip times.",
+        "params": {
+            "host": {"type": "string", "description": "Hostname or IP to ping"},
+            "count": {"type": "integer", "description": "Number of packets (1–20)"},
+            "timeout": {"type": "integer", "description": "Timeout per packet in seconds"},
+        },
+        "required": ["host"],
+        "category": "web",
+    },
+    "port_scan": {
+        "fn": tool_port_scan,
+        "desc": "Check which TCP ports are open on a host (max 50 ports).",
+        "params": {
+            "host": {"type": "string", "description": "Hostname or IP to scan"},
+            "ports": {"type": "string", "description": "Comma-separated ports or range like '80-90'"},
+            "timeout": {"type": "number", "description": "Seconds per port (default 1.0)"},
+        },
+        "required": ["host"],
+        "category": "web",
+    },
+    "dns_lookup": {
+        "fn": tool_dns_lookup,
+        "desc": "Perform a DNS lookup (A/AAAA/MX/TXT/NS/CNAME/PTR).",
+        "params": {
+            "hostname": {"type": "string", "description": "Hostname to look up"},
+            "record_type": {"type": "string", "description": "A | AAAA | MX | TXT | NS | CNAME | PTR"},
+        },
+        "required": ["hostname"],
+        "category": "web",
+    },
+    "http_headers": {
+        "fn": tool_http_headers,
+        "desc": "Fetch HTTP response headers from a URL (HEAD request).",
+        "params": {
+            "url": {"type": "string", "description": "URL to inspect"},
+            "timeout": {"type": "integer", "description": "Request timeout in seconds"},
+        },
+        "required": ["url"],
+        "category": "web",
+    },
+    "whois_ip": {
+        "fn": tool_whois_ip,
+        "desc": "Get IP geolocation and ASN info for an IP address or hostname.",
+        "params": {
+            "ip_or_host": {"type": "string", "description": "IP address or hostname"},
+        },
+        "required": ["ip_or_host"],
+        "category": "web",
     },
 
     # ── Phase AP ──────────────────────────────────────────────────────────────

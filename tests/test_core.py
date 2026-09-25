@@ -876,6 +876,31 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AQ tests ──────────────────────────────────────────────────────────
+
+def t_aq_tools_registered():
+    for name in ('ping', 'port_scan', 'dns_lookup', 'http_headers', 'whois_ip'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_port_scan():
+    # localhost port 22 might be open or closed, but the function must return structured output
+    r = _agent.tool_port_scan('127.0.0.1', '22,65432', timeout=0.3)
+    assert 'Port scan' in r, f"got: {r}"
+    assert '/tcp' in r, f"got: {r}"
+
+def t_dns_lookup():
+    # Only test that the function returns without crashing; network may be restricted
+    r = _agent.tool_dns_lookup('localhost', 'A')
+    # Either returns an IP or an error — just not a Python exception
+    assert isinstance(r, str), f"got: {r}"
+
+def t_http_headers_tool():
+    # Test against a known endpoint that's likely accessible
+    r = _agent.tool_http_headers('http://ip-api.com/json/8.8.8.8?fields=status', timeout=5)
+    # Should return HTTP status line or an error string — must be a string
+    assert isinstance(r, str) and len(r) > 0, f"got: {r}"
+
+
 # ─── Phase AP tests ──────────────────────────────────────────────────────────
 
 def t_ap_tools_registered():
@@ -1195,16 +1220,23 @@ def main():
     test("task_complete", t_task_complete)
     test("format_output", t_format_output)
 
-    # Phase 22: Bulk rename, folder sync, archive info, checksum (Phase AP)
-    print("\n── Phase 22: File Management Tools ──")
+    # Phase 22: Network tools — ping, port_scan, dns_lookup, http_headers (Phase AQ)
+    print("\n── Phase 22: Network Tools ──")
+    test("Phase AQ tools registered", t_aq_tools_registered)
+    test("port_scan", t_port_scan)
+    test("dns_lookup", t_dns_lookup)
+    test("http_headers", t_http_headers_tool)
+
+    # Phase 23: Bulk rename, folder sync, archive info, checksum (Phase AP)
+    print("\n── Phase 23: File Management Tools ──")
     test("Phase AP tools registered", t_ap_tools_registered)
     test("bulk_rename", t_bulk_rename)
     test("folder_sync", t_folder_sync)
     test("archive_info", t_archive_info)
     test("checksum", t_checksum)
 
-    # Phase 23: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
-    print("\n── Phase 23: Pipe, String Ops, Utilities ──")
+    # Phase 24: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
+    print("\n── Phase 24: Pipe, String Ops, Utilities ──")
     test("Phase AO tools registered", t_ao_tools_registered)
     test("pipe tool chain", t_pipe)
     test("string_ops", t_string_ops)
