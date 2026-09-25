@@ -80,11 +80,12 @@ except ImportError:
 # ── Gemini REST API ───────────────────────────────────────────────────────────
 _GEMINI_REST_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 _GEMINI_MODELS = [
-    "gemini-2.5-flash",      # primary — current fast model (Jan 2026)
-    "gemini-2.5-pro",        # higher-quality fallback
-    "gemini-2.0-flash",      # older-gen fallback
-    "gemini-flash-latest",   # latest alias
+    "gemini-3.6-flash",      # primary — latest flash model (2025)
+    "gemini-2.5-flash",      # previous flash
+    "gemini-2.5-pro",        # pro fallback
+    "gemini-2.0-flash",      # previous gen flash
     "gemini-1.5-flash",      # legacy fallback
+    "gemini-1.5-pro",        # legacy pro fallback
 ]
 HAS_GEMINI = bool(GEMINI_API_KEY)
 
@@ -105,54 +106,17 @@ try:
 except Exception:
     HAS_ANTHROPIC = False
 
-# ── Hugging Face (free-tier fallback) ─────────────────────────────────────────
-# Load hf_provider defensively: main.py hand-loads modules.integrations via
-# importlib.util which can interfere with normal `from modules.x import` — so we
-# try the package path first, then a direct file load, then give up.
-_hf_chat = None
-HAS_HF = False
-try:
-    from modules.hf_provider import chat as _hf_chat, has_hf_token as _hf_has_token
-    HAS_HF = _hf_has_token()
-except Exception:
-    try:
-        _hf_path = _ROOT / "modules" / "hf_provider.py"
-        _hf_spec = _ilu.spec_from_file_location("modules.hf_provider", str(_hf_path))
-        _hf_mod = _ilu.module_from_spec(_hf_spec)  # type: ignore
-        _hf_spec.loader.exec_module(_hf_mod)  # type: ignore
-        sys.modules["modules.hf_provider"] = _hf_mod
-        _hf_chat = _hf_mod.chat
-        HAS_HF = _hf_mod.has_hf_token()
-    except Exception:
-        if os.getenv("DEVIN_DEBUG"):
-            import traceback; traceback.print_exc()
-        _hf_chat = None
-        HAS_HF = False
-
 # ── Memory ────────────────────────────────────────────────────────────────────
 _MEMORY_FILE = _ROOT / "data" / "memory.json"
 _MEMORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
 def _load_memory() -> Dict:
-    """Load facts/history dict from data/memory.json. Older Devin versions and
-    the persistent_memory module use different formats (a bare list of history
-    entries); when we see one of those we migrate it in-memory rather than
-    crashing."""
-    default = {"facts": [], "history": []}
-    if not _MEMORY_FILE.exists():
-        return default
-    try:
-        raw = json.loads(_MEMORY_FILE.read_text())
-    except Exception:
-        return default
-    if isinstance(raw, dict):
-        raw.setdefault("facts", [])
-        raw.setdefault("history", [])
-        return raw
-    if isinstance(raw, list):
-        # Treat legacy list-shaped file as pure history; no facts recorded.
-        return {"facts": [], "history": raw}
-    return default
+    if _MEMORY_FILE.exists():
+        try:
+            return json.loads(_MEMORY_FILE.read_text())
+        except Exception:
+            pass
+    return {"facts": [], "history": []}
 
 def _save_memory(mem: Dict):
     _MEMORY_FILE.write_text(json.dumps(mem, indent=2))
@@ -172,12 +136,8 @@ def recall(query: str = "") -> str:
     matches = [f["fact"] for f in facts if q in f["fact"].lower()]
     return "\n".join(matches[-10:]) or "No matching memories."
 
-# ── Voice / permission / verbosity mode flags ────────────────────────────────
+# ── Voice mode ────────────────────────────────────────────────────────────────
 VOICE_MODE = False
-# permission_mode: 'default' (confirm dangerous), 'auto' (auto-approve), or
-# 'plan' (describe actions but don't run any tools).
-PERMISSION_MODE = os.environ.get("DEVIN_PERMISSION_MODE", "auto")
-VERBOSE = bool(os.environ.get("DEVIN_VERBOSE") or os.environ.get("DEVIN_DEBUG"))
 
 # ── Print helpers ─────────────────────────────────────────────────────────────
 IS_TTY = sys.stdout.isatty()
@@ -237,7 +197,7 @@ def print_banner():
     if HAS_RICH and console:
         console.print(Rule(style="cyan"))
         console.print(f"[bold cyan]  Devin AGI[/] [dim]v4.0.0  ·  24 repos integrated  ·  {platform.system()}[/]")
-        model_s = _ACTIVE_MODEL or (_GEMINI_MODELS[0] if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else ("huggingface" if HAS_HF else "no AI")))
+        model_s = _ACTIVE_MODEL or (_GEMINI_MODELS[0] if HAS_GEMINI else ("claude" if HAS_ANTHROPIC else "no AI"))
         console.print(f"[dim]  model: {model_s}  ·  tools: {len(TOOL_REGISTRY)}  ·  voice: {'on' if VOICE_MODE else 'off'}[/]")
         console.print(Rule(style="cyan"))
         console.print()
@@ -398,153 +358,6 @@ TOOL_SCHEMAS = [
      }, "required": ["target"]}},
     {"name": "get_screen_size", "description": "Get the screen width and height in pixels.",
      "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "get_mouse_position", "description": "Get the current mouse cursor (x, y) position.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "search_screen", "description": "Find a template image on screen and return the center (x, y). Requires the template file path.",
-     "parameters": {"type": "object", "properties": {
-         "image_template": {"type": "string"}
-     }, "required": ["image_template"]}},
-
-    # ── Code / repo exploration ─────────────────────────────────────────────
-    {"name": "find_files", "description": "Find files under a directory matching a glob pattern (e.g. '*.py', '**/*.md').",
-     "parameters": {"type": "object", "properties": {
-         "directory": {"type": "string"},
-         "pattern": {"type": "string"},
-         "max_results": {"type": "integer"}
-     }, "required": []}},
-    {"name": "grep_files", "description": "Recursively grep for a text pattern in files matching a glob. Returns matches with surrounding context.",
-     "parameters": {"type": "object", "properties": {
-         "directory": {"type": "string"},
-         "pattern": {"type": "string"},
-         "file_pattern": {"type": "string"}
-     }, "required": ["pattern"]}},
-    {"name": "code_analyze", "description": "Analyze a code file and return metrics (lines, functions, classes, imports).",
-     "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string"}
-     }, "required": ["file_path"]}},
-
-    # ── Git ─────────────────────────────────────────────────────────────────
-    {"name": "git_status", "description": "Show git status of a repository (working-tree changes and staged changes).",
-     "parameters": {"type": "object", "properties": {
-         "repo_path": {"type": "string"}
-     }, "required": []}},
-    {"name": "git_log", "description": "Show recent git commits from a repository.",
-     "parameters": {"type": "object", "properties": {
-         "repo_path": {"type": "string"},
-         "max_commits": {"type": "integer"}
-     }, "required": []}},
-    {"name": "git_diff", "description": "Show git diff for a repository, or for one file if file_path is set.",
-     "parameters": {"type": "object", "properties": {
-         "repo_path": {"type": "string"},
-         "file_path": {"type": "string"}
-     }, "required": []}},
-
-    # ── Vision / text analysis ──────────────────────────────────────────────
-    {"name": "analyze_image", "description": "Ask a vision model about an image file. Useful after take_screenshot to inspect what's on screen.",
-     "parameters": {"type": "object", "properties": {
-         "image_path": {"type": "string"},
-         "question": {"type": "string"}
-     }, "required": ["image_path"]}},
-    {"name": "analyze_text", "description": "Analyze a block of text (summary stats, word count, top words).",
-     "parameters": {"type": "object", "properties": {
-         "text": {"type": "string"},
-         "analysis_type": {"type": "string"}
-     }, "required": ["text"]}},
-    {"name": "extract_urls", "description": "Extract every URL from a block of text.",
-     "parameters": {"type": "object", "properties": {
-         "text": {"type": "string"}
-     }, "required": ["text"]}},
-    {"name": "extract_emails", "description": "Extract every email address from a block of text.",
-     "parameters": {"type": "object", "properties": {
-         "text": {"type": "string"}
-     }, "required": ["text"]}},
-    {"name": "hash_text", "description": "Compute md5/sha1/sha256 of a text string.",
-     "parameters": {"type": "object", "properties": {
-         "text": {"type": "string"},
-         "algorithm": {"type": "string", "enum": ["md5", "sha1", "sha256"]}
-     }, "required": ["text"]}},
-
-    # ── Network / OSINT (authorized use) ────────────────────────────────────
-    {"name": "port_scan", "description": "Scan a small set of common ports on a host (authorized targets only).",
-     "parameters": {"type": "object", "properties": {
-         "host": {"type": "string"},
-         "ports": {"type": "string"}
-     }, "required": ["host"]}},
-    {"name": "dns_lookup", "description": "Resolve a hostname to its IP addresses.",
-     "parameters": {"type": "object", "properties": {
-         "hostname": {"type": "string"}
-     }, "required": ["hostname"]}},
-    {"name": "whois_lookup", "description": "WHOIS lookup for a domain.",
-     "parameters": {"type": "object", "properties": {
-         "domain": {"type": "string"}
-     }, "required": ["domain"]}},
-    {"name": "check_ssl_cert", "description": "Fetch and describe the TLS certificate a domain is serving.",
-     "parameters": {"type": "object", "properties": {
-         "domain": {"type": "string"}
-     }, "required": ["domain"]}},
-    {"name": "web_research", "description": "Search the web for a topic and fetch summaries of the top hits.",
-     "parameters": {"type": "object", "properties": {
-         "topic": {"type": "string"},
-         "num_results": {"type": "integer"}
-     }, "required": ["topic"]}},
-
-    # ── Data / files ────────────────────────────────────────────────────────
-    {"name": "read_pdf", "description": "Extract text from a PDF file. page_range e.g. '1-5' or '1'.",
-     "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string"},
-         "page_range": {"type": "string"}
-     }, "required": ["file_path"]}},
-    {"name": "read_excel", "description": "Read tabular data from an .xlsx/.xls file.",
-     "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string"},
-         "sheet": {"type": "string"},
-         "max_rows": {"type": "integer"}
-     }, "required": ["file_path"]}},
-    {"name": "parse_csv", "description": "Parse a CSV file and return a formatted preview.",
-     "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string"},
-         "max_rows": {"type": "integer"}
-     }, "required": ["file_path"]}},
-    {"name": "extract_metadata", "description": "Extract filesystem + content metadata from a file (size, mtime, mime, hash).",
-     "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string"}
-     }, "required": ["file_path"]}},
-
-    # ── Planning / long-term memory ─────────────────────────────────────────
-    {"name": "task_decompose", "description": "Break a complex user task into an ordered list of concrete sub-tasks.",
-     "parameters": {"type": "object", "properties": {
-         "task_description": {"type": "string"}
-     }, "required": ["task_description"]}},
-    {"name": "memory_save_persistent", "description": "Save a fact to Devin's persistent memory (survives restart). Categorize with the category arg.",
-     "parameters": {"type": "object", "properties": {
-         "key": {"type": "string"},
-         "value": {"type": "string"},
-         "category": {"type": "string"}
-     }, "required": ["key", "value"]}},
-    {"name": "memory_recall_persistent", "description": "Recall one fact by key from persistent memory. Returns null if not found.",
-     "parameters": {"type": "object", "properties": {
-         "key": {"type": "string"}
-     }, "required": ["key"]}},
-    {"name": "memory_search", "description": "Search persistent memory by substring / keyword. Optionally scoped by category.",
-     "parameters": {"type": "object", "properties": {
-         "query": {"type": "string"},
-         "category": {"type": "string"},
-         "limit": {"type": "integer"}
-     }, "required": ["query"]}},
-    {"name": "memory_list_persistent", "description": "List facts stored in persistent memory (optionally scoped by category).",
-     "parameters": {"type": "object", "properties": {
-         "category": {"type": "string"},
-         "limit": {"type": "integer"}
-     }, "required": []}},
-    {"name": "memory_stats", "description": "Get persistent-memory statistics (count, categories, last write).",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-
-    # ── System / diagnostics ────────────────────────────────────────────────
-    {"name": "device_info", "description": "Detailed device/system report: platform, release, arch, CPU count, RAM, disk, GPU when available.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-    {"name": "internet_speed_test", "description": "Quick connectivity/latency check to a well-known endpoint. Not a bandwidth benchmark.",
-     "parameters": {"type": "object", "properties": {}, "required": []}},
-
     {"name": "task_complete", "description": "Call when the task is fully completed.",
      "parameters": {"type": "object", "properties": {
          "reason": {"type": "string"}
@@ -627,12 +440,6 @@ Before every action, run through this loop:
 5. NEVER fabricate results — only report what tools actually returned.
 6. NEVER output "(acting)" as text. Just call tools.
 7. If a tool fails, try an alternative — never repeat the same failing call.
-8. When a tool returns a path (e.g. take_screenshot returned "/tmp/devin_xyz.png"),
-   USE THAT EXACT PATH in follow-up tool calls that need it. Do not invent
-   generic names like "screenshot.png" — they will not exist.
-9. If you need to describe user intent from casual/misspelled input ("gimme",
-   "vedios", "chekc"), interpret charitably and act. Never ask for a rewording
-   when the intent is obvious.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TOOL REFERENCE
@@ -705,287 +512,11 @@ def _build_tool_declarations() -> List[Dict]:
         decls.append(decl)
     return decls
 
-def _gemini_contents_to_hf_messages(contents: List[Dict]) -> List[Dict[str, str]]:
-    """Flatten Gemini's role/parts contents into OpenAI-style role/content messages.
-
-    Preserves prior `functionCall` parts as <tool_use>{...}</tool_use> blocks so the
-    HF model sees its own past tool calls in the same format it must emit them in.
-    """
-    out: List[Dict[str, str]] = []
-    for c in contents:
-        role = c.get("role", "user")
-        parts = c.get("parts", []) or []
-        chunks: List[str] = []
-        for p in parts:
-            if not isinstance(p, dict):
-                continue
-            if "text" in p and p["text"]:
-                chunks.append(str(p["text"]))
-            elif "functionCall" in p:
-                fc = p["functionCall"] or {}
-                name = fc.get("name", "")
-                args = fc.get("args", {}) or {}
-                chunks.append(f"<tool_use>{json.dumps({'name': name, 'input': args})}</tool_use>")
-            elif "functionResponse" in p:
-                fr = p["functionResponse"] or {}
-                out_field = (fr.get("response") or {}).get("output", "")
-                # Truncate huge tool outputs so we stay under HF context limits.
-                out_str = str(out_field)
-                if len(out_str) > 4000:
-                    out_str = out_str[:4000] + f" …[truncated {len(out_str) - 4000} chars]"
-                chunks.append(f"[tool_result {fr.get('name','')}] {out_str}")
-            elif "inlineData" in p:
-                chunks.append("[image omitted from HF fallback — this provider is text-only]")
-        content = "\n".join(chunks).strip()
-        if not content:
-            # Never emit an empty message — collapse into a placeholder so the
-            # alternation stays sane on the receiving side.
-            content = " "
-        out.append({"role": "assistant" if role == "model" else "user", "content": content})
-    return out
-
-
-def _hf_response_to_gemini_shape(hf_result: Dict) -> Dict:
-    """Convert HF chat output back into the Gemini candidates/parts shape
-    the agentic loop already knows how to parse."""
-    parts: List[Dict] = []
-    text = hf_result.get("text", "")
-    if text:
-        parts.append({"text": text})
-    for call in hf_result.get("tool_calls", []) or []:
-        parts.append({"functionCall": {"name": call.get("name", ""), "args": call.get("input") or {}}})
-    if not parts:
-        parts.append({"text": " "})
-    return {"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": "STOP"}]}
-
-
-def _anthropic_tools_from_schemas() -> List[Dict]:
-    """Convert TOOL_SCHEMAS (Gemini shape) into Anthropic input_schema shape."""
-    out = []
-    for t in TOOL_SCHEMAS:
-        params = t.get("parameters", {"type": "object", "properties": {}}) or {}
-        params.setdefault("type", "object")
-        params.setdefault("properties", {})
-        out.append({
-            "name": t["name"],
-            "description": t.get("description", ""),
-            "input_schema": params,
-        })
-    return out
-
-
-def _gemini_contents_to_anthropic_messages(contents: List[Dict]) -> List[Dict]:
-    """Convert Gemini-shape parts to Anthropic content-block shape.
-
-    Assigns synthetic tool_use_ids by walking contents in order so that
-    tool_result blocks in subsequent user turns can reference the matching
-    tool_use. Preserves inline images (screenshots) as base64 image blocks.
-    """
-    result: List[Dict] = []
-    pending_ids: List[Dict[str, str]] = []  # list of {"name": ..., "id": ...} for the most recent model turn
-    id_counter = 0
-
-    for c in contents:
-        role = c.get("role", "user")
-        parts = c.get("parts", []) or []
-        blocks: List[Dict] = []
-        if role in ("user",):
-            # Convert functionResponse parts back to Anthropic tool_result blocks.
-            fresh_pending = list(pending_ids)
-            for p in parts:
-                if not isinstance(p, dict):
-                    continue
-                if "functionResponse" in p:
-                    fr = p["functionResponse"] or {}
-                    name = fr.get("name", "")
-                    output = str((fr.get("response") or {}).get("output", ""))
-                    matched_id = None
-                    for i, entry in enumerate(fresh_pending):
-                        if entry["name"] == name:
-                            matched_id = entry["id"]
-                            fresh_pending.pop(i)
-                            break
-                    if matched_id is None:
-                        matched_id = f"tu_synthetic_{id_counter}"
-                        id_counter += 1
-                    blocks.append({
-                        "type": "tool_result",
-                        "tool_use_id": matched_id,
-                        "content": output[:8000],
-                    })
-                elif "text" in p and p["text"]:
-                    blocks.append({"type": "text", "text": str(p["text"])})
-                elif "inlineData" in p:
-                    inl = p["inlineData"] or {}
-                    blocks.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": inl.get("mimeType", "image/png"),
-                            "data": inl.get("data", ""),
-                        },
-                    })
-            if blocks:
-                result.append({"role": "user", "content": blocks})
-            pending_ids = []
-        elif role in ("model", "assistant"):
-            # Convert functionCall parts to tool_use blocks.
-            turn_pending: List[Dict[str, str]] = []
-            for p in parts:
-                if not isinstance(p, dict):
-                    continue
-                if "functionCall" in p:
-                    fc = p["functionCall"] or {}
-                    fname = fc.get("name", "")
-                    fid = f"tu_{id_counter}"
-                    id_counter += 1
-                    turn_pending.append({"name": fname, "id": fid})
-                    blocks.append({
-                        "type": "tool_use",
-                        "id": fid,
-                        "name": fname,
-                        "input": fc.get("args") or {},
-                    })
-                elif "text" in p and p["text"]:
-                    blocks.append({"type": "text", "text": str(p["text"])})
-            if blocks:
-                result.append({"role": "assistant", "content": blocks})
-            pending_ids = turn_pending
-    return result
-
-
-def _anthropic_response_to_gemini_shape(response) -> Dict:
-    """Convert an Anthropic messages.create response into Gemini shape so the
-    existing agentic loop can consume it unchanged."""
-    parts: List[Dict] = []
-    for block in response.content:
-        btype = getattr(block, "type", None)
-        if btype == "text":
-            text = getattr(block, "text", "") or ""
-            if text:
-                parts.append({"text": text})
-        elif btype == "tool_use":
-            parts.append({
-                "functionCall": {
-                    "name": getattr(block, "name", ""),
-                    "args": getattr(block, "input", {}) or {},
-                }
-            })
-    if not parts:
-        parts.append({"text": " "})
-    return {"candidates": [{"content": {"role": "model", "parts": parts}, "finishReason": getattr(response, "stop_reason", "STOP") or "STOP"}]}
-
-
-_ANTHROPIC_MODELS = [
-    "claude-opus-4-5",
-    "claude-sonnet-4-5",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-haiku-20241022",
-]
-
-
-def _classify_anthropic_error(err: BaseException) -> str:
-    s = str(err)
-    lower = s.lower()
-    if "401" in s or "authentication" in lower or "invalid x-api-key" in lower:
-        return "Anthropic API key rejected (401). Check ANTHROPIC_API_KEY."
-    if "429" in s or "rate_limit" in lower:
-        return "Anthropic rate-limited (429). Waiting and falling through to next provider."
-    if "402" in s or "credit" in lower or "billing" in lower:
-        return "Anthropic billing issue (402). Falling through to next provider."
-    if "404" in s or "not_found" in lower:
-        return "Anthropic: no model in the fallback list was accepted."
-    return f"Anthropic call failed: {s[:250]}"
-
-
-def _call_anthropic(contents: List[Dict]) -> Optional[Dict]:
-    """Call Claude via the anthropic SDK. Returns Gemini-shape data or None."""
-    global _ACTIVE_MODEL, _LAST_LLM_ERROR
-    if not HAS_ANTHROPIC or _anthropic_client is None:
-        return None
-    tools = _anthropic_tools_from_schemas()
-    messages = _gemini_contents_to_anthropic_messages(contents)
-    if not messages:
-        return None  # nothing to send; skip
-
-    for model_id in _ANTHROPIC_MODELS:
-        try:
-            response = _anthropic_client.messages.create(
-                model=model_id,
-                max_tokens=8192,
-                system=SYSTEM_PROMPT,
-                messages=messages,
-                tools=tools,
-            )
-            _ACTIVE_MODEL = f"anthropic:{model_id}"
-            return _anthropic_response_to_gemini_shape(response)
-        except Exception as e:
-            msg = str(e)
-            _LAST_LLM_ERROR = _classify_anthropic_error(e)
-            if os.getenv("DEVIN_DEBUG"):
-                import traceback; traceback.print_exc()
-            if "404" in msg or "not_found" in msg.lower():
-                continue  # try the next model id
-            break  # non-model error — no point trying more models
-    return None
-
-
-def _classify_hf_error(err: BaseException) -> str:
-    """Turn an HF exception into a specific, actionable one-line message."""
-    s = str(err)
-    lower = s.lower()
-    if "402" in s or "depleted" in lower or "monthly included credits" in lower:
-        return (
-            "Hugging Face free-tier credits are used up for this token. "
-            "Options: (1) subscribe to HF PRO for 20× the quota, (2) wait for "
-            "the monthly reset, or (3) add ANTHROPIC_API_KEY / GEMINI_API_KEY "
-            "so Devin can use them instead."
-        )
-    if "401" in s or "invalid" in lower and "token" in lower:
-        return "Hugging Face token rejected (401). Check HF_TOKEN in .env."
-    if "429" in s or "rate" in lower or "quota exceeded" in lower:
-        return "Hugging Face rate-limited (429). Wait a minute or provide another provider key."
-    if "404" in s or "not_found" in lower or "model not found" in lower:
-        return f"Hugging Face: no model in the fallback list was available. Raw: {s[:200]}"
-    return f"Hugging Face call failed: {s[:250]}"
-
-
-_LAST_LLM_ERROR: Optional[str] = None
-
-
 def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
-    """Call the model chain: Anthropic (if configured) → Gemini → Hugging Face.
-    Name kept for backward compatibility with the loop that calls it."""
-    global _ACTIVE_MODEL, _LAST_LLM_ERROR
-    _LAST_LLM_ERROR = None
-
-    # 1) Anthropic first — native tool_use, most reliable for agentic work.
-    if HAS_ANTHROPIC and _anthropic_client is not None:
-        result = _call_anthropic(contents)
-        if result is not None:
-            return result
-        # else fall through; _LAST_LLM_ERROR already set by _call_anthropic
-
-    # 2) If Gemini isn't available at all, try Hugging Face directly.
+    """Call Gemini REST API directly. Returns parsed JSON response or None.
+    Raises RuntimeError on rate limit so caller can show clear message."""
+    global _ACTIVE_MODEL
     if not HAS_GEMINI or not _HAS_REQUESTS or not GEMINI_API_KEY:
-        if HAS_HF and _hf_chat is not None:
-            try:
-                hf_result = _hf_chat(
-                    messages=_gemini_contents_to_hf_messages(contents),
-                    tool_schemas=TOOL_SCHEMAS,
-                    system_prompt=SYSTEM_PROMPT,
-                )
-                _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
-                return _hf_response_to_gemini_shape(hf_result)
-            except Exception as _e:
-                _LAST_LLM_ERROR = _classify_hf_error(_e)
-                if os.getenv("DEVIN_DEBUG"):
-                    import traceback; traceback.print_exc()
-        elif not HAS_HF:
-            _LAST_LLM_ERROR = (
-                "No AI provider configured. Set at least one of "
-                "GEMINI_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, HF_TOKEN in .env."
-            )
         return None
 
     body: Dict = {
@@ -1020,62 +551,10 @@ def _call_gemini_rest(contents: List[Dict]) -> Optional[Dict]:
             continue
         _ACTIVE_MODEL = model
         return r.json()
-    # All Gemini models exhausted — try Hugging Face fallback before giving up.
-    if HAS_HF and _hf_chat is not None:
-        try:
-            hf_result = _hf_chat(
-                messages=_gemini_contents_to_hf_messages(contents),
-                tool_schemas=TOOL_SCHEMAS,
-                system_prompt=SYSTEM_PROMPT,
-            )
-            _ACTIVE_MODEL = f"hf:{hf_result.get('model', '?')}"
-            return _hf_response_to_gemini_shape(hf_result)
-        except Exception as _e:
-            _LAST_LLM_ERROR = _classify_hf_error(_e)
-            if os.getenv("DEVIN_DEBUG"):
-                import traceback; traceback.print_exc()
-    # Both Gemini and HF failed. Record the most useful last error we've seen.
-    if not _LAST_LLM_ERROR and last_err:
-        _LAST_LLM_ERROR = f"Gemini: {last_err}"
+    # All models exhausted
     if "rate limit" in last_err or "429" in last_err:
-        raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s, set HF_TOKEN for HF fallback, or use a paid API key.")
+        raise RuntimeError("All Gemini models rate-limited (free tier: 20 req/day each). Wait ~60s or get a paid API key.")
     return None
-
-# ── Permission gate (used by /default mode) ──────────────────────────────────
-# Tools that can mutate the host, exfiltrate data, or hit remote services.
-# Anything not in this set is auto-approved even in /default mode.
-_DANGEROUS_TOOLS = {
-    "execute_shell", "execute_python", "advanced_shell_exec",
-    "mouse_click", "mouse_right_click", "mouse_double_click", "mouse_drag", "mouse_scroll",
-    "keyboard_type", "keyboard_press", "keyboard_hotkey",
-    "open_application", "focus_window",
-    "write_file",
-    "git_command",
-    "run_nmap_scan", "port_scan", "check_ssl_cert",
-    "send_telegram_message",
-    "clipboard_set",
-    "open_browser",
-}
-
-
-def _is_dangerous(tool_name: str) -> bool:
-    return tool_name in _DANGEROUS_TOOLS
-
-
-def _confirm_dangerous(tool_name: str, args: Dict) -> bool:
-    """Prompt the user to approve a dangerous tool call. Only reached in
-    /default mode + interactive TTY. Returns True on 'y', False otherwise."""
-    prompt = f"⚠  Approve dangerous tool `{tool_name}` with {args!r}?  [y/N] "
-    if HAS_RICH and console:
-        console.print(f"[bold yellow]{prompt}[/]", end="")
-    else:
-        print(prompt, end="", flush=True)
-    try:
-        answer = input().strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        return False
-    return answer in ("y", "yes")
-
 
 def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[str] = None) -> str:
     """Run the Gemini agentic loop for one user turn. Returns final text response."""
@@ -1159,10 +638,8 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             break
 
         if data is None:
-            if _LAST_LLM_ERROR:
-                return f"[LLM unavailable — {_LAST_LLM_ERROR}]"
-            if not HAS_GEMINI and not HAS_HF:
-                return "[No AI available — set GEMINI_API_KEY or HF_TOKEN in .env]"
+            if not HAS_GEMINI:
+                return "[No AI available — set GEMINI_API_KEY in .env]"
             return "[No AI response — check API key and model availability]"
 
         # Parse response parts
@@ -1198,32 +675,6 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
             final_text = text
 
         if not tool_calls:
-            # If the model responded with text but no tool call AND the text
-            # looks like a "here is my plan" (numbered list, "I will…"),
-            # nudge it once to actually act instead of dropping the turn.
-            # This matters for open-weight models like Qwen that sometimes
-            # slip into chat mode when they should be using tools.
-            plan_shape = re.search(r"(^|\n)\s*(1[.)]|- |First,|Step 1|Here is the plan|I (will|would|plan to)\b)",
-                                    text, flags=re.IGNORECASE)
-            already_nudged = any(
-                isinstance(p, dict) and p.get("text", "").startswith("[[SYSTEM NUDGE]]")
-                for c in contents for p in (c.get("parts") or [])
-            )
-            if plan_shape and not already_nudged and _round < max_rounds - 1:
-                # Append the model's turn, then a synthetic user turn nudging
-                # for real action. One nudge per conversation so we don't loop.
-                contents.append({
-                    "role": "model",
-                    "parts": raw_model_parts if raw_model_parts else [{"text": text or " "}],
-                })
-                nudge = (
-                    "[[SYSTEM NUDGE]] You described a plan but did not call any "
-                    "tool. Call one of the available tools now to make progress. "
-                    "If the task is already complete, call task_complete. Do not "
-                    "describe — act."
-                )
-                contents.append({"role": "user", "parts": [{"text": nudge}]})
-                continue
             break  # no more tool calls — done
 
         # Append model turn (with function calls) to contents
@@ -1248,40 +699,6 @@ def _run_agentic_loop(user_input: str, history: List[Dict], image_b64: Optional[
                 }})
                 contents.append({"role": "user", "parts": fn_response_parts})
                 return final_text or reason
-
-            if PERMISSION_MODE == "plan":
-                # Describe the call in the response stream, feed a synthetic
-                # result back so the model can keep planning without side
-                # effects. This lets `/plan` produce a full walkthrough.
-                planned = f"[PLANNED — not executed under /plan mode] {t_name}({t_args})"
-                _tool_result(planned, ok=True)
-                fn_response_parts.append({"functionResponse": {
-                    "name": t_name, "response": {"output": planned},
-                }})
-                continue
-
-            if PERMISSION_MODE == "default" and _is_dangerous(t_name):
-                if IS_TTY:
-                    if not _confirm_dangerous(t_name, t_args):
-                        denied = f"[DENIED by user in /default mode] {t_name}({t_args})"
-                        _tool_result(denied, ok=False)
-                        fn_response_parts.append({"functionResponse": {
-                            "name": t_name, "response": {"output": denied},
-                        }})
-                        continue
-                else:
-                    # Non-interactive one-shot: refuse and let the model adapt
-                    # instead of silently running a dangerous call.
-                    denied = (
-                        f"[BLOCKED — {t_name} is a dangerous tool and Devin is running "
-                        f"non-interactively under /default mode. Rerun with --auto (or "
-                        f"DEVIN_PERMISSION_MODE=auto) if you intended to authorize this.]"
-                    )
-                    _tool_result(denied, ok=False)
-                    fn_response_parts.append({"functionResponse": {
-                        "name": t_name, "response": {"output": denied},
-                    }})
-                    continue
 
             result = dispatch_tool(t_name, t_args)
             _tool_result(result[:200])
@@ -1334,10 +751,6 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
             "| `/remember <fact>` | Store a fact in memory |\n"
             "| `/shell <cmd>` | Run a shell command |\n"
             "| `/model` | Show current AI model |\n"
-            "| `/plan` | Plan mode (describe actions, don't run them) |\n"
-            "| `/auto` | Auto-approve all tool calls |\n"
-            "| `/default` | Default mode (confirm dangerous actions) |\n"
-            "| `/verbose` | Toggle verbose debug output |\n"
             "| `/exit` | Quit Devin |"
         )
 
@@ -1354,7 +767,7 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
             f"- Platform: {info.get('platform', PLATFORM)}\n"
             f"- CPU: {info.get('cpu_percent', '?')}%  RAM: {info.get('ram_used_gb', '?')}/{info.get('ram_total_gb', '?')} GB\n"
             f"- Active model: {model_s}\n"
-            f"- Gemini: {'✓' if HAS_GEMINI else '✗'}  Anthropic: {'✓' if HAS_ANTHROPIC else '✗'}  HuggingFace: {'✓' if HAS_HF else '✗'}\n\n"
+            f"- Gemini: {'✓' if HAS_GEMINI else '✗'}  Anthropic: {'✓' if HAS_ANTHROPIC else '✗'}\n\n"
             f"**Capabilities**\n```\n{caps}\n```"
         )
 
@@ -1402,25 +815,6 @@ def handle_slash(cmd: str, history: List[Dict]) -> Optional[str]:
     if command == "/model":
         return f"**Active model:** {_ACTIVE_MODEL or 'not detected yet'}"
 
-    if command == "/plan":
-        global PERMISSION_MODE
-        PERMISSION_MODE = "plan"
-        return "**Plan mode:** ON — Devin will describe planned tool calls but not execute them."
-
-    if command == "/auto":
-        PERMISSION_MODE = "auto"
-        return "**Auto mode:** ON — Devin will run tool calls without confirming."
-
-    if command == "/default":
-        PERMISSION_MODE = "default"
-        return "**Default mode:** ON — Devin will prompt before dangerous tool calls."
-
-    if command == "/verbose":
-        global VERBOSE
-        VERBOSE = not VERBOSE
-        os.environ["DEVIN_DEBUG"] = "1" if VERBOSE else ""
-        return f"**Verbose mode:** {'ON' if VERBOSE else 'OFF'}"
-
     return None  # not a known slash command
 
 # ── Main entry point ──────────────────────────────────────────────────────────
@@ -1439,12 +833,7 @@ def main():
     if args.test:
         _print("[Test mode]")
         _print(f"  HAS_GEMINI: {HAS_GEMINI}")
-        _print(f"  HAS_ANTHROPIC: {HAS_ANTHROPIC}")
-        _print(f"  HAS_HF (Hugging Face): {HAS_HF}")
         _print(f"  HAS_RICH: {HAS_RICH}")
-        _print(f"  PERMISSION_MODE: {PERMISSION_MODE}")
-        _print(f"  VERBOSE: {VERBOSE}")
-        _print(f"  TOOL_SCHEMAS exposed: {len(TOOL_SCHEMAS)}")
         _print(f"  pyautogui: {HAS.get('pyautogui')}")
         _print(f"  mss: {HAS.get('mss')}")
         _print(f"  TTS: {HAS.get('tts')}")

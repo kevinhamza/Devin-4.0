@@ -6,7 +6,7 @@
 import logging
 from datetime import datetime, timezone
 from ipaddress import ip_address, ip_network
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
 
 # Configure basic logging

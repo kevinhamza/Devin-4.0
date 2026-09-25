@@ -1,36 +1,22 @@
 #!/usr/bin/env bash
-# Devin AGI launcher script
-# Starts either the TypeScript CLI (preferred) or the Python CLI
+# Devin AGI 4.0 — Universal launcher
+# Always uses agent.py (the unified agentic CLI) — no TypeScript dependency.
 
 set -e
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Load .env
 if [ -f .env ]; then
   set -a
-  source .env
+  source .env 2>/dev/null || true
   set +a
 fi
 
-# Check for TypeScript built version
-if [ -f dist/cli.js ]; then
-  exec node dist/cli.js "$@"
+# Activate venv if present
+if [ -d venv/bin ]; then
+  source venv/bin/activate 2>/dev/null || true
 fi
 
-# Try ts-node (dev mode)
-if command -v ts-node &>/dev/null; then
-  exec ts-node src/cli.ts "$@"
-fi
-
-# Try node with tsx
-if command -v tsx &>/dev/null; then
-  exec tsx src/cli.ts "$@"
-fi
-
-# Fall back to Python
-if [ -d venv ]; then
-  source venv/bin/activate
-fi
-exec python3 main.py "$@"
+# Use agent.py as the primary entry point
+exec python3 agent.py "$@"

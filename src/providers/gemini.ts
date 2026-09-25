@@ -8,13 +8,13 @@ import { BaseProvider, StreamChunk } from './base.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Models to try in order. Real Gemini model IDs as of Jan 2026.
+// Models to try in order — real Google Gemini model IDs (2025).
 const FALLBACK_MODELS = [
   'gemini-2.5-flash',
   'gemini-2.5-pro',
   'gemini-2.0-flash',
-  'gemini-flash-latest',
   'gemini-1.5-flash',
+  'gemini-1.5-pro',
 ];
 
 type GeminiPart = { text?: string; inlineData?: { mimeType: string; data: string } };

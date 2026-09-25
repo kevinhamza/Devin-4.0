@@ -232,8 +232,8 @@ class UserInteractionManager:
             t.add_row("OS", platform.platform())
             t.add_row("CPU", f"{cpu:.1f}%")
             t.add_row("Memory", f"{mem.percent:.1f}% ({mem.used // 1024**2}MB / {mem.total // 1024**2}MB)")
-            _agent = getattr(agi_instance, 'agent', None)
-            t.add_row("Provider", type(_agent).__name__ if _agent is not None else 'N/A')
+            _agent_obj = getattr(agi_instance, 'agent', None)
+            t.add_row("Provider", _agent_obj.__class__.__name__ if _agent_obj is not None else 'N/A')
             if hasattr(agi_instance, 'conversation_history'):
                 t.add_row("Messages", str(len(agi_instance.conversation_history)))
             t.add_row("Permission", str(getattr(agi_instance, 'permission_mode', 'default')))

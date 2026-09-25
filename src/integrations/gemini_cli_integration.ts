@@ -17,10 +17,7 @@ const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 export type GeminiModel =
   | 'gemini-2.5-flash'
   | 'gemini-2.5-pro'
-  | 'gemini-2.5-flash-lite'
   | 'gemini-2.0-flash'
-  | 'gemini-2.0-flash-lite'
-  | 'gemini-flash-latest'
   | 'gemini-1.5-flash'
   | 'gemini-1.5-pro'
   | 'gemini-1.0-pro'
@@ -164,7 +161,7 @@ const VISION_MODELS: GeminiModel[] = [
   'gemini-2.0-flash',      // dedicated image model, separate quota
   'gemini-2.5-flash-lite',       // lighter quota than 3.5-flash
   'gemini-2.5-flash',            // primary
-  'gemini-2.5-flash-lite',       // fastest fallback
+  'gemini-2.0-flash',       // fastest fallback
   'gemini-flash-lite-latest',    // alias for latest lite
 ];
 
