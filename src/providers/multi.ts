@@ -21,8 +21,8 @@ export const PROVIDER_REGISTRY: Record<string, {
     api_key_env: 'ANTHROPIC_API_KEY',
     context_limit: 200000,
     models: [
-      'claude-opus-4-8', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
-      'claude-opus-4-5', 'claude-sonnet-4-5',
+      'claude-opus-5-5', 'claude-sonnet-5', 'claude-haiku-4-5-20251001',
+      'claude-fable-5-1', 'claude-opus-4-5', 'claude-sonnet-4-5',
       'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022',
     ],
   },
@@ -66,7 +66,7 @@ export const PROVIDER_REGISTRY: Record<string, {
     api_key_env: 'OPENROUTER_API_KEY',
     base_url: 'https://openrouter.ai/api/v1',
     context_limit: 200000,
-    models: ['openrouter/anthropic/claude-sonnet-4-6', 'openrouter/google/gemini-2.0-flash'],
+    models: ['openrouter/anthropic/claude-sonnet-5', 'openrouter/google/gemini-2.5-flash'],
   },
   groq: {
     type: 'openai',
@@ -103,6 +103,18 @@ export const PROVIDER_REGISTRY: Record<string, {
     context_limit: 128000,
     models: ['command-r-plus', 'command-r'],
   },
+  huggingface: {
+    type: 'huggingface',
+    api_key_env: 'HF_TOKEN',
+    base_url: 'https://router.huggingface.co/v1',
+    context_limit: 32000,
+    models: [
+      'Qwen/Qwen2.5-72B-Instruct',
+      'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      'mistralai/Mistral-7B-Instruct-v0.3',
+      'HuggingFaceH4/zephyr-7b-beta',
+    ],
+  },
 };
 
 // ── Token estimation (from cheetahclaws/compaction.py) ───────────────────────
@@ -136,6 +148,10 @@ export function detectProvider(model: string): string {
   if (model.startsWith('claude')) return 'anthropic';
   if (model.startsWith('gemini') || model.startsWith('models/gemini')) return 'gemini';
   if (model.startsWith('gpt') || model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4')) return 'openai';
+  if (model.startsWith('hf/') || model.startsWith('huggingface/')) return 'huggingface';
+  // Vendor-scoped HF model IDs (Qwen/…, meta-llama/…, mistralai/…, HuggingFaceH4/…)
+  const HF_ORGS = /^(Qwen|meta-llama|mistralai|HuggingFaceH4|google|microsoft|deepseek-ai|stabilityai|tiiuae)\//;
+  if (HF_ORGS.test(model)) return 'huggingface';
   if (model.includes('/')) {
     const prefix = model.split('/')[0];
     if (prefix in PROVIDER_REGISTRY) return prefix;
@@ -281,6 +297,13 @@ export class MultiProvider extends BaseProvider {
     if (this.providerKey === 'gemini' && !this.baseUrl.includes('openai')) {
       const { GeminiProvider } = await import('./gemini.js');
       const p = new GeminiProvider(this.apiKey, this.model);
+      return p.chat(messages, tools, options);
+    }
+
+    // Hugging Face uses its own router with prompt-formatted tool_use.
+    if (this.providerKey === 'huggingface') {
+      const { HuggingFaceProvider } = await import('./huggingface.js');
+      const p = new HuggingFaceProvider(this.apiKey, this.model);
       return p.chat(messages, tools, options);
     }
 

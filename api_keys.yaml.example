@@ -1,11 +1,6 @@
 # Devin/.gitignore/api_keys.yaml
 # Purpose: Conceptual placeholder for storing external API keys.
-#
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-# !! CRITICAL WARNING: DO NOT STORE REAL API KEYS OR SECRETS IN THIS FILE! !!
-# !! THIS FILE MUST BE INCLUDED IN .gitignore TO AVOID COMMITTING SECRETS!  !!
-# !! Use environment variables or a dedicated secrets manager in production. !!
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 # --- LLM / AI Service Keys ---
 # These keys should be referenced by environment variable names in other configs

@@ -29,6 +29,10 @@ except ImportError as e:
     DEPS_AVAILABLE = False
     _import_error = e
 
+if not DEPS_AVAILABLE:
+    import pytest
+    pytest.skip(f"robotics deps unavailable: {_import_error}", allow_module_level=True)
+
 
 # --- Bug fix: `Pose` in modules.robotics.ai_navigation is just a typing
 #     alias (`Tuple[float, float, float]`), which cannot be instantiated

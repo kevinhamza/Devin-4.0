@@ -39,11 +39,21 @@ async function buildProvider(config: Config): Promise<BaseProvider> {
     const { OpenAIProvider } = await import('./providers/openai.js');
     return new OpenAIProvider(config.apiKeys.openai!, config.model);
   }
+  const hfKey = process.env.HF_TOKEN || process.env.HUGGINGFACE_API_KEY || '';
+  if (config.provider === 'huggingface' || (!config.provider && hfKey)) {
+    const { HuggingFaceProvider } = await import('./providers/huggingface.js');
+    return new HuggingFaceProvider(hfKey, config.model);
+  }
   // Try multi-provider (deepseek, groq, mistral, ollama, etc.)
   const { buildMultiProvider } = await import('./providers/multi.js');
   const mp = buildMultiProvider(config.model, '');
   if (mp) return mp;
-  // Hard fallback to Gemini free tier
+  // Hard fallback: HF free tier if a token is available, otherwise Gemini free tier
+  if (hfKey) {
+    const { HuggingFaceProvider } = await import('./providers/huggingface.js');
+    printWarning('No primary API key found — using Hugging Face free tier.');
+    return new HuggingFaceProvider(hfKey, 'Qwen/Qwen2.5-72B-Instruct');
+  }
   const { GeminiProvider } = await import('./providers/gemini.js');
   const key = process.env.GEMINI_API_KEY || config.apiKeys.gemini || '';
   printWarning('No primary API key found — using Gemini free tier.');
@@ -275,14 +285,14 @@ async function runConversation(
 }
 
 // ── Slash command handler ─────────────────────────────────────────────────────
-function handleSlashCommand(
+async function handleSlashCommand(
   input: string,
   config: Config,
   history: Message[],
   memory: LocalMemory
-): boolean {
-  const cmd = input.trim().toLowerCase();
+): Promise<boolean> {
   const parts = input.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase();
   const sub = parts[1] || '';
 
   switch (cmd) {
@@ -383,13 +393,56 @@ function handleSlashCommand(
       printSuccess(`Verbose ${config.verbose ? 'on' : 'off'}.`);
       return true;
 
-    default:
-      // /subagent <task>
-      if (parts[0] === '/subagent' && parts.length > 1) {
+    case '/voice':
+      config.useVoice = !config.useVoice;
+      printSuccess(`Voice mode: ${config.useVoice ? 'ON' : 'OFF'}`);
+      return true;
+
+    case '/screenshot': {
+      const { executeTool } = await import('./tools/executor.js');
+      const result = await executeTool('take_screenshot', {}, config);
+      if (result.isError) {
+        printError(`Screenshot failed: ${result.content}`);
+      } else {
+        printSuccess(`Screenshot saved: ${result.content}`);
+      }
+      return true;
+    }
+
+    case '/remember': {
+      if (parts.length > 1) {
+        const fact = parts.slice(1).join(' ');
+        memory.add(fact, ['user', 'remember']);
+        printSuccess(`Remembered: ${fact}`);
+      } else {
+        printInfo('Usage: /remember <fact>');
+      }
+      return true;
+    }
+
+    case '/shell': {
+      if (parts.length > 1) {
+        const shellCmd = parts.slice(1).join(' ');
+        const { executeTool } = await import('./tools/executor.js');
+        const result = await executeTool('execute_shell', { command: shellCmd }, config);
+        if (result.isError) printError(result.content);
+        else printInfo(result.content.slice(0, 2000));
+      } else {
+        printInfo('Usage: /shell <command>');
+      }
+      return true;
+    }
+
+    case '/subagent': {
+      if (parts.length > 1) {
         const task = parts.slice(1).join(' ');
         history.push({ role: 'user', content: `[SUBAGENT TASK] ${task}` });
         return false; // Let main loop handle it
       }
+      return false;
+    }
+
+    default:
       return false;
   }
 }
@@ -432,7 +485,7 @@ async function main(): Promise<void> {
       '    -h, --help              Show this help',
       '    -V, --version           Show version',
       '    -m, --model <name>      Model to use (e.g. gemini-2.5-flash)',
-      '    -p, --provider <p>      Provider: anthropic | gemini | openai | ollama',
+      '    -p, --provider <p>      Provider: anthropic | gemini | openai | ollama | huggingface',
       '    --plan                  Plan mode (describe actions, don\'t run)',
       '    --auto                  Auto-approve all tool calls',
       '    --dangerously           Alias for --auto (no confirmation)',
@@ -568,7 +621,7 @@ async function main(): Promise<void> {
     }
 
     if (input.startsWith('/')) {
-      if (!handleSlashCommand(input, config, history, memory)) {
+      if (!await handleSlashCommand(input, config, history, memory)) {
         if (!input.startsWith('/subagent')) {
           printWarning(`Unknown command: ${input}. Type /help.`);
           continue;

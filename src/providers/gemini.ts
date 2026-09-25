@@ -8,11 +8,11 @@ import { BaseProvider, StreamChunk } from './base.js';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Models to try in order. gemini-3.6-flash confirmed working via REST test.
+// Models to try in order. Real Gemini model IDs as of Jan 2026.
 const FALLBACK_MODELS = [
-  'gemini-3.6-flash',
-  'gemini-3.5-flash',
-  'gemini-3.1-flash-lite',
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
   'gemini-flash-latest',
   'gemini-1.5-flash',
 ];
@@ -180,7 +180,7 @@ export class GeminiProvider extends BaseProvider {
   readonly model: string;
   private apiKey: string;
 
-  constructor(apiKey: string, model = 'gemini-3.6-flash') {
+  constructor(apiKey: string, model = 'gemini-2.5-flash') {
     super();
     this.apiKey = apiKey;
     this.model = model;

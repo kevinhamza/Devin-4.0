@@ -9,7 +9,7 @@ export class AnthropicProvider extends BaseProvider {
   readonly model: string;
   private client: Anthropic;
 
-  constructor(apiKey: string, model = 'claude-sonnet-4-6') {
+  constructor(apiKey: string, model = 'claude-sonnet-5') {
     super();
     this.model = model;
     this.client = new Anthropic({ apiKey });
