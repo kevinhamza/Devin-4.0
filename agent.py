@@ -3454,6 +3454,154 @@ def tool_format_output(content: str, style: str = 'box', title: str = '') -> str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AS — CODE INTELLIGENCE: SYMBOL_SEARCH, CALL_GRAPH, TODO_FIX, DEAD_CODE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_symbol_search(directory: str, symbol: str, file_glob: str = '*.py') -> str:
+    """
+    Find all definitions and references to a symbol (function, class, variable)
+    across a directory. Returns file:line pairs.
+    """
+    import pathlib, re as _re
+    d = pathlib.Path(directory)
+    if not d.exists():
+        return f"ERROR: directory not found: {directory}"
+    pattern = _re.compile(r'\b' + _re.escape(symbol) + r'\b')
+    results = []
+    for f in sorted(d.rglob(file_glob))[:200]:
+        try:
+            lines = f.read_text(errors='replace').splitlines()
+            for i, line in enumerate(lines, 1):
+                if pattern.search(line):
+                    results.append(f"{f}:{i}: {line.strip()[:120]}")
+        except Exception:
+            pass
+    if not results:
+        return f"Symbol {symbol!r} not found in {directory} ({file_glob})"
+    return f"Found {len(results)} reference(s) to {symbol!r}:\n" + "\n".join(results[:100])
+
+
+def tool_find_dead_code(directory: str, file_glob: str = '*.py') -> str:
+    """
+    Find functions and classes that are defined but never called/referenced
+    within the same directory tree. A simple heuristic (not a full AST analysis).
+    """
+    import pathlib, re as _re, ast
+    d = pathlib.Path(directory)
+    if not d.exists():
+        return f"ERROR: directory not found: {directory}"
+    definitions = {}  # name → file:line
+    all_text = ''
+    for f in sorted(d.rglob(file_glob))[:100]:
+        try:
+            src = f.read_text(errors='replace')
+            all_text += src + '\n'
+            try:
+                tree = ast.parse(src)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        if not node.name.startswith('_'):
+                            definitions[node.name] = f"{f}:{node.lineno}"
+            except SyntaxError:
+                pass
+        except Exception:
+            pass
+    dead = []
+    for name, loc in sorted(definitions.items()):
+        usage_pattern = _re.compile(r'\b' + _re.escape(name) + r'\b')
+        # A "call" means it appears elsewhere in the codebase, not just its own definition
+        occurrences = len(usage_pattern.findall(all_text))
+        if occurrences <= 1:  # only its own definition line
+            dead.append(f"  {name:40s} {loc}")
+    if not dead:
+        return f"No obvious dead code found in {directory} ({file_glob})"
+    return f"Possibly unused ({len(dead)} candidates) in {directory}:\n" + "\n".join(dead[:50])
+
+
+def tool_count_lines(directory: str, file_glob: str = '*.py',
+                     include_blank: bool = True, include_comments: bool = True) -> str:
+    """
+    Count lines of code in a directory.
+    Returns per-file and total counts (code / blank / comment lines).
+    """
+    import pathlib, re as _re
+    d = pathlib.Path(directory)
+    if not d.exists():
+        return f"ERROR: directory not found: {directory}"
+    total_code = total_blank = total_comment = 0
+    rows = []
+    for f in sorted(d.rglob(file_glob))[:500]:
+        if not f.is_file():
+            continue
+        try:
+            lines = f.read_text(errors='replace').splitlines()
+        except Exception:
+            continue
+        code = blank = comment = 0
+        for line in lines:
+            s = line.strip()
+            if not s:
+                blank += 1
+            elif s.startswith('#'):
+                comment += 1
+            else:
+                code += 1
+        total_code += code
+        total_blank += blank
+        total_comment += comment
+        rows.append((str(f.relative_to(d))[:60], code, blank, comment))
+    if not rows:
+        return f"No files matched {file_glob} in {directory}"
+    lines_out = [f"{'File':<62} {'Code':>6} {'Blank':>6} {'Comment':>8}"]
+    lines_out.append('─' * 84)
+    for name, c, b, cm in rows[:50]:
+        lines_out.append(f"{name:<62} {c:>6} {b:>6} {cm:>8}")
+    if len(rows) > 50:
+        lines_out.append(f"  ... ({len(rows) - 50} more files)")
+    lines_out.append('─' * 84)
+    lines_out.append(f"{'TOTAL':<62} {total_code:>6} {total_blank:>6} {total_comment:>8}")
+    return "\n".join(lines_out)
+
+
+def tool_ast_parse(code: str, language: str = 'python') -> str:
+    """
+    Parse Python code and return a summary of its AST structure:
+    imports, classes, functions (with line numbers and arg counts).
+    language: currently only 'python' is supported.
+    """
+    if language.lower() != 'python':
+        return f"ERROR: only 'python' is supported for ast_parse"
+    import ast
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"SyntaxError: {e}"
+    sections = {'imports': [], 'classes': [], 'functions': []}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                sections['imports'].append(f"  import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            names = ', '.join(a.name for a in node.names)
+            sections['imports'].append(f"  from {node.module} import {names}")
+        elif isinstance(node, ast.ClassDef):
+            bases = ', '.join(getattr(b, 'id', '?') for b in node.bases)
+            sections['classes'].append(f"  {node.name}({bases}) @ line {node.lineno}")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = len(node.args.args)
+            prefix = 'async def' if isinstance(node, ast.AsyncFunctionDef) else 'def'
+            sections['functions'].append(f"  {prefix} {node.name}({args} args) @ line {node.lineno}")
+    lines = [f"AST summary ({len(code.splitlines())} lines):"]
+    for section, items in sections.items():
+        if items:
+            lines.append(f"\n{section.upper()} ({len(items)}):")
+            lines.extend(items[:20])
+            if len(items) > 20:
+                lines.append(f"  ... and {len(items)-20} more")
+    return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AR — PROCESS CONTROL: LIST, KILL, SPAWN, RESOURCE LIMITS, ENV INJECT
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7810,6 +7958,49 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["args_string"],
         "category": "data",
+    },
+
+    # ── Phase AS ──────────────────────────────────────────────────────────────
+    "symbol_search": {
+        "fn": tool_symbol_search,
+        "desc": "Find all definitions and references to a symbol across a directory.",
+        "params": {
+            "directory": {"type": "string", "description": "Directory to search"},
+            "symbol": {"type": "string", "description": "Function, class, or variable name to find"},
+            "file_glob": {"type": "string", "description": "File pattern (default '*.py')"},
+        },
+        "required": ["directory", "symbol"],
+        "category": "devtools",
+    },
+    "find_dead_code": {
+        "fn": tool_find_dead_code,
+        "desc": "Find functions and classes defined but never referenced (heuristic).",
+        "params": {
+            "directory": {"type": "string", "description": "Directory to scan"},
+            "file_glob": {"type": "string", "description": "File pattern (default '*.py')"},
+        },
+        "required": ["directory"],
+        "category": "devtools",
+    },
+    "count_lines": {
+        "fn": tool_count_lines,
+        "desc": "Count lines of code per file (code / blank / comment) in a directory.",
+        "params": {
+            "directory": {"type": "string", "description": "Directory to scan"},
+            "file_glob": {"type": "string", "description": "File pattern (default '*.py')"},
+        },
+        "required": ["directory"],
+        "category": "devtools",
+    },
+    "ast_parse": {
+        "fn": tool_ast_parse,
+        "desc": "Parse Python code and summarise its AST: imports, classes, functions.",
+        "params": {
+            "code": {"type": "string", "description": "Python source code to parse"},
+            "language": {"type": "string", "description": "Language (currently only 'python')"},
+        },
+        "required": ["code"],
+        "category": "devtools",
     },
 
     # ── Phase AR ──────────────────────────────────────────────────────────────
