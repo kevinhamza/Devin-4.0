@@ -3345,6 +3345,169 @@ def tool_search_in_files(pattern: str, directory: str = '.', file_glob: str = '*
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AD — PROCESS MONITORING + TAIL FILE + ENV VARIABLE TOOLS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_monitor_process(name_or_pid: str, duration: int = 10) -> str:
+    """
+    Monitor a process by name or PID for N seconds. Returns CPU%, memory,
+    status, and whether the process is still alive at the end. Use to verify
+    a launched application is running and responsive.
+    """
+    import time as _time
+    try:
+        import psutil
+    except ImportError:
+        # Fallback: use ps command
+        cmd = f"ps aux | grep -i '{name_or_pid}' | grep -v grep"
+        r = tool_execute_shell(cmd)
+        return f"psutil not installed. ps output:\n{r}"
+
+    # Find the process
+    target = None
+    try:
+        if name_or_pid.isdigit():
+            target = psutil.Process(int(name_or_pid))
+        else:
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                pname = (proc.info.get('name') or '').lower()
+                pcmd = ' '.join(proc.info.get('cmdline') or []).lower()
+                if name_or_pid.lower() in pname or name_or_pid.lower() in pcmd:
+                    target = proc
+                    break
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+
+    if target is None:
+        return f"Process not found: {name_or_pid}"
+
+    snapshots = []
+    end = _time.time() + min(duration, 60)
+    while _time.time() < end:
+        try:
+            cpu = target.cpu_percent(interval=1)
+            mem = target.memory_info().rss // 1024 // 1024  # MB
+            status = target.status()
+            snapshots.append(f"  CPU: {cpu:.1f}%  Mem: {mem}MB  Status: {status}")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            snapshots.append("  (process ended)")
+            break
+
+    lines = [f"Process '{name_or_pid}' (PID {target.pid}) over {duration}s:"]
+    lines.extend(snapshots[-5:])  # show last 5 snapshots
+    try:
+        lines.append(f"Final: {'alive' if target.is_running() else 'dead'}")
+    except Exception:
+        lines.append("Final: unknown")
+    return '\n'.join(lines)
+
+
+def tool_tail_file(path: str, lines: int = 20, follow: float = 0) -> str:
+    """
+    Read the last N lines of a file (like tail -n). Optionally follow
+    new content for up to `follow` seconds (like tail -f).
+    Useful for monitoring log files, watching build output, etc.
+    """
+    import time as _time
+    try:
+        p = Path(path)
+        if not p.exists():
+            return f"ERROR: file not found: {path}"
+        content = p.read_text(encoding='utf-8', errors='replace')
+        file_lines = content.splitlines()
+        tail = file_lines[-lines:] if len(file_lines) > lines else file_lines
+        result = '\n'.join(tail)
+
+        if follow > 0:
+            size = p.stat().st_size
+            deadline = _time.time() + min(follow, 30)
+            new_lines = []
+            while _time.time() < deadline:
+                _time.sleep(0.5)
+                new_size = p.stat().st_size
+                if new_size > size:
+                    new_content = p.read_text(encoding='utf-8', errors='replace')
+                    added = new_content[size:]
+                    new_lines.extend(added.splitlines())
+                    size = new_size
+            if new_lines:
+                result += '\n--- NEW CONTENT ---\n' + '\n'.join(new_lines[:50])
+
+        return f"{path} (last {lines} lines):\n{result}"
+    except Exception as e:
+        return f"ERROR reading {path}: {e}"
+
+
+def tool_get_env(key: str = '') -> str:
+    """
+    Get environment variable(s). If key is given, returns that variable's value.
+    If key is empty, returns all non-secret environment variables.
+    Secrets (API keys, tokens, passwords) are redacted.
+    """
+    SECRET_PATTERNS = re.compile(r'(key|token|secret|password|passwd|pwd|auth|api)', re.IGNORECASE)
+    if key:
+        val = os.environ.get(key, f"(not set)")
+        if SECRET_PATTERNS.search(key):
+            val = '***REDACTED***' if val != '(not set)' else val
+        return f"{key}={val}"
+    # All env vars, redacted
+    lines = []
+    for k, v in sorted(os.environ.items()):
+        if SECRET_PATTERNS.search(k):
+            lines.append(f"{k}=***REDACTED***")
+        else:
+            lines.append(f"{k}={v[:200]}")
+    return '\n'.join(lines)
+
+
+def tool_set_env(key: str, value: str) -> str:
+    """
+    Set an environment variable for this session. Useful for configuring
+    paths, flags, or other runtime settings without editing files.
+    Note: This does NOT persist across sessions.
+    """
+    SECRET_PATTERNS = re.compile(r'(key|token|secret|password|passwd|pwd|auth|api)', re.IGNORECASE)
+    if SECRET_PATTERNS.search(key):
+        return f"ERROR: refusing to set secret-looking env var '{key}' via tool for security"
+    os.environ[key] = value
+    return f"Set {key}={value[:80]}"
+
+
+def tool_json_query(json_str: str, query: str) -> str:
+    """
+    Query a JSON string using a simple dot-path expression or key name.
+    Supports: 'key', 'key.subkey', 'key[0]', 'key[0].field'.
+    Use to extract specific values from API responses or JSON files.
+    """
+    try:
+        data = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        return f"ERROR: invalid JSON: {e}"
+
+    try:
+        current = data
+        parts = re.split(r'[.\[\]]', query)
+        for part in parts:
+            if not part:
+                continue
+            if isinstance(current, list):
+                try:
+                    current = current[int(part)]
+                except (ValueError, IndexError) as e:
+                    return f"ERROR: {e} at '{part}'"
+            elif isinstance(current, dict):
+                if part not in current:
+                    keys = list(current.keys())[:10]
+                    return f"ERROR: key '{part}' not found. Available: {keys}"
+                current = current[part]
+            else:
+                return f"ERROR: cannot index into {type(current).__name__} with '{part}'"
+        return json.dumps(current, indent=2) if isinstance(current, (dict, list)) else str(current)
+    except Exception as e:
+        return f"ERROR querying JSON with '{query}': {e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AB — PARALLEL BATCH EXECUTION + TASK DECOMPOSER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -4924,6 +5087,70 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["pattern"],
         "category": "files",
+    },
+
+    # ── Process monitoring + env + JSON (Phase AD) ────────────────────────────
+    "monitor_process": {
+        "fn": tool_monitor_process,
+        "desc": (
+            "Monitor a running process by name or PID for N seconds. "
+            "Returns CPU%, memory, status, and whether still running. "
+            "Use to verify a launched app is responsive."
+        ),
+        "params": {
+            "name_or_pid": {"type": "string", "description": "Process name (partial match) or PID"},
+            "duration": {"type": "integer", "description": "Seconds to monitor (default: 10, max: 60)"},
+        },
+        "required": ["name_or_pid"],
+        "category": "system",
+    },
+
+    "tail_file": {
+        "fn": tool_tail_file,
+        "desc": "Read last N lines of a file. Optionally follow new content for 'follow' seconds (like tail -f). Useful for log monitoring.",
+        "params": {
+            "path": {"type": "string", "description": "File path to read"},
+            "lines": {"type": "integer", "description": "Number of lines to show (default: 20)"},
+            "follow": {"type": "number", "description": "Seconds to follow new content (default: 0, max: 30)"},
+        },
+        "required": ["path"],
+        "category": "files",
+    },
+
+    "get_env": {
+        "fn": tool_get_env,
+        "desc": "Get environment variable(s). Pass a key for one variable, or empty string for all (secrets redacted).",
+        "params": {
+            "key": {"type": "string", "description": "Variable name (empty = list all)"},
+        },
+        "required": [],
+        "category": "system",
+    },
+
+    "set_env": {
+        "fn": tool_set_env,
+        "desc": "Set an environment variable for this session. Does not persist across restarts. Secret-looking keys are refused.",
+        "params": {
+            "key": {"type": "string", "description": "Variable name (no secrets)"},
+            "value": {"type": "string", "description": "Value to set"},
+        },
+        "required": ["key", "value"],
+        "category": "system",
+    },
+
+    "json_query": {
+        "fn": tool_json_query,
+        "desc": (
+            "Query a JSON string with a dot-path expression: 'key', 'key.subkey', "
+            "'key[0].field'. Use to extract values from API responses or config files "
+            "without writing Python code."
+        ),
+        "params": {
+            "json_str": {"type": "string", "description": "JSON string to query"},
+            "query": {"type": "string", "description": "Dot-path query: 'key', 'key.sub', 'arr[0].field'"},
+        },
+        "required": ["json_str", "query"],
+        "category": "data",
     },
 }
 
