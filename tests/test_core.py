@@ -564,6 +564,39 @@ def t_run_tests():
         os.unlink(tmp)
 
 
+# ─── Phase AG: Code analysis tools ───────────────────────────────────────────
+
+def t_ag_tools_registered():
+    for name in ('explain_code', 'lint_code', 'profile_code', 'generate_tests'):
+        assert name in _agent.TOOLS, f"tool {name!r} missing"
+        t = _agent.TOOLS[name]
+        for k in ('fn', 'desc', 'params', 'required', 'category'):
+            assert k in t, f"{name} missing key {k!r}"
+
+
+def t_explain_code():
+    code = "import os\nimport re\ndef hello(name):\n    return f'Hello {name}'\n"
+    r = _agent.tool_explain_code(code)
+    assert 'import' in r.lower() and 'hello' in r.lower(), f"got: {r}"
+    assert 'Lines:' in r
+
+
+def t_profile_code():
+    r = _agent.tool_profile_code('1 + 1', 100)
+    assert 'µs/call' in r or 'ops' in r.lower(), f"got: {r}"
+    # Safety block
+    r2 = _agent.tool_profile_code('import os')
+    assert 'ERROR' in r2 or 'blocked' in r2.lower(), f"should block: {r2}"
+
+
+def t_generate_tests():
+    code = "def add(a, b):\n    return a + b\ndef _private():\n    pass\n"
+    r = _agent.tool_generate_tests(code, 'math_utils')
+    assert 'def test_add' in r, f"got: {r}"
+    assert 'test__private' not in r, "private functions should be skipped"
+    assert 'import pytest' in r
+
+
 # ─── Runner ──────────────────────────────────────────────────────────────────
 
 def main():
@@ -681,6 +714,13 @@ def main():
     test("git_ops status + blocked ops", t_git_ops)
     test("create_project scaffold", t_create_project)
     test("run_tests", t_run_tests)
+
+    # Phase 14: Code analysis tools (Phase AG)
+    print("\n── Phase 14: Code Analysis Tools ──")
+    test("Phase AG tools registered", t_ag_tools_registered)
+    test("explain_code", t_explain_code)
+    test("profile_code", t_profile_code)
+    test("generate_tests stubs", t_generate_tests)
 
     # Summary
     total = PASS + FAIL + SKIP

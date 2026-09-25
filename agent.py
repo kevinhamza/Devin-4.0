@@ -3355,6 +3355,159 @@ def tool_unzip(archive_path: str, dest_dir: str = '.') -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PHASE AG — CODE ANALYSIS: EXPLAIN, REFACTOR, GENERATE TESTS, LINT, PROFILE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def tool_explain_code(code: str, language: str = 'python') -> str:
+    """
+    Analyze a code snippet and return a human-readable explanation:
+    what it does, what it imports, what functions/classes it defines,
+    potential issues (broad exception catches, unused vars, etc.).
+    No AI required — pure static analysis.
+    """
+    lines = code.splitlines()
+    imports, functions, classes, issues = [], [], [], []
+    for i, line in enumerate(lines, 1):
+        s = line.strip()
+        if s.startswith('import ') or s.startswith('from '):
+            imports.append(s)
+        elif re.match(r'def \w+', s):
+            functions.append(s.split('(')[0].replace('def ', '').strip())
+        elif re.match(r'class \w+', s):
+            classes.append(s.split('(')[0].split(':')[0].replace('class ', '').strip())
+        if 'except:' in s or 'except Exception' in s:
+            issues.append(f"Line {i}: broad exception catch — {s[:60]}")
+        if re.search(r'\bexec\b|\beval\b', s) and not s.startswith('#'):
+            issues.append(f"Line {i}: uses exec/eval — {s[:60]}")
+        if re.search(r'password|secret|api_key', s, re.I) and '=' in s and not s.startswith('#'):
+            issues.append(f"Line {i}: possible secret assignment — {s[:40]}...")
+    parts = [f"Language: {language}", f"Lines: {len(lines)}"]
+    if imports:
+        parts.append(f"Imports ({len(imports)}): {', '.join(imports[:5])}" + (' ...' if len(imports) > 5 else ''))
+    if functions:
+        parts.append(f"Functions: {', '.join(functions)}")
+    if classes:
+        parts.append(f"Classes: {', '.join(classes)}")
+    if issues:
+        parts.append("Issues found:")
+        parts.extend(f"  ⚠ {iss}" for iss in issues)
+    else:
+        parts.append("No obvious issues detected.")
+    # Provide high-level summary based on patterns
+    if any('flask' in imp.lower() or 'fastapi' in imp.lower() for imp in imports):
+        parts.append("Summary: Web application (Flask/FastAPI)")
+    elif any('pytest' in imp.lower() or 'unittest' in imp.lower() for imp in imports):
+        parts.append("Summary: Test file")
+    elif any('argparse' in imp.lower() or 'click' in imp.lower() for imp in imports):
+        parts.append("Summary: CLI application")
+    elif any('pandas' in imp.lower() or 'numpy' in imp.lower() for imp in imports):
+        parts.append("Summary: Data analysis script")
+    elif functions or classes:
+        parts.append(f"Summary: Library/module with {len(functions)} function(s), {len(classes)} class(es)")
+    else:
+        parts.append("Summary: Script / configuration code")
+    return "\n".join(parts)
+
+
+def tool_lint_code(path: str, linter: str = 'auto') -> str:
+    """
+    Run a linter on a Python file. Tries flake8, then pylint, then pyflakes.
+    Returns lint warnings and errors. linter can be 'auto', 'flake8', 'pylint', 'pyflakes'.
+    """
+    import subprocess
+    p = Path(path)
+    if not p.exists():
+        return f"ERROR: file not found: {path}"
+    if p.suffix not in ('.py', '.pyw'):
+        return f"ERROR: not a Python file: {path}"
+    linters_to_try = [linter] if linter != 'auto' else ['flake8', 'pyflakes', 'pylint']
+    for lint in linters_to_try:
+        try:
+            cmd = [lint, str(p)]
+            if lint == 'pylint':
+                cmd += ['--output-format=text', '--score=no']
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            output = (r.stdout + r.stderr).strip()
+            if output:
+                lines = output.splitlines()
+                summary = f"[{lint}] {len(lines)} finding(s):\n" + "\n".join(lines[:50])
+                if len(lines) > 50:
+                    summary += f"\n... ({len(lines) - 50} more)"
+                return summary
+            return f"[{lint}] No issues found."
+        except FileNotFoundError:
+            continue
+        except subprocess.TimeoutExpired:
+            return f"ERROR: {lint} timed out"
+    return "No linter available (install flake8: pip install flake8)"
+
+
+def tool_profile_code(code: str, iterations: int = 1000) -> str:
+    """
+    Profile Python code execution time using timeit.
+    Returns min/avg/max time and estimated ops/sec.
+    """
+    import timeit
+    try:
+        # Safety check — block obvious dangers
+        danger = re.search(r'\b(exec|eval|import\s+os|subprocess|__import__)\b', code)
+        if danger:
+            return f"ERROR: profiling blocked for security — found: {danger.group()}"
+        timer = timeit.Timer(stmt=code)
+        # Determine a good repeat count
+        n = min(iterations, 10000)
+        times = timer.repeat(repeat=5, number=n)
+        times_per_call = [t / n for t in times]
+        mn = min(times_per_call)
+        avg = sum(times_per_call) / len(times_per_call)
+        mx = max(times_per_call)
+        ops = 1.0 / mn if mn > 0 else float('inf')
+        return (
+            f"Profiled {n} iterations × 5 runs:\n"
+            f"  min:  {mn*1e6:.3f} µs/call\n"
+            f"  avg:  {avg*1e6:.3f} µs/call\n"
+            f"  max:  {mx*1e6:.3f} µs/call\n"
+            f"  ~ops: {ops:,.0f}/sec"
+        )
+    except SyntaxError as e:
+        return f"ERROR: syntax error in code: {e}"
+    except Exception as e:
+        return f"ERROR profiling: {e}"
+
+
+def tool_generate_tests(code: str, module_name: str = 'module') -> str:
+    """
+    Generate pytest test stubs for functions found in a Python code snippet.
+    Creates one test function per detected function, with a placeholder body.
+    """
+    stubs = [f'"""Tests for {module_name} — auto-generated stubs."""',
+             f'import pytest',
+             f'# from {module_name} import *  # adjust import as needed',
+             '']
+    func_pattern = re.compile(r'^def\s+(\w+)\s*\(([^)]*)\)', re.MULTILINE)
+    matches = func_pattern.findall(code)
+    if not matches:
+        return "ERROR: no function definitions found in the provided code"
+    for fname, fparams in matches:
+        if fname.startswith('_'):
+            continue  # skip private functions
+        params = [p.strip().split(':')[0].split('=')[0].strip() for p in fparams.split(',') if p.strip()]
+        param_list = ', '.join(params)
+        stubs += [
+            f'def test_{fname}():',
+            f'    # Test {fname}({param_list})',
+            f'    # TODO: set up inputs and assert expected output',
+            f'    # result = {fname}({", ".join(repr("...") for _ in params)})',
+            f'    # assert result == expected_value',
+            f'    pass',
+            '',
+        ]
+    if not any(line.startswith('def test_') for line in stubs):
+        return "No public functions found to generate tests for."
+    return '\n'.join(stubs)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # PHASE AF — CODE GENERATION, PROJECT SCAFFOLD, FIND-REPLACE, TEST RUNNER, GIT
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -5592,6 +5745,51 @@ TOOLS: Dict[str, Dict] = {
         },
         "required": ["name"],
         "category": "workflow",
+    },
+
+    # ── Phase AG — Code analysis ───────────────────────────────────────────────
+    "explain_code": {
+        "fn": tool_explain_code,
+        "desc": "Statically analyze a code snippet: imports, functions, classes, potential issues.",
+        "params": {
+            "code": {"type": "string", "description": "Code snippet to analyze"},
+            "language": {"type": "string", "description": "Language hint (default 'python')"},
+        },
+        "required": ["code"],
+        "category": "code",
+    },
+
+    "lint_code": {
+        "fn": tool_lint_code,
+        "desc": "Run flake8/pyflakes/pylint on a Python file and return findings.",
+        "params": {
+            "path": {"type": "string", "description": "Path to Python file"},
+            "linter": {"type": "string", "description": "Linter: auto, flake8, pylint, pyflakes (default 'auto')"},
+        },
+        "required": ["path"],
+        "category": "code",
+    },
+
+    "profile_code": {
+        "fn": tool_profile_code,
+        "desc": "Benchmark Python code execution time using timeit. Returns min/avg/max/ops-per-sec.",
+        "params": {
+            "code": {"type": "string", "description": "Python expression or statement to profile"},
+            "iterations": {"type": "integer", "description": "Iterations per timing run (default 1000)"},
+        },
+        "required": ["code"],
+        "category": "code",
+    },
+
+    "generate_tests": {
+        "fn": tool_generate_tests,
+        "desc": "Generate pytest test stubs for all public functions in a code snippet.",
+        "params": {
+            "code": {"type": "string", "description": "Python code to generate tests for"},
+            "module_name": {"type": "string", "description": "Module name for import comment (default 'module')"},
+        },
+        "required": ["code"],
+        "category": "code",
     },
 }
 

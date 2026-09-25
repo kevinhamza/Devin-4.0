@@ -30,17 +30,18 @@
 | AC    | summarize_file, diff_files, search_in_files + smarter _compact_messages, 51 tests | `11e6c7ae` | done |
 | AD    | monitor_process, tail_file, get_env/set_env, json_query + 55 tests | `0359e0fd` | done |
 | AE    | retry_on_failure, verify_output, template_fill, zip_files, unzip + 59 tests | `8812d37f` | done |
-| AF    | find_and_replace, run_tests, git_ops, create_project + 65 tests | this commit | done |
+| AF    | find_and_replace, run_tests, git_ops, create_project + 65 tests | `e8a4f74d` | done |
+| AG    | explain_code, lint_code, profile_code, generate_tests + 69 tests | this commit | done |
 
 ---
 
 ## Current Runtime Snapshot
 
-**agent.py:** ~7,650 lines, single-file Python entry point
-**Tools registered:** 160 across 27 categories (workflow, files, system, data, archives, devtools)
+**agent.py:** ~7,800 lines, single-file Python entry point
+**Tools registered:** 164 across 28 categories (workflow, files, system, data, archives, devtools, code)
 **Modules loaded (this env):** 33/41 tracked, 53/91 discoverable
 **Providers:** 5 (Gemini, Claude, OpenAI, HuggingFace, Ollama)
-**Test suite:** 65/65 automated tests pass (via `./devin --test`)
+**Test suite:** 69/69 automated tests pass (via `./devin --test`)
 **Demo:** `tests/demo_workflow.py` — 11-step end-to-end health check
 **TypeScript:** `npx tsc --noEmit` — 0 errors across 38 .ts files
 
