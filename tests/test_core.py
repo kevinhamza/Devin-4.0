@@ -876,6 +876,58 @@ def t_parse_args():
     assert 'positional_val' in data.get('_positional', []), f"got: {r}"
 
 
+# ─── Phase AP tests ──────────────────────────────────────────────────────────
+
+def t_ap_tools_registered():
+    for name in ('bulk_rename', 'folder_sync', 'archive_info', 'checksum'):
+        assert name in _agent.TOOLS, f"missing: {name}"
+
+def t_bulk_rename():
+    import tempfile, os, pathlib
+    with tempfile.TemporaryDirectory() as td:
+        # Create test files
+        for name in ('report_2024.txt', 'report_2023.txt', 'other.txt'):
+            pathlib.Path(td, name).write_text('x')
+        # Dry run
+        r = _agent.tool_bulk_rename(td, r'report_(\d+)', r'summary_\1', '*.txt', True)
+        assert 'WOULD' in r, f"got: {r}"
+        # Actual rename
+        r2 = _agent.tool_bulk_rename(td, r'report_(\d+)', r'summary_\1', '*.txt', False)
+        assert 'RENAME' in r2, f"got: {r2}"
+        names = [f.name for f in pathlib.Path(td).iterdir()]
+        assert 'summary_2024.txt' in names, f"files: {names}"
+
+def t_folder_sync():
+    import tempfile, pathlib
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dst:
+        pathlib.Path(src, 'a.txt').write_text('hello')
+        pathlib.Path(src, 'b.txt').write_text('world')
+        r = _agent.tool_folder_sync(src, dst, dry_run=False)
+        assert 'COPY' in r or 'sync' in r.lower(), f"got: {r}"
+        assert pathlib.Path(dst, 'a.txt').exists(), "a.txt not copied"
+
+def t_archive_info():
+    import tempfile, zipfile, pathlib
+    with tempfile.TemporaryDirectory() as td:
+        zpath = str(pathlib.Path(td, 'test.zip'))
+        with zipfile.ZipFile(zpath, 'w') as z:
+            z.writestr('file1.txt', 'hello')
+            z.writestr('file2.txt', 'world')
+        r = _agent.tool_archive_info(zpath)
+        assert 'ZIP' in r, f"got: {r}"
+        assert 'file1.txt' in r, f"got: {r}"
+
+def t_checksum():
+    import tempfile, pathlib, hashlib
+    with tempfile.TemporaryDirectory() as td:
+        fpath = str(pathlib.Path(td, 'f.txt'))
+        pathlib.Path(fpath).write_text('hello')
+        r = _agent.tool_checksum(fpath, 'sha256')
+        assert 'SHA256' in r, f"got: {r}"
+        expected = hashlib.sha256(b'hello').hexdigest()
+        assert expected in r, f"hash mismatch: {r}"
+
+
 # ─── Phase AO tests ──────────────────────────────────────────────────────────
 
 def t_ao_tools_registered():
@@ -1143,8 +1195,16 @@ def main():
     test("task_complete", t_task_complete)
     test("format_output", t_format_output)
 
-    # Phase 22: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
-    print("\n── Phase 22: Pipe, String Ops, Utilities ──")
+    # Phase 22: Bulk rename, folder sync, archive info, checksum (Phase AP)
+    print("\n── Phase 22: File Management Tools ──")
+    test("Phase AP tools registered", t_ap_tools_registered)
+    test("bulk_rename", t_bulk_rename)
+    test("folder_sync", t_folder_sync)
+    test("archive_info", t_archive_info)
+    test("checksum", t_checksum)
+
+    # Phase 23: Pipe, string ops, sleep, uuid, random, timestamp (Phase AO)
+    print("\n── Phase 23: Pipe, String Ops, Utilities ──")
     test("Phase AO tools registered", t_ao_tools_registered)
     test("pipe tool chain", t_pipe)
     test("string_ops", t_string_ops)
