@@ -1,28 +1,34 @@
 # Devin AGI 4.0
 
-An autonomous OS-controlling AI agent. Controls the computer like a human: moves the mouse, types, takes screenshots, runs commands, launches applications, browses the web, and reasons about what it sees. Powered by Gemini, Claude, OpenAI, HuggingFace, or Ollama.
+**A deeply autonomous AI agent that controls your computer like a real engineer.**
+
+Controls mouse, keyboard, screen, files, shell, browser, and voice — on Linux, macOS, and Windows.
+Thinks, plans, acts, and verifies using **213 tools** and **6 AI providers** (including free HuggingFace).
+Works headless or with full GUI control. No GUI required for most tasks.
 
 ```
-  Devin AGI  v4.0.0
-  ──────────────────────────────────────────────────────
-  ✓ Connected to Gemini (gemini/gemini-3.6-flash)
-  cwd:      /home/user/Devin-4.0
-  platform: Linux  display
-  tools:    103  ·  16/16 modules  ·  12 memories
-  ──────────────────────────────────────────────────────
+  ╭─────────────────────────────────────────────────────────────────────╮
+  │ Devin AGI v4.0.0  —  Autonomous OS-Controlling AI                   │
+  │ cwd: /home/user/Devin-4.0                                           │
+  │ model: Qwen3-235B-A22B  provider: huggingface  mode: auto           │
+  │ platform: Linux  gui  ·  tools: 213  ·  modules: 16  ·  memories: 0│
+  ╰─────────────────────────────────────────────────────────────────────╯
+
+  ✓ Connected to Huggingface (Qwen3-235B-A22B)
+  Free tier  ·  Qwen3-235B · DeepSeek-V3 · Llama3.3 · 1000s more
 
   Try: open firefox and search for python tutorials
 
-❯ Devin-4.0 open firefox, go to google.com, search python tutorials
+❯ Devin-4.0 open firefox, go to google.com and search python tutorials
 
-● think(thought='Plan: open_and_wait(firefox), screenshot_and_analyze for address bar, click+type URL, search')
-↳ ready
+● observe_and_plan(goal='open firefox and search python tutorials')
+↳ Current screen: desktop. Plan: open_application(firefox) → screenshot → click address bar → type URL → search
 
 ● open_and_wait(app_name='firefox', wait_seconds=3)
-↳ Opened firefox (pid=18234) | Loaded: YES
+↳ Opened firefox (pid=63784) | Loaded: YES
 
-● screenshot_and_analyze(prompt='Where is the address bar? Give exact (x,y) pixel coordinates.')
-↳ Address bar is at approximately (680, 45) — the URL input field at the top
+● screenshot_and_analyze(prompt='Where is the Firefox address bar? Give exact (x,y) pixel coordinates.')
+↳ Address bar visible at approximately (680, 45) — the URL input at top of browser
 
 ● mouse_click(x=680, y=45)
 ↳ Clicked left at (680, 45)
@@ -34,13 +40,12 @@ An autonomous OS-controlling AI agent. Controls the computer like a human: moves
 ↳ Typed 22 chars
 
 ● keyboard_press(key='Return')
-↳ Pressed key: Return
+↳ Pressed Return
 
 ● sleep(seconds=2)
-↳ waited 2s
 
 ● screenshot_and_analyze(prompt='Is Google loaded? Where is the search box?')
-↳ Google homepage visible. Search box at (680, 300).
+↳ Google homepage visible. Search box at approximately (680, 300).
 
 ● mouse_click(x=680, y=300)
 ↳ Clicked left at (680, 300)
@@ -49,13 +54,13 @@ An autonomous OS-controlling AI agent. Controls the computer like a human: moves
 ↳ Typed 16 chars
 
 ● keyboard_press(key='Return')
-↳ Pressed key: Return
+↳ Pressed Return
 
-● screenshot_and_analyze(prompt='Did python tutorials search results appear?')
-↳ Yes — showing 10 results for "python tutorials"
+● screenshot_and_analyze(prompt='Did python tutorial results appear?')
+↳ Yes — showing search results for "python tutorials"
 
-● task_complete(result='Opened Firefox, navigated to Google, searched python tutorials. Results visible.')
-↳ TASK_COMPLETE: Done. Firefox is open on python tutorial results.
+● task_complete(result='Opened Firefox, navigated to Google, searched for python tutorials. Results are displayed.')
+↳ TASK_COMPLETE
 
 ✓ Task complete
 
@@ -70,23 +75,25 @@ Done. Firefox is showing python tutorial search results.
 
 - Python 3.10+
 - Linux / macOS / Windows
-- At least one AI provider key (see below)
-- For GUI control on Linux: a running X11/Wayland display session
+- At least one AI provider key (free options available — see below)
+- For GUI/mouse/keyboard control on Linux: a running X11 or Wayland display session
+
+### Install
 
 ```bash
 git clone https://github.com/kevinhamza/Devin-4.0
 cd Devin-4.0
 
-# Optional but recommended — virtual environment
+# Optional: virtual environment (recommended)
 python3 -m venv venv && source venv/bin/activate   # Linux/macOS
 # python -m venv venv && venv\Scripts\activate      # Windows
 
-# Install Python dependencies
+# Install dependencies
 pip install -r requirements.txt
 
-# Configure API keys
+# Set up API keys
 cp .env.example .env
-# Edit .env and add at least one key (see Configuration below)
+# Edit .env — add at least one key (HF_TOKEN is free)
 ```
 
 ### Run
@@ -95,64 +102,193 @@ cp .env.example .env
 # Interactive REPL (recommended)
 ./devin
 
+# Same but via Python directly
+python3 agent.py
+
 # One-shot task
-./devin "create a Python script that monitors CPU usage"
+./devin "write a Python script that monitors CPU usage every 5 seconds"
+python3 agent.py "open Firefox and search for AI news"
 
-# Specify provider
-./devin --provider huggingface "open calculator and compute 42*7"
-./devin --provider claude      "summarise all .py files in this folder"
-./devin --provider gemini      "take a screenshot and describe the desktop"
+# Choose a specific AI provider
+./devin --provider huggingface "audit the torvalds/linux GitHub repo"
+./devin --provider gemini "what's the weather today?"
+./devin --provider ollama "explain this code"    # no key needed, requires Ollama
 
-# Specify model
-./devin --model gemini-2.5-pro "write a detailed tech analysis"
-./devin --model meta-llama/Meta-Llama-3.1-70B-Instruct "explain this code"
-
-# Health check + tests (no AI needed)
-./devin --health          # platform, tools, providers, Ollama detection
-./devin --doctor          # deep diagnostic: deps, CLI tools, providers, self-check
-./devin --test            # runs the 40-test core suite
-./devin --version         # tool + module count
+# Choose a specific model
+./devin --model Qwen/Qwen3-32B "solve this math problem step by step"
 ```
 
 ---
 
 ## Configuration
 
-Create a `.env` file (never commit it — it is in `.gitignore`):
+Copy `.env.example` to `.env` and fill in at least one API key:
 
-```env
-# At least ONE of these is required:
-GEMINI_API_KEY=your_gemini_key_here         # https://aistudio.google.com/app/apikey (free)
-ANTHROPIC_API_KEY=your_anthropic_key_here   # https://console.anthropic.com/
-OPENAI_API_KEY=your_openai_key_here         # https://platform.openai.com/api-keys
-HF_TOKEN=your_huggingface_token_here        # https://huggingface.co/settings/tokens (free)
-
-# Optional
-DISPLAY=:0                  # Linux X11 display (for GUI tools)
-OLLAMA_BASE_URL=http://localhost:11434  # local Ollama server
-TELEGRAM_BOT_TOKEN=         # remote control via Telegram
-AWS_ACCESS_KEY_ID=          # cloud integrations
-AWS_SECRET_ACCESS_KEY=
+```bash
+cp .env.example .env
 ```
 
-See `.env.example` for the full list.
+### AI Providers (priority order for auto-selection)
+
+| Provider | Key Variable | Free? | Best Model |
+|----------|-------------|-------|-----------|
+| **HuggingFace** | `HF_TOKEN` | ✅ Free | `Qwen/Qwen3-235B-A22B` (best free 2025) |
+| **Google Gemini** | `GEMINI_API_KEY` | ✅ Free tier | `gemini-3.6-flash` |
+| **Anthropic Claude** | `ANTHROPIC_API_KEY` | Paid | `claude-sonnet-4-6` |
+| **OpenAI** | `OPENAI_API_KEY` | Paid | `gpt-4o-mini` |
+| **Free Claude Code** | *(proxy, no key)* | ✅ Free | `claude-sonnet-4-5` |
+| **Ollama** | *(none needed)* | ✅ Free | `llama3.2` (local) |
+
+### Fastest Free Setup (HuggingFace)
+
+1. Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+2. Create a free Read token
+3. Add to `.env`:
+   ```
+   HF_TOKEN=hf_your_token_here
+   ```
+4. Run: `./devin`
+
+Available free HuggingFace models (all 2025 latest):
+- `Qwen/Qwen3-235B-A22B` — best free reasoning model (default)
+- `deepseek-ai/DeepSeek-V3-0324` — excellent all-around
+- `Qwen/Qwen3-32B` — fast + capable
+- `meta-llama/Llama-3.3-70B-Instruct` — great instruction following
+- `Qwen/Qwen2.5-Coder-32B-Instruct` — best free code model
+- `deepseek-ai/DeepSeek-R1-Distill-Llama-70B` — chain-of-thought reasoning
+
+Switch models with `/model <name>` or set `HF_MODEL=<name>` in `.env`.
+
+### Free Claude Code Proxy (No API Key Required)
+
+[free-claude-code](https://github.com/alishahryar1/free-claude-code) routes Claude API calls to 55+ free providers. Use it as a provider:
+
+```bash
+pip install free-claude-code
+fcc-server  # start the proxy server
+./devin --provider fcc "your task here"
+```
+
+Or set `FCC_BASE_URL=http://127.0.0.1:3000` in `.env` and Devin auto-detects it.
 
 ---
 
-## AI Providers
+## What Devin Can Do
 
-| Provider | Key env var | Free? | Default model | Fallback |
-|---|---|---|---|---|
-| `gemini` | `GEMINI_API_KEY` | ✓ free | gemini-3.6-flash | → 2.5-flash → 2.5-pro → 2.0-flash |
-| `claude` | `ANTHROPIC_API_KEY` | paid | claude-sonnet-4-6 | — |
-| `openai` | `OPENAI_API_KEY` | paid | gpt-4o-mini | — |
-| `huggingface` | `HF_TOKEN` | ✓ free | Qwen2.5-72B-Instruct | → Llama-3.3-70B → DeepSeek-R1 |
-| `ollama` | none | ✓ local | llama3.2 | — |
+### OS Control (Like a Real User)
+Devin uses the **observe → reason → act → verify** loop for all GUI tasks:
 
-Switch providers at runtime with `/provider <name>` or `--provider <name>`.
+```
+observe_and_plan(goal)          → see what's on screen, make a plan
+screenshot_and_analyze(prompt)  → take screenshot + AI analysis + coordinates
+mouse_click(x, y)               → click exactly where needed
+keyboard_type(text)             → type any text
+keyboard_hotkey(['ctrl', 'c'])  → keyboard shortcuts
+open_application('firefox')     → launch any app
+focus_window('Terminal')        → switch windows
+click_by_description('Submit button')  → find + click by description
+```
 
+**All OS control tools:**
+- **Screenshots**: `screenshot()`, `screenshot_and_analyze()`, `observe_and_plan()`
+- **Mouse**: `mouse_click()`, `mouse_double_click()`, `mouse_right_click()`, `mouse_move()`, `mouse_drag()`, `mouse_scroll()`
+- **Keyboard**: `keyboard_type()`, `keyboard_press()`, `keyboard_hotkey()`, `type_and_submit()`
+- **Windows**: `open_application()`, `focus_window()`, `list_windows()`, `get_screen_size()`
+- **Clipboard**: `clipboard_get()`, `clipboard_set()`
+- **Helpers**: `click_and_verify()`, `open_and_wait()`, `click_by_description()`
+
+### Shell & Code Execution
+```
+execute_shell("apt install nmap -y")    → run any shell command
+execute_python("print(2+2)")            → run Python code
+write_and_run("script.py", code)        → write file + execute
+install_and_verify("requests")          → install Python package
+git_command("status")                   → run git commands
+```
+
+### Web & Browser
+```
+web_search("latest AI models 2025")     → DuckDuckGo/Bing search
+web_fetch("https://example.com")        → fetch URL content
+open_url("https://github.com")          → open in default browser
+browser_navigate("https://google.com")  → Selenium/Playwright control
+browser_get_text()                      → extract page text
+browser_click("Submit")                 → click elements by label
+browser_screenshot()                    → screenshot the browser
+github_repo_audit("torvalds/linux")     → full GitHub repo audit
+```
+
+### File & System Management
+```
+read_file("code.py")                    → read any file
+write_file("output.txt", content)       → write files
+list_files("/home/user")                → list directory
+get_system_info()                       → CPU, memory, disk, OS
+list_processes()                        → running processes
+platform_info()                         → OS details
+```
+
+### Memory & Reasoning
+```
+remember("my project is at /home/user/proj")  → save facts persistently
+recall("project path")                        → search memories
+think_and_plan("complex task")                → reason about approach
+decompose_task("big task")                    → break into steps
+multi_step_workflow(steps_json)               → execute structured plan
+batch_execute(tools_json)                     → run tools in parallel
+```
+
+### Voice Input
 ```bash
-./devin --provider huggingface --model Qwen/Qwen2.5-72B-Instruct "task here"
+./devin --voice              # start in voice mode
+# In REPL: /voice            # record one voice command
+```
+Requires: `pip install SpeechRecognition pyaudio`
+
+### Security & Pentesting (Authorized Only)
+For authorized environments (HackTheBox, TryHackMe, your own VMs):
+```
+execute_shell("nmap -sV target")
+execute_shell("burpsuite &")           → open Burp Suite
+execute_shell("sqlmap -u 'url'")
+execute_shell("gobuster dir -u ...")
+screenshot_and_analyze("Find open ports in nmap output")
+```
+Set `AUTHORIZED_SECURITY=1` in `.env` to enable extended security tools.
+
+---
+
+## Slash Commands
+
+```
+/help              — This help
+/tools [cat]       — List all 213 tools (filter by category)
+/status            — Provider, model, API keys, capabilities
+/providers         — All providers and their status
+/provider <name>   — Switch provider: gemini|claude|openai|huggingface|fcc|ollama
+/model <name>      — Switch model (e.g. /model Qwen/Qwen3-32B)
+/memory [query]    — Search persistent memory
+/remember <fact>   — Save a fact to memory
+/forget            — Clear all memories (with confirmation)
+/history           — Show conversation history
+/save [file]       — Save conversation transcript
+/shell <cmd>       — Run shell command directly
+/screenshot        — Take screenshot + optional analysis
+/voice             — Record voice input → execute as task
+/think <task>      — Plan a task step-by-step
+/workflow <task>   — Execute as structured multi-step workflow
+/pentest <target>  — Authorized pentest assessment
+/audit [target]    — System/security audit
+/audit_repo <o/n>  — Audit a GitHub repo (e.g. /audit_repo torvalds/linux)
+/repos             — List integrated external repositories
+/integrations      — Show all module integration status
+/os                — OS/platform info
+/stats             — Session statistics
+/demo              — Quick health check
+/compact           — Compress conversation history
+/new               — Start fresh conversation
+/clear             — Clear screen
+/exit              — Exit
 ```
 
 ---
@@ -160,387 +296,183 @@ Switch providers at runtime with `/provider <name>` or `--provider <name>`.
 ## Architecture
 
 ```
-User (CLI / voice)
-       │
-       ▼
- agent.py — REPL / one-shot
-       │
-       ▼
-┌──────────────────────────────────────────┐
-│  AI PROVIDER LAYER                       │
-│  GeminiProvider │ ClaudeProvider │        │
-│  OpenAIProvider │ HuggingFaceProvider │  │
-│  OllamaProvider                          │
-└────────────────┬─────────────────────────┘
-                 │  tool calls (136 tools)
-                 ▼
-┌──────────────────────────────────────────┐
-│  TOOL REGISTRY  (136 tools)              │
-│  reasoning  web  shell  files  vision    │
-│  mouse  keyboard  windows  apps          │
-│  browser  clipboard  voice  memory       │
-│  system  network  code  git  notes       │
-│  integrations  control                   │
-└────────────────┬─────────────────────────┘
-                 │  dispatch
-                 ▼
-┌──────────────────────────────────────────┐
-│  MODULE INTEGRATION LAYER               │
-│  modules/voice.py          (TTS/STT)     │
-│  modules/os_automation.py  (OS control)  │
-│  modules/browser.py        (Selenium)    │
-│  modules/persistent_memory.py            │
-│  modules/messaging_gateway.py            │
-│  modules/integration_hub.py (24 repos)   │
-│  modules/system_monitor.py               │
-│  + 96 other modules/                     │
-└────────────────┬─────────────────────────┘
-                 │
-                 ▼
-┌──────────────────────────────────────────┐
-│  OS / ENVIRONMENT                        │
-│  filesystem  shell  GUI  browser         │
-│  applications  network  clipboard        │
-└──────────────────────────────────────────┘
+User Input (text / voice / one-shot CLI)
+         ↓
+   Intent Classification
+         ↓
+   Planning (think_and_plan / decompose_task)
+         ↓
+   Capability Registry (213 tools, 6 AI providers)
+         ↓
+   Permission / Safety Layer
+         ↓
+   Execution Engine
+   ┌──────────────────────────────────────────────┐
+   │  OS Control      Shell      Browser          │
+   │  Mouse/Keyboard  Files      Web Search       │
+   │  Screenshots     Git        Cloud Services   │
+   │  Voice           Memory     Security Tools   │
+   └──────────────────────────────────────────────┘
+         ↓
+   Observation (screenshot / read output / verify)
+         ↓
+   Verification (did it work? what changed?)
+         ↓
+   Recovery (if failed, try different approach)
+         ↓
+   Completion (task_complete with summary)
 ```
 
-### Agentic Loop
-
-Every task follows:
-
+### Core Agentic Loop
 ```
-OBSERVE → UNDERSTAND → PLAN → ACT → VERIFY → CONTINUE / RECOVER / COMPLETE
-```
-
-1. **OBSERVE** — `observe_and_plan(goal)` takes a screenshot and analyzes the screen with AI to understand current state before acting
-2. **UNDERSTAND** — AI vision identifies what is on screen, what is in focus, what to do first
-3. **PLAN** — `think_and_plan(task)` produces a numbered step-by-step execution plan
-4. **ACT** — execute: mouse click, keyboard type, shell command, browser navigation, etc.
-5. **VERIFY** — take screenshot again, check command output, confirm result
-6. **LOOP** — continue to next step or recover from failure
-7. **COMPLETE** — call `task_complete` only when outcome is verified
-
-**Smart task vs conversation detection** (`_is_task_mode`): action-verb queries (open, run, search, install…) engage the full agentic loop with persistence. Questions get answered directly without unnecessary tool calls.
-
-**Persistence**: when the AI responds without tool calls mid-task, Devin automatically injects a "continue executing" nudge (up to 3×) before accepting the response as complete.
-
-The agent never gives up. Errors are information. If one approach fails, it switches strategy.
-
----
-
-## Capabilities
-
-### OS Automation
-
-| Capability | Linux | macOS | Windows | Notes |
-|---|---|---|---|---|
-| Mouse move/click/drag/scroll | ✓ | ✓ | ✓ | pyautogui + xdotool |
-| Keyboard type/press/hotkey | ✓ | ✓ | ✓ | pyautogui |
-| Screenshot | ✓ | ✓ | ✓ | mss/pyautogui/scrot |
-| AI screenshot analysis | ✓ | ✓ | ✓ | Gemini multimodal |
-| Application launch/close | ✓ | ✓ | ✓ | subprocess |
-| Window list/focus/resize | ✓ | partial | partial | wmctrl/xdotool |
-| Clipboard get/set | ✓ | ✓ | ✓ | xclip/pbcopy/clip |
-| Desktop notification | ✓ | ✓ | ✓ | notify-send/osascript/PS |
-
-### Web & Browser
-
-| Capability | Status |
-|---|---|
-| Web search | ✓ DuckDuckGo API |
-| Web fetch / scrape | ✓ urllib + HTML strip |
-| Browser automation | ✓ Selenium + Playwright (modules/browser.py) |
-| Browser screenshot | ✓ |
-| JS execution | ✓ |
-| HTTP requests (any) | ✓ |
-
-### Shell & Files
-
-| Capability | Status |
-|---|---|
-| Shell command execution | ✓ subprocess, timeout, capture |
-| Python code execution | ✓ exec() with stdout capture |
-| File read/write/edit/delete | ✓ |
-| Directory operations | ✓ |
-| Script execution (.py/.sh/.js/.ps1/.bat) | ✓ auto-detected |
-| Package installation (pip/apt/brew/choco) | ✓ |
-| Git operations | ✓ |
-
-### Voice
-
-| Capability | Status | Notes |
-|---|---|---|
-| Text-to-speech | ✓ IMPLEMENTED | espeak / pyttsx3 / say (macOS) — requires install |
-| Speech-to-text | ✓ IMPLEMENTED | SpeechRecognition / Whisper — requires install + mic |
-| Voice loop | ✓ | /voice command enters listen→execute→speak loop |
-
-### Memory
-
-| Capability | Status |
-|---|---|
-| Persistent memory (SQLite) | ✓ `.devin_memory.db` |
-| Save / recall facts | ✓ `/remember`, `/memory` |
-| Session history | ✓ `conv_messages` list |
-| Delete all memories | ✓ `/forget` |
-
-### Monitoring
-
-| Metric | Status |
-|---|---|
-| CPU / RAM / disk | ✓ psutil |
-| Process list | ✓ |
-| Network info | ✓ ip/ifconfig/ipconfig |
-| Internet connectivity | ✓ ping test |
-
----
-
-## Tools (136)
-
-```
-/tools               — list all tools
-/tools vision        — list tools in category
+THINK   → Reason about goal, tools available, best approach
+PLAN    → decompose_task() or think_and_plan() for complex work
+OBSERVE → screenshot() or read_file() or get_system_info()
+ACT     → Execute with the right tool
+VERIFY  → Confirm step worked (screenshot, check output, check file)
+RECOVER → If failed: change strategy, different tool, different approach
+LOOP    → Repeat until all steps verified complete
+DONE    → task_complete("what was done and verified")
 ```
 
-136 tools total across all categories. Categories:
-- **reasoning**: think
-- **web**: web_search, web_fetch, open_browser, http_request, parse_json
-- **shell**: execute_shell, execute_python, list_processes, kill_process, sleep, run_script, install_package
-- **files**: read_file, write_file, edit_file, delete_file, list_files, create_directory, search_files
-- **git**: git_command, git_advanced
-- **vision**: screenshot, analyze_screenshot, analyze_image, find_on_screen, wait_for_window, wait_and_click, scroll_to_element
-- **mouse**: mouse_move, mouse_click, mouse_double_click, mouse_right_click, mouse_drag, mouse_scroll, get_mouse_position
-- **keyboard**: keyboard_type, keyboard_press, keyboard_hotkey, click_and_type, type_text_at, press_key_at
-- **windows**: get_screen_size, list_windows, focus_window, maximize_window, minimize_window, alt_tab, get_active_window, resize_window, move_window
-- **apps**: open_application, open_terminal, close_application, send_notification
-- **browser**: browser_start, browser_navigate, browser_click, browser_type, browser_get_text, browser_screenshot, browser_execute_js, browser_close
-- **clipboard**: clipboard_get, clipboard_set, select_all_copy
-- **voice**: speak, listen
-- **memory**: remember, recall
-- **system**: get_system_info, get_system_metrics, network_info, context_info
-- **code**: analyze_code
-- **integrations**: devin_module, list_integrations, run_devin_module, discover_modules
-- **notes**: take_note
-- **control**: task_complete, ask_user, wait_and_verify
-- **power**: write_and_run, install_and_verify, git_clone_and_explore, search_and_open, screen_to_clipboard
-- **email**: send_email
-- **data**: analyze_data
-- **scheduling**: schedule_task
-
----
-
-## Slash Commands
-
-| Command | Description |
-|---|---|
-| `/help` | Show this help |
-| `/tools [category]` | List tools, optionally filtered by category |
-| `/status` | Provider, keys, platform, display, modules |
-| `/providers` | All providers with key status |
-| `/provider <name>` | Switch provider (gemini\|claude\|openai\|huggingface\|ollama) |
-| `/model <name>` | Switch model |
-| `/memory [query]` | Show memories, optionally filtered |
-| `/remember <fact>` | Save a fact |
-| `/forget` | Clear all memories (with confirmation) |
-| `/history` | Show conversation history |
-| `/save [file]` | Save the conversation transcript to a Markdown file |
-| `/shell <cmd>` | Run shell command directly |
-| `/screenshot` | Take screenshot, optionally analyze with AI |
-| `/voice` | Listen for voice then run as task |
-| `/repos` | List external repos |
-| `/integrations` | Module integration status |
-| `/compact` | Compress conversation history to save context window |
-| `/debug` | Show context size, provider, diagnostics |
-| `/audit [target]` | Run a system or security audit |
-| `/think <task>` | Plan a task step-by-step (shows plan, asks to execute) |
-| `/workflow <task>` | Execute as a structured multi-step workflow |
-| `/pentest <target>` | Run authorized penetration test on target |
-| `/lab [setup]` | Show/setup security lab environment and tools |
-| `/os` | Show OS, platform, display, and tool availability |
-| `/run <cmd>` | Run a shell command directly (alias for /shell) |
-| `/audit_repo <owner/name>` | Audit a public GitHub repo (metadata + README + file tree) |
-| `/demo` | Quick self-check (platform, tools, modules, provider, memory) |
-| `/stats` | Session statistics (agent steps, tool calls, errors, top-used tools) |
-| `/new` | Start fresh conversation |
-| `/clear` | Clear screen |
-| `/exit` / `/quit` | Exit |
-
----
-
-## Integrated Repositories (24)
-
-All repositories are in `external/`. Capabilities are accessible via `run_devin_module` and `discover_modules`.
-
-| Repository | Source | Capabilities |
-|---|---|---|
-| AIA | github.com/kevinhamza/AIA | Voice, ML, social media |
-| self-operating-computer | github.com/OthersideAI/self-operating-computer | Vision-guided clicking |
-| OpenDevin | github.com/OpenDevin/OpenDevin | Agent framework |
-| cheetahclaws | github.com/OoriData/cheetahclaws | Multi-agent, context management |
-| Jarvis (Concept-Bytes) | github.com/Concept-Bytes/Jarvis | Voice assistant |
-| JARVIS-microsoft | github.com/microsoft/JARVIS | HuggingGPT task planning |
-| gemini-cli | github.com/google-gemini/gemini-cli | Gemini CLI patterns |
-| claude-code | (reference) | Agentic loop patterns |
-| shannon | (integrated) | OSINT, network |
-| hexstrike-ai | (integrated) | Security tooling |
-| openclaw | (integrated) | AI assistant |
-| airgorah | (integrated) | WiFi security (authorized use only) |
-| vulnerability-analysis | (integrated) | Security research |
-| metasploit-framework | (reference) | Penetration testing framework |
-| nishang | (reference) | PowerShell security |
-| Responder | (reference) | Network analysis |
-| PowerTools | (reference) | Security tooling |
-| hackability | (reference) | Security analysis |
-| Holomat | (reference) | Mixed reality |
-| moltbots.github.io | (reference) | Multi-agent patterns |
-| Devin / Devin-2.0 / Devin-3.0 | (earlier versions) | Architecture history |
-
-Full details: `docs/INTEGRATION_MATRIX.md`
-
----
-
-## Security
-
-Devin separates capabilities into tiers:
-
-| Tier | Examples | Behavior |
-|---|---|---|
-| Safe | file I/O, web search, memory, conversation | auto-execute |
-| Caution | shell commands, app launch, mouse/keyboard | execute with output shown |
-| Authorized Security | nmap, sqlmap, security tools | explicit authorization required |
-| Blocked | attacking unauthorized systems | **never autonomously** |
-
-Security tools require:
-- Explicit user authorization in the conversation
-- Target must be systems you own or have written permission to test
-- Authorized lab environments (HackTheBox, TryHackMe, DVWA, own machines) are fine
-- No autonomous credential theft, persistence, or lateral movement
-
----
-
-## Modules (103)
-
-The `modules/` directory contains 103 Python capability modules. Key ones:
-
-| Module | Capability |
-|---|---|
-| `voice.py` | TTS (espeak/pyttsx3) + STT (SpeechRecognition/Whisper) |
-| `os_automation.py` | pyautogui, xdotool, pynput |
-| `browser.py` | Selenium + Playwright |
-| `persistent_memory.py` | SQLite long-term memory |
-| `messaging_gateway.py` | Telegram, Discord, Slack |
-| `integration_hub.py` | Bridge to 24 external repos |
-| `system_monitor.py` | psutil CPU/RAM/disk/network |
-| `cheetahclaws_bridge.py` | Token tracking, compaction |
-| `code_execution.py` | Sandboxed code execution |
-| `cloud_integration_module.py` | AWS, Azure, GCP |
-| `ollama_module.py` | Local LLM via Ollama |
-| `scheduler.py` | Task scheduling |
-| `encryption_tools.py` | Cryptography |
-
-Use `run_devin_module` to call any function from any module:
+### GUI Automation Loop
 ```
-Devin, use run_devin_module to call the voice module's speak function with "hello world"
+Step 1: observe_and_plan("goal")       — analyze screen, make plan
+Step 2: open_application("app")        — launch the application
+Step 3: screenshot_and_analyze("...")  — find UI elements + coordinates
+Step 4: mouse_click(x, y)             — click exactly where needed
+Step 5: keyboard_type("text")         — type input
+Step 6: keyboard_press("Return")      — submit
+Step 7: screenshot_and_analyze("...")  — verify result
+Step 8: Continue or recover
 ```
 
 ---
 
-## Platform Support
+## Integrated Repositories
+
+Devin integrates capabilities from 24 external repositories:
+
+| Repository | Capabilities |
+|-----------|-------------|
+| AIA | Automation, voice assistant, device control, ML |
+| Self-Operating Computer | Screenshot-driven computer control |
+| Devin 2.0, 3.0 | Previous Devin generations' capabilities |
+| Gemini CLI | Google Gemini integration |
+| Claude Code | Anthropic Claude integration |
+| CheetahClaws | Browser automation, file operations |
+| HexStrike AI | Security assessment tools |
+| OpenDevin | Open-source agent capabilities |
+| Shannon | Communication tools |
+| Jarvis (Microsoft + Concept-Bytes) | Multi-tool orchestration |
+| OpenClaw | Web automation |
+| Hackability | Security research tools |
+| Responder, Nishang | Defensive security (source-preserved, isolated) |
+| PowerTools, Airgorah | System utilities |
+| MoltBots | Bot automation |
+| Holomat | Extended automation |
+
+---
+
+## Cross-Platform Support
 
 | Feature | Linux | macOS | Windows |
-|---|---|---|---|
-| Shell execution | ✓ | ✓ | ✓ |
-| File operations | ✓ | ✓ | ✓ |
-| Web / HTTP | ✓ | ✓ | ✓ |
-| Mouse / keyboard (pyautogui) | ✓ | ✓ | ✓ |
-| Mouse / keyboard (xdotool) | ✓ | ✗ | ✗ |
-| Screenshot (mss/pyautogui) | ✓ | ✓ | ✓ |
-| Screenshot (scrot) | ✓ | ✗ | ✗ |
-| Window management (wmctrl) | ✓ | ✗ | ✗ |
-| Voice TTS (espeak) | ✓ | ✗ | ✗ |
-| Voice TTS (say) | ✗ | ✓ | ✗ |
-| Browser (Selenium) | ✓ | ✓ | ✓ |
-| Clipboard (xclip) | ✓ | ✗ | ✗ |
-| Clipboard (pbcopy/clip) | ✗ | ✓ | ✓ |
-| Desktop notifications | ✓ | ✓ | ✓ |
-| Package install (apt) | ✓ | ✗ | ✗ |
-| Package install (brew) | ✗ | ✓ | ✗ |
-| Package install (choco) | ✗ | ✗ | ✓ |
+|---------|-------|-------|---------|
+| Shell execution | ✅ | ✅ | ✅ |
+| File management | ✅ | ✅ | ✅ |
+| Web search | ✅ | ✅ | ✅ |
+| Mouse control | ✅ X11/Wayland | ✅ | ✅ |
+| Keyboard control | ✅ | ✅ | ✅ |
+| Screenshots | ✅ | ✅ | ✅ |
+| App launching | ✅ | ✅ | ✅ |
+| Voice I/O | ✅ | ✅ | ✅ |
+| Memory (SQLite) | ✅ | ✅ | ✅ |
+| Browser (Selenium) | ✅ | ✅ | ✅ |
+| Browser (Playwright) | ✅ | ✅ | ✅ |
+
+Linux GUI tools require a running X11/Wayland session (`DISPLAY=:0`).
 
 ---
 
 ## Testing
 
 ```bash
-# Core test suite (38 tests, no API key required)
-python3 tests/test_core.py
+# Core tests (130 tests, no AI required)
+python3 agent.py --test
 
-# Syntax check only
-python3 -m py_compile agent.py && echo "OK"
+# End-to-end demo (no AI required)
+python3 tests/demo_workflow.py
 
-# One-shot smoke test (requires API key)
-./devin "what is 2+2"
+# Full test suite
+pytest tests/
 
-# Full workflow test (requires display + API key)
-./devin "take a screenshot and describe what you see"
-
-# HuggingFace free-tier end-to-end
-HF_TOKEN=your_token ./devin --provider huggingface "list files in this directory"
+# TypeScript build check
+npm run build
+npm test
 ```
 
-Test categories and status:
-- **Syntax / import**: AUTOMATED VERIFIED (38 tests pass, `tests/test_core.py`)
-- **Tool registry (136 tools)**: AUTOMATED VERIFIED
-- **Shell/file/code execution**: AUTOMATED VERIFIED
-- **Memory (SQLite)**: AUTOMATED VERIFIED
-- **Provider/model selection**: AUTOMATED VERIFIED
-- **Task mode detection**: AUTOMATED VERIFIED
-- **Context management**: AUTOMATED VERIFIED
-- **Model API connectivity**: BLOCKED BY EXTERNAL ENVIRONMENT (requires valid API key)
-- **GUI / mouse / keyboard**: MANUAL VERIFICATION REQUIRED (requires display)
-- **Voice STT/TTS**: MANUAL VERIFICATION REQUIRED (requires audio hardware)
-- **Browser automation**: MANUAL VERIFICATION REQUIRED (requires display + browser)
+---
+
+## Security
+
+- **Default**: safe tools (files, web, math, memory) — auto-execute
+- **Caution**: shell, mouse, keyboard — execute + show output  
+- **Authorized**: security tools (nmap, sqlmap, burpsuite) — require `AUTHORIZED_SECURITY=1` in `.env`
+- **Never**: unauthorized targeting, credential theft, persistence, lateral movement
+
+Security repositories (Responder, Nishang) are source-preserved but **not exposed** through the autonomous runtime.
 
 ---
 
 ## Troubleshooting
 
-**No provider available**
-```
-Add at least one key to .env:
-  GEMINI_API_KEY=...   (free at aistudio.google.com)
-  HF_TOKEN=...         (free at huggingface.co/settings/tokens)
-```
+**"No API key found"**
+→ Add at least one key to `.env`. Easiest free option: `HF_TOKEN` from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 
-**GUI tools return "No display"**
-```bash
-# On a headless server, use Xvfb:
-Xvfb :1 -screen 0 1920x1080x24 &
-export DISPLAY=:1
-./devin "take a screenshot"
-```
+**GUI tools not working on Linux**
+→ Make sure X11 is running: `echo $DISPLAY` should show `:0` or `:1`
+→ Install: `pip install pyautogui python-xlib`
+→ Set `DISPLAY=:0` in `.env` if needed
 
-**pyautogui not working on macOS**
-```
-macOS requires Accessibility permission:
-System Settings → Privacy & Security → Accessibility → add Terminal/Python
-```
+**Browser tools not working**
+→ Install: `pip install selenium playwright`
+→ For Playwright: `playwright install chromium`
 
-**pyautogui not working on Windows**
-```
-Run as administrator, or install via: pip install pyautogui
-```
+**Voice not working**  
+→ Install: `pip install SpeechRecognition pyaudio`
+→ Test microphone access
 
-**Gemini rate limit**
-Devin automatically retries with fallback models (2.5-flash → 2.5-pro → 2.0-flash).
-
-**HuggingFace model loading (503)**
-Devin retries with increasing delays — free tier models cold-start in ~20s.
+**HuggingFace rate limits**
+→ Free tier has limits; Devin auto-retries with backoff
+→ Switch to a smaller/faster model: `/model meta-llama/Meta-Llama-3.1-8B-Instruct`
 
 ---
 
-## Docs
+## Environment Variables
 
-- `docs/ARCHITECTURE.md` — System architecture and component map
-- `docs/INTEGRATION_MATRIX.md` — All 24 external repos, integration status
-- `docs/README_COMPLIANCE.md` — Requirements compliance checklist
-- `.env.example` — All supported environment variables
+See `.env.example` for the complete list. Key variables:
+
+```bash
+HF_TOKEN=hf_...                    # HuggingFace token (free)
+HF_MODEL=Qwen/Qwen3-235B-A22B     # HuggingFace model override
+GEMINI_API_KEY=AI...               # Google Gemini
+ANTHROPIC_API_KEY=sk-ant-...       # Anthropic Claude
+OPENAI_API_KEY=sk-...              # OpenAI
+FCC_BASE_URL=http://127.0.0.1:3000 # Free Claude Code proxy
+OLLAMA_BASE_URL=http://localhost:11434 # Ollama local LLM
+DISPLAY=:0                         # Linux X11 display
+AUTHORIZED_SECURITY=0              # Enable security tools (set to 1 for authorized testing)
+TELEGRAM_BOT_TOKEN=                # Remote control via Telegram
+VOICE_LANG=en-US                   # Voice recognition language
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+*Devin AGI 4.0 — Autonomous OS-Controlling AI Agent*  
+*Powered by HuggingFace (free), Google Gemini (free), Anthropic Claude, OpenAI, or Ollama*
