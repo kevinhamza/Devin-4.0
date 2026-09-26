@@ -61,14 +61,25 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 # ── Load .env ─────────────────────────────────────────────────────────────────
+# Search order: ~/.devin/.env  →  ./.env (cwd)  →  <package dir>/.env
 _ROOT = Path(__file__).resolve().parent
-_ENV  = _ROOT / '.env'
-if _ENV.exists():
-    for _l in _ENV.read_text().splitlines():
+_ENV_CANDIDATES = [
+    Path.home() / '.devin' / '.env',   # pip-install user config
+    Path.cwd() / '.env',               # local project .env
+    _ROOT / '.env',                    # cloned-repo .env
+]
+
+def _load_env(path: Path) -> None:
+    for _l in path.read_text().splitlines():
         _l = _l.strip()
         if _l and not _l.startswith('#') and '=' in _l:
             _k, _v = _l.split('=', 1)
             os.environ.setdefault(_k.strip(), _v.strip().strip('"\''))
+
+for _env_path in _ENV_CANDIDATES:
+    if _env_path.exists():
+        _load_env(_env_path)
+        break
 
 # ── Platform detection ─────────────────────────────────────────────────────────
 _PLATFORM = platform.system()          # 'Linux', 'Darwin', 'Windows'
