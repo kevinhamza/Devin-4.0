@@ -87,6 +87,20 @@ agent.py (runtime, 136 tools)
   └── modules/browser_agent.py
         └── playwright / selenium
         └── beautifulsoup4
+  └── modules/cc_interface.py          [Phase 4]
+        └── Claude Code-style terminal UI (banner, spinner, diff display)
+  └── modules/voice_control.py         [Phase 4]
+        └── TTS: pyttsx3→gTTS→espeak, STT: Whisper→SpeechRecognition
+        └── WakeWordDetector, VoiceSession
+  └── modules/os_controller.py         [Phase 4]
+        └── 19 OS tools: mouse, keyboard, screenshot, clipboard, windows
+        └── pyautogui (primary), pynput (fallback), xdotool (Linux)
+  └── modules/autonomous_core.py       [Phase 4]
+        └── LoopDetector, AutonomousRunner, goal decomposition
+  └── modules/screen_vision.py         [Phase 4]
+        └── OBSERVE→REASON→ACT→VERIFY GUI automation cycle
+        └── run_vision_cycle(), observe(), _execute_action()
+        └── OCR element finder (pytesseract), screen_wait_for()
 ```
 
 ## Provider Fallback Chain
@@ -176,6 +190,64 @@ SCAN_DIRS = [
 
 Each file is imported with `except BaseException` — deliberate, so
 pyo3 panics and ImportErrors don't abort the whole startup.
+
+## Phase 4 — Autonomous Enhancement Modules
+
+Added in Phase 4: five modules that transform Devin from a tool-calling
+agent into a fully autonomous OS-controlling system.
+
+### screen_vision.py — OBSERVE→REASON→ACT→VERIFY Loop
+
+```
+run_vision_cycle(goal, ai_call_fn)
+    │
+    ├─ OBSERVE  : take_screenshot() → ObservationFrame(path, w, h, description)
+    │
+    ├─ UNDERSTAND: build_vision_prompt(goal, frame, step, history)
+    │              → send to AI provider → get action JSON
+    │
+    ├─ ACT      : _parse_ai_action_response(ai_response) → ScreenAction
+    │              → _execute_action(action) [click/type/key/scroll/wait/done/fail]
+    │
+    ├─ VERIFY   : time.sleep(step_delay) → next OBSERVE cycle
+    │
+    └─ COMPLETE : action_type=DONE → VisionCycle(completed=True)
+                  action_type=FAIL → VisionCycle(failed=True, reason=...)
+                  step > max_steps → VisionCycle(failed=True, reason='timeout')
+```
+
+Tool exports registered in TOOLS:
+- `screen_observe(save_path?)` — one-shot screenshot + description
+- `screen_find_element(description)` — OCR-based element location
+- `screen_click_element(description)` — find + click by text
+- `screen_wait_for(description, timeout)` — poll until element appears
+- `screen_status()` — capability check
+
+### os_controller.py — Full OS Control (19 tools)
+
+All tools registered as `os_*` prefixed entries in TOOLS dict:
+`os_mouse_move`, `os_mouse_click`, `os_mouse_double_click`, `os_mouse_right_click`,
+`os_mouse_drag`, `os_mouse_scroll`, `os_get_mouse_pos`, `os_keyboard_type`,
+`os_keyboard_press`, `os_keyboard_hotkey`, `os_screenshot`, `os_clipboard_get`,
+`os_clipboard_set`, `os_get_active_window`, `os_list_windows`, `os_focus_window`,
+`os_launch_app`, `os_screen_info`, `os_click_on_text`
+
+### cc_interface.py — Claude Code-style Terminal UI
+
+`banner()`, `Spinner`, `render_markdown()`, `print_tool_call()`,
+`print_file_edit()`, `print_diff()`, `confirm_action()`, `print_session_stats()`
+
+### voice_control.py — Voice I/O
+
+TTS: `pyttsx3` → `gTTS` (saves + plays) → `espeak` (subprocess fallback)
+STT: `openai-whisper` → `SpeechRecognition` (Google) → manual fallback
+`WakeWordDetector` for hands-free activation, `VoiceSession` high-level API
+
+### autonomous_core.py — Planning Orchestrator
+
+`classify_intent()` (code/web/os/file/query), `decompose_goal()` (subtask list),
+`LoopDetector` (fingerprint, warn at 3x, inject correction at 5x),
+`compact_messages()`, `AutonomousRunner` (full orchestration with retry)
 
 ## Security Boundary
 
