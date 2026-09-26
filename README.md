@@ -24,13 +24,12 @@
 
 ```bash
 pip install devin-agi
-devin          # interactive REPL starts
+devin                  # starts immediately — no config needed
 ```
 
-> Or install directly from GitHub (no PyPI account needed):
+> Or directly from GitHub (no PyPI upload needed):
 > ```bash
 > pip install git+https://github.com/kevinhamza/Devin-4.0
-> devin
 > ```
 
 ### curl one-liner
@@ -40,7 +39,39 @@ curl -fsSL https://github.com/kevinhamza/Devin-4.0/raw/main/scripts/install.sh |
 devin
 ```
 
-Both methods install the `devin` command globally — no `cd`, no virtual-env activation needed.
+Both put the `devin` command on your PATH. No `cd`, no venv activation.
+
+### Add API keys (optional — works free without any)
+
+After a pip or curl install, keys go in **`~/.devin/.env`**:
+
+```bash
+# ~/.devin/.env
+HF_TOKEN=hf_...                 # free — huggingface.co/settings/tokens
+GEMINI_API_KEY=AIza...          # free tier — aistudio.google.com
+ANTHROPIC_API_KEY=sk-ant-...    # paid, best quality
+OPENAI_API_KEY=sk-...           # paid
+CLAUDE_SESSION_KEY=...          # free via fcc-server proxy (see below)
+OLLAMA_BASE_URL=http://localhost:11434   # local, fully offline
+```
+
+Devin picks the best available key automatically. No key → falls back to HuggingFace free tier.
+
+### Use FCC (free Claude proxy — no account needed)
+
+```bash
+# 1. Install fcc-server
+curl -fsSL https://github.com/Alishahryar1/free-claude-code/raw/main/scripts/install.sh | sh
+
+# 2. Start it
+fcc-server &
+
+# 3. Add your claude.ai session cookie to ~/.devin/.env
+echo "CLAUDE_SESSION_KEY=your_cookie_here" >> ~/.devin/.env
+
+# 4. Run Devin — it will use Claude for free
+devin
+```
 
 ---
 
