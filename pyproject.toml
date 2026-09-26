@@ -7,10 +7,18 @@ name = "devin-agi"
 version = "4.0.0"
 description = "The most capable open-source autonomous AI agent — fully controls your OS, works with zero API keys"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "Kevin Hamza", email = "kevin.x.hamza@gmail.com"}]
 requires-python = ">=3.9"
 dynamic = ["dependencies"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+]
 
 [project.urls]
 Homepage = "https://github.com/kevinhamza/Devin-4.0"
