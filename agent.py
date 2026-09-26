@@ -9532,6 +9532,110 @@ class OllamaProvider:
                 raise ValueError(f"Ollama error: {e}")
         raise ValueError("Ollama: max retries exceeded")
 
+# ─── FreeClaude (free-claude-code proxy) ──────────────────────────────────────
+
+class FreeClaudeProvider:
+    """
+    OpenAI-compatible proxy from free-claude-code (github.com/alishahryar1/free-claude-code).
+    Aggregates 54+ free AI providers (NVIDIA NIM, OpenRouter free tier, Groq, etc.)
+    with no API key required — just a running `fcc-server` on localhost.
+
+    Install: curl -fsSL https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.sh | sh
+    Run:     fcc-server  (defaults to port 8080)
+    """
+    DEFAULT_PORT = 8080
+    # Ordered by capability — all are free with no key
+    DEFAULT_MODELS = [
+        'open_router/openrouter/auto',           # smart router across free models
+        'groq/llama-3.3-70b-versatile',          # fast 70B, free tier
+        'groq/llama-3.1-70b-versatile',          # stable 70B Groq
+        'nvidia_nim/meta/llama-3.3-70b-instruct',# NVIDIA NIM 70B
+        'nvidia_nim/meta/llama-3.1-70b-instruct',# NVIDIA NIM stable
+        'open_router/meta-llama/llama-3.3-70b-instruct:free',
+        'groq/mixtral-8x7b-32768',               # MOE fallback
+        'groq/gemma2-9b-it',                     # small fast fallback
+    ]
+
+    _CALL_OPEN  = '<tool_call>'
+    _CALL_CLOSE = '</tool_call>'
+
+    def __init__(self, model: str = '', base_url: str = ''):
+        port = int(os.environ.get('FCC_PORT', str(self.DEFAULT_PORT)))
+        self.base_url = (base_url or os.environ.get('FCC_BASE_URL', f'http://localhost:{port}')).rstrip('/')
+        self.model    = model or os.environ.get('FCC_MODEL', '') or self.DEFAULT_MODELS[0]
+        self.name     = f"fcc/{self.model}"
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Return True if fcc-server is reachable."""
+        port = int(os.environ.get('FCC_PORT', str(cls.DEFAULT_PORT)))
+        base = os.environ.get('FCC_BASE_URL', f'http://localhost:{port}').rstrip('/')
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"{base}/v1/models", timeout=2)
+            return True
+        except Exception:
+            return False
+
+    def _chat(self, messages: list, model: str) -> Tuple[str, List[dict]]:
+        url  = f"{self.base_url}/v1/chat/completions"
+        hdrs = {"Content-Type": "application/json"}
+        body = {"model": model, "messages": messages, "stream": False, "max_tokens": 4096}
+        resp = _http_post(url, hdrs, body, timeout=120)
+        choice = (resp.get("choices") or [{}])[0]
+        msg    = choice.get("message", {})
+        text   = msg.get("content") or ""
+
+        # Native tool calls if model supports them
+        native_calls = msg.get("tool_calls") or []
+        if native_calls:
+            calls = []
+            for tc in native_calls:
+                fn = tc.get("function", {})
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except Exception:
+                    args = {}
+                calls.append({"name": fn.get("name", ""), "args": args})
+            return text, calls
+
+        # ReAct fallback: parse <tool_call>…</tool_call>
+        pattern = re.compile(r'<tool_call>(.*?)</tool_call>', re.DOTALL)
+        calls   = []
+        for m in pattern.finditer(text):
+            try:
+                obj = json.loads(m.group(1).strip())
+                if isinstance(obj, dict) and "name" in obj:
+                    calls.append({"name": obj["name"], "args": obj.get("args", {})})
+            except Exception:
+                pass
+        clean = pattern.sub('', text).strip()
+        return clean, calls
+
+    def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
+        msgs: List[dict] = []
+        if system:
+            msgs.append({"role": "system", "content": system})
+        for m in messages:
+            content = m.get("content", "")
+            if isinstance(content, list):
+                content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
+            msgs.append({"role": m["role"], "content": content})
+
+        models_to_try = [self.model] if self.model != self.DEFAULT_MODELS[0] else self.DEFAULT_MODELS
+        last_err = None
+        for mdl in models_to_try:
+            for attempt in range(2):
+                try:
+                    return self._chat(msgs, mdl)
+                except Exception as e:
+                    last_err = e
+                    if attempt == 0:
+                        time.sleep(1)
+        raise ValueError(f"FreeClaudeProvider: all models failed. Last error: {last_err}\n"
+                         "Make sure fcc-server is running (run: fcc-server)")
+
+
 # ─── HuggingFace ──────────────────────────────────────────────────────────────
 
 class HuggingFaceProvider:
@@ -9793,10 +9897,10 @@ def _pick_provider(name: str = '', model: str = ''):
 
     if name in ('gemini', 'google'):
         if not gk: raise ValueError("GEMINI_API_KEY not set")
-        return GeminiProvider(gk, model or 'gemini-3.6-flash')
+        return GeminiProvider(gk, model or 'gemini-2.5-flash')
     if name in ('claude', 'anthropic'):
         if not ak: raise ValueError("ANTHROPIC_API_KEY not set")
-        return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
+        return ClaudeProvider(ak, model or 'claude-sonnet-5')
     if name == 'openai':
         if not ok: raise ValueError("OPENAI_API_KEY not set")
         return OpenAIProvider(ok, model or 'gpt-4o-mini')
@@ -9805,24 +9909,26 @@ def _pick_provider(name: str = '', model: str = ''):
         return HuggingFaceProvider(hfk, model or '')
     if name in ('ollama', 'local'):
         return OllamaProvider(model=model or 'llama3.2')
-    if name in ('fcc', 'freeclaude', 'free-claude', 'free_claude'):
-        if not FreeClaude.is_running():
+    if name in ('fcc', 'free', 'freeclaude', 'free-claude', 'free_claude'):
+        if not FreeClaude.is_running() and not FreeClaudeProvider.is_available():
             raise ValueError("FCC server not running. Start it: pip install free-claude-code && fcc-server")
-        return FreeClaude(model=model)
+        return FreeClaude(model=model) if FreeClaude.is_running() else FreeClaudeProvider(model=model or '')
 
     # Auto-select: prefer highest-quality available key
-    if gk:  return GeminiProvider(gk, model or 'gemini-3.6-flash')
-    if ak:  return ClaudeProvider(ak, model or 'claude-sonnet-4-6')
+    if gk:  return GeminiProvider(gk, model or 'gemini-2.5-flash')
+    if ak:  return ClaudeProvider(ak, model or 'claude-sonnet-5')
     if ok:  return OpenAIProvider(ok, model or 'gpt-4o-mini')
     if hfk: return HuggingFaceProvider(hfk, model or '')
-    # Last resort: check if FCC proxy is running
+    # Last resort: free-claude-code proxy — works with no API key
     if FreeClaude.is_running():
         return FreeClaude(model=model)
+    if FreeClaudeProvider.is_available():
+        return FreeClaudeProvider(model=model or '')
     raise ValueError(
         "No AI provider available.\n"
         "  Option 1 (free): Set HF_TOKEN in .env  →  huggingface.co/settings/tokens\n"
         "  Option 2 (free): Set GEMINI_API_KEY in .env  →  aistudio.google.com\n"
-        "  Option 3 (free): Install & run FCC proxy  →  pip install free-claude-code && fcc-server\n"
+        "  Option 3 (free, no key): Install & run FCC proxy  →  pip install free-claude-code && fcc-server\n"
         "  Option 4: Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env\n"
         "  Option 5 (local): Install Ollama  →  ollama.ai, then: ./devin --provider ollama"
     )
