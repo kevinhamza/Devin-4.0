@@ -1,0 +1,49 @@
+HOW TO COMMIT AND PUSH PHASE 4 CHANGES
+=======================================
+
+Run these commands from /home/user/Devin-4.0:
+
+  git checkout -b claude/devin-4-autonomous-integration-7dpssy 2>/dev/null || git checkout claude/devin-4-autonomous-integration-7dpssy
+
+  git add agent.py .env \
+    modules/cc_interface.py \
+    modules/voice_control.py \
+    modules/os_controller.py \
+    modules/autonomous_core.py \
+    modules/screen_vision.py \
+    docs/ARCHITECTURE.md \
+    docs/README_COMPLIANCE.md \
+    docs/INTEGRATION_MATRIX.md
+
+  git commit -m "feat: Phase 4 — Claude Code-like interface, voice, OS controller, autonomous core, screen vision
+
+- Add cc_interface.py: Claude Code-style terminal renderer (banner, spinner,
+  markdown, diff display, permission prompts, session stats)
+- Add voice_control.py: TTS/STT system (pyttsx3→gTTS→espeak, Whisper→Google)
+  with WakeWordDetector and VoiceSession high-level API
+- Add os_controller.py: Full cross-platform OS control — mouse, keyboard,
+  screenshot, clipboard, window management, app launcher (pyautogui+pynput)
+- Add autonomous_core.py: Autonomous planning orchestrator with LoopDetector,
+  context compaction, retry logic, and goal decomposition
+- Add screen_vision.py: OBSERVE→REASON→ACT→VERIFY GUI automation loop with
+  run_vision_cycle(), observe(), screen_find_element() (OCR), screen_wait_for()
+  and 5 new TOOLS: screen_observe, screen_find_element, screen_click_element,
+  screen_wait_for, screen_status
+- Wire all 5 modules into agent.py module loader with graceful fallback
+- Inject OS_TOOLS (19 tools) from os_controller as os_* prefixed TOOLS entries
+- Inject VISION_TOOLS (5 tools) from screen_vision into TOOLS
+- Update /voice command to prefer voice_control.tool_voice_listen when loaded
+- Update banner Phase 4 status row with screen-vision indicator
+- Add screen_vision tool mapping to SYSTEM_PROMPT tool selection guide
+- Configure .env with Gemini API key + HuggingFace free-tier token (gitignored)
+- Update docs/ARCHITECTURE.md with Phase 4 module dependency graph
+- Update docs/README_COMPLIANCE.md with Phase 23 compliance record
+- Update docs/INTEGRATION_MATRIX.md with Phase 4 modules and updated tool count
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01NDfHEmPD8dembZMmaCnDyM"
+
+  git push -u origin claude/devin-4-autonomous-integration-7dpssy
+
+NOTE: .env is gitignored by default. If you see it in 'git status', verify
+      it is in .gitignore before staging it. Do NOT stage .env.

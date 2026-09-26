@@ -23,15 +23,28 @@ coupled to Devin-4.0.
 
 ---
 
+## Phase 4 Autonomous Modules
+
+| Module | Status | Integration Notes |
+|---|---|---|
+| `modules/cc_interface.py` | ✅ | Claude Code-style terminal UI — banner, spinner, diff, markdown |
+| `modules/voice_control.py` | ✅ | TTS/STT — pyttsx3/gTTS/espeak + Whisper/Google; wired into /voice |
+| `modules/os_controller.py` | ✅ | 19 OS tools injected as `os_*` prefix in TOOLS dict |
+| `modules/autonomous_core.py` | ✅ | Goal decomposition, LoopDetector, AutonomousRunner |
+| `modules/screen_vision.py` | ✅ | OBSERVE→REASON→ACT→VERIFY cycle; 5 tools in TOOLS |
+
+---
+
 ## OS Automation
 
 | Repo / Library | Status | Integration Notes |
 |---|---|---|
 | pynput | ✅ | Mouse + keyboard in `os_agent.py` and `keyboard_mouse_control.py` |
 | xdotool (Linux) | ✅ | Fallback mouse/keyboard/window control in `os_agent.py` |
-| pyautogui | 🟡 | Available if installed; pynput preferred |
+| pyautogui | ✅ | Primary in `os_controller.py` (Phase 4); fallback elsewhere |
 | mss | ✅ | Screenshot fallback in `os_agent.py` |
 | PIL/Pillow | ✅ | Screenshot primary backend |
+| pytesseract | 🟡 | OCR for screen_find_element / click_on_text (optional) |
 
 ---
 
@@ -124,15 +137,15 @@ credential theft, persistence, and lateral movement are never permitted.
 
 | Category | Count |
 |---|---|
-| Total tools in TOOLS dict | 136 |
-| OS control tools | 18 |
+| Total tools in TOOLS dict | 160+ |
+| OS control tools (os_* + screen_*) | 24 |
 | Web / HTTP tools | 12 |
 | Shell / Python exec tools | 8 |
-| Vision tools | 6 |
+| Vision / screen tools | 11 |
 | Memory tools | 8 |
 | File system tools | 14 |
 | Browser tools | 10 |
 | Voice tools | 4 |
 | System monitoring tools | 6 |
 | AI provider tools | 10 |
-| Other / utility | 40 |
+| Other / utility | 50+ |

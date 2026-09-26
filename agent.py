@@ -1092,6 +1092,47 @@ for _bdir_name in _BULK_SCAN_DIRS:
         sys.path.insert(0, _s)
     _bulk_loaded.update(_bulk_load_dir(_bdir))
 
+# Load cc_interface (Claude Code-style terminal UI)
+_cc_ui_mod = None
+try:
+    _cc_ui_mod = _il.import_module('cc_interface')
+except BaseException:
+    pass
+
+# Load voice_control (TTS/STT voice system)
+_voice_ctrl_mod = None
+try:
+    _voice_ctrl_mod = _il.import_module('voice_control')
+except BaseException:
+    pass
+
+# Load os_controller (full OS mouse/keyboard/window control)
+_os_ctrl_mod = None
+_OS_TOOLS_MAP: Dict[str, Any] = {}
+try:
+    _os_ctrl_mod = _il.import_module('os_controller')
+    if hasattr(_os_ctrl_mod, 'OS_TOOLS'):
+        _OS_TOOLS_MAP = _os_ctrl_mod.OS_TOOLS
+except BaseException:
+    pass
+
+# Load autonomous_core (autonomous planning and orchestration)
+_auto_core_mod = None
+try:
+    _auto_core_mod = _il.import_module('autonomous_core')
+except BaseException:
+    pass
+
+# Load screen_vision (OBSERVE→REASON→ACT→VERIFY GUI automation loop)
+_screen_vision_mod = None
+_VISION_TOOLS_MAP: Dict[str, Any] = {}
+try:
+    _screen_vision_mod = _il.import_module('screen_vision')
+    if hasattr(_screen_vision_mod, 'VISION_TOOLS'):
+        _VISION_TOOLS_MAP = _screen_vision_mod.VISION_TOOLS
+except BaseException:
+    pass
+
 # Count all available modules
 def _modules_status() -> Dict[str, bool]:
     return {
@@ -1207,6 +1248,12 @@ def _modules_status() -> Dict[str, bool]:
         'aws':               _aws_mod               is not None,
         'azure':             _azure_mod             is not None,
         'gcp':               _gcp_mod               is not None,
+        # ── Phase 4 core modules ─────────────────────────────────────────────
+        'cc_interface':      _cc_ui_mod             is not None,
+        'voice_control':     _voice_ctrl_mod        is not None,
+        'os_controller':     _os_ctrl_mod           is not None,
+        'autonomous_core':   _auto_core_mod         is not None,
+        'screen_vision':     _screen_vision_mod     is not None,
         # ── bulk-loaded directories ───────────────────────────────────────────
         **{k.replace('/', '.').replace(os.sep, '.'): (v is not None)
            for k, v in _bulk_loaded.items()},
@@ -9116,6 +9163,60 @@ TOOLS: Dict[str, Dict] = {
     },
 }
 
+# ── Inject OS controller tools from os_controller module ─────────────────────
+if _OS_TOOLS_MAP:
+    _OS_TOOL_DESCS = {
+        'mouse_move':         ('Move mouse cursor to (x, y) on screen.', ['x', 'y'], {'x': ('integer','X coordinate'), 'y': ('integer','Y coordinate'), 'duration': ('number','Movement duration in seconds')}, 'os'),
+        'mouse_click':        ('Click mouse button at optional (x, y).', [], {'x': ('integer','X coordinate (-1=current)'), 'y': ('integer','Y coordinate (-1=current)'), 'button': ('string','left|right|middle'), 'clicks': ('integer','Number of clicks'), 'interval': ('number','Interval between clicks')}, 'os'),
+        'mouse_double_click': ('Double-click at optional (x, y).', [], {'x': ('integer','X coordinate'), 'y': ('integer','Y coordinate')}, 'os'),
+        'mouse_right_click':  ('Right-click at optional (x, y).', [], {'x': ('integer','X coordinate'), 'y': ('integer','Y coordinate')}, 'os'),
+        'mouse_drag':         ('Drag mouse from one position to another.', ['from_x','from_y','to_x','to_y'], {'from_x': ('integer','Start X'), 'from_y': ('integer','Start Y'), 'to_x': ('integer','End X'), 'to_y': ('integer','End Y'), 'duration': ('number','Drag duration')}, 'os'),
+        'mouse_scroll':       ('Scroll mouse wheel at (x, y).', ['x','y'], {'x': ('integer','X coordinate'), 'y': ('integer','Y coordinate'), 'amount': ('integer','Scroll amount'), 'direction': ('string','up|down')}, 'os'),
+        'get_mouse_pos':      ('Get current mouse cursor position.', [], {}, 'os'),
+        'keyboard_type':      ('Type text string using keyboard.', ['text'], {'text': ('string','Text to type'), 'interval': ('number','Delay between keystrokes')}, 'os'),
+        'keyboard_press':     ('Press a key or key combination (e.g. enter, ctrl+c, alt+f4).', ['key'], {'key': ('string','Key name or combo like ctrl+c')}, 'os'),
+        'keyboard_hotkey':    ('Press a keyboard hotkey combination.', ['key'], {'key': ('string','Hotkey like ctrl+shift+i')}, 'os'),
+        'screenshot':         ('Take a screenshot and save to file.', [], {'save_path': ('string','Path to save PNG'), 'analyze': ('boolean','Also analyze the screenshot')}, 'os'),
+        'clipboard_get':      ('Get the current clipboard text content.', [], {}, 'os'),
+        'clipboard_set':      ('Set the clipboard text content.', ['text'], {'text': ('string','Text to copy to clipboard')}, 'os'),
+        'get_active_window':  ('Get info about the currently focused window.', [], {}, 'os'),
+        'list_windows':       ('List all open windows on the desktop.', [], {}, 'os'),
+        'focus_window':       ('Bring a window to the foreground by title substring.', ['window_name'], {'window_name': ('string','Window title substring')}, 'os'),
+        'launch_app':         ('Launch an application by name or path.', ['app'], {'app': ('string','App name or path'), 'args': ('string','Optional command-line arguments')}, 'os'),
+        'screen_info':        ('Get screen resolution and cursor position.', [], {}, 'os'),
+        'click_on_text':      ('Find text on screen using OCR and click it.', ['text'], {'text': ('string','Text to find and click'), 'confidence': ('number','OCR confidence threshold 0-1')}, 'os'),
+    }
+    for _osname, _osfn in _OS_TOOLS_MAP.items():
+        if _osname in _OS_TOOL_DESCS:
+            _desc, _req, _par, _cat = _OS_TOOL_DESCS[_osname]
+            TOOLS[f'os_{_osname}'] = {
+                'fn': _osfn,
+                'desc': _desc,
+                'params': {k: {'type': t, 'description': d} for k, (t, d) in _par.items()},
+                'required': _req,
+                'category': _cat,
+            }
+
+# ── Inject screen_vision tools ────────────────────────────────────────────────
+_VISION_TOOL_META = {
+    'screen_observe':       ('Take a screenshot and return screen description with dimensions.', [], {'save_path': ('string', 'Optional path to save PNG')}, 'os'),
+    'screen_find_element':  ('Find a UI element on screen by description text using OCR.', ['description'], {'description': ('string', 'Text/label of element to find'), 'screenshot_path': ('string', 'Path to existing screenshot or leave blank to auto-capture')}, 'os'),
+    'screen_click_element': ('Take a screenshot, find a UI element by text, and click it.', ['description'], {'description': ('string', 'Text/label of element to click')}, 'os'),
+    'screen_wait_for':      ('Wait until a UI element matching description appears on screen.', ['description'], {'description': ('string', 'Element text to wait for'), 'timeout': ('number', 'Max seconds to wait'), 'interval': ('number', 'Check interval in seconds')}, 'os'),
+    'screen_status':        ('Show screen automation capability status (pyautogui, Pillow, OCR, display).', [], {}, 'os'),
+}
+if _VISION_TOOLS_MAP:
+    for _vname, _vfn in _VISION_TOOLS_MAP.items():
+        if _vname in _VISION_TOOL_META:
+            _vdesc, _vreq, _vpar, _vcat = _VISION_TOOL_META[_vname]
+            TOOLS[_vname] = {
+                'fn': _vfn,
+                'desc': _vdesc,
+                'params': {k: {'type': t, 'description': d} for k, (t, d) in _vpar.items()},
+                'required': _vreq,
+                'category': _vcat,
+            }
+
 def _dispatch_tool(name: str, args: dict) -> str:
     if name not in TOOLS:
         return f"ERROR: unknown tool {name!r}. Available: {', '.join(list(TOOLS)[:10])}..."
@@ -9842,6 +9943,19 @@ Check if app running   → app_is_running(name)
 Focus app window       → focus_app(name)
 Complex multi-step     → decompose_task(goal) → multi_step_workflow(steps_json)
 Independent parallel   → batch_execute(tools_json) — run tools simultaneously
+OS mouse move          → os_mouse_move(x, y) or mouse_move(x, y)
+OS mouse click         → os_mouse_click(x, y) or mouse_click(x, y)
+OS keyboard type       → os_keyboard_type(text) or keyboard_type(text)
+OS key press           → os_keyboard_press("ctrl+c") or keyboard_hotkey(["ctrl","c"])
+OS screenshot          → os_screenshot() or screenshot()
+OS window focus        → os_focus_window(title) or focus_app(name)
+OS clipboard           → os_clipboard_get() / os_clipboard_set(text)
+Screen observation     → screen_observe() — screenshot + description in one call
+Find UI element (OCR)  → screen_find_element("Submit") — find text on screen
+Click by text (OCR)    → screen_click_element("Login") — find text and click it
+Wait for element       → screen_wait_for("Loading complete", timeout=15)
+Screen tool status     → screen_status() — check automation capabilities
+Voice listen           → /voice command or voice_listen tool
 Wait for event         → wait_for_condition("os.path.exists('/tmp/out')", timeout=30)
 Save progress          → checkpoint_save("step3", data) → checkpoint_load("step3")
 
@@ -10717,9 +10831,18 @@ def _banner(provider=None):
 
     print()
     print(dim(top))
+    _p4 = '  '.join(filter(None, [
+        (green('voice') if _voice_ctrl_mod else ''),
+        (green('OS-ctrl') if _os_ctrl_mod else ''),
+        (green('autonomous') if _auto_core_mod else ''),
+        (green('cc-ui') if _cc_ui_mod else ''),
+        (green('screen-vision') if _screen_vision_mod else ''),
+    ]))
     print(dim(row(f"{bold(cyan('Devin AGI'))} {dim('v4.0.0')}  —  Autonomous OS-Controlling AI")))
     print(dim(row(f"cwd: {str(_ROOT)}")))
     print(dim(row(p_line)))
+    if _p4:
+        print(dim(row(f"phase4: {_p4}")))
     print(dim(row(f"platform: {_PLATFORM}  {disp}  ·  tools: {bold(str(len(TOOLS)))}  ·  modules: {loaded}/{len(mods)}  ·  memories: {facts}")))
     print(dim(bot))
     print()
@@ -11002,7 +11125,11 @@ def repl(provider_name: str = '', model: str = ''):
                         print(tool_analyze_image(path, 'Describe everything visible on screen in detail.'))
 
             elif cmd == '/voice':
-                text = tool_listen()
+                # Prefer voice_control module if loaded, else fallback
+                if _voice_ctrl_mod and hasattr(_voice_ctrl_mod, 'tool_voice_listen'):
+                    text = _voice_ctrl_mod.tool_voice_listen(timeout=12)
+                else:
+                    text = tool_listen()
                 if text.startswith('Heard:'):
                     task = text.replace('Heard:', '').strip()
                     print(dim(f"  Voice: {task}"))

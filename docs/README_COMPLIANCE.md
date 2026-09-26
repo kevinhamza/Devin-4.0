@@ -249,3 +249,60 @@ specification. Each phase is marked COMPLETE, PARTIAL, or PENDING.
 - [x] `python3 -c "from modules.os_agent import get_os_agent; print('OK')"`
 - [x] `python3 -c "from modules.reasoning_engine import think"`
 - [x] `./devin` REPL starts and responds to queries
+
+## Phase 23 — Autonomous Enhancement (Claude Code-style)
+
+**Status: COMPLETE**
+
+Added via branch `claude/devin-4-autonomous-integration-7dpssy`.
+
+### cc_interface.py — Claude Code Terminal UI
+- [x] `banner()` with box-drawing characters and live stats
+- [x] `Spinner` context manager with animated CLI progress
+- [x] `render_markdown()` with ANSI color syntax highlighting
+- [x] `print_tool_call()` / `print_file_edit()` / `print_diff()`
+- [x] `confirm_action()` permission prompt
+- [x] `print_session_stats()` usage summary
+
+### voice_control.py — Voice I/O System
+- [x] `TTSEngine`: pyttsx3 → gTTS (mp3 save+play) → espeak subprocess
+- [x] `STTEngine`: openai-whisper → SpeechRecognition (Google API)
+- [x] `WakeWordDetector`: keyword-trigger for hands-free activation
+- [x] `VoiceSession`: high-level API for full voice interaction
+- [x] `tool_voice_listen()`, `tool_voice_speak()`, `tool_voice_status()`
+- [x] Wired into `/voice` slash command in agent.py
+
+### os_controller.py — OS Control (19 tools)
+- [x] Mouse: move, click, double-click, right-click, drag, scroll, position
+- [x] Keyboard: type text, press key/combo, hotkey
+- [x] Screenshot: pyautogui primary, scrot/gnome-screenshot fallback
+- [x] Clipboard: get/set via pyperclip → xclip/xsel → pbcopy
+- [x] Windows: get active, list all, focus by title
+- [x] Apps: launch by name or path (cross-platform)
+- [x] OCR click: `click_on_text(text)` via pytesseract
+- [x] All 19 tools injected as `os_*` prefix in TOOLS dict
+
+### autonomous_core.py — Planning Orchestrator
+- [x] `classify_intent()`: code/web/os/file/query classification
+- [x] `decompose_goal()`: break goal into ordered subtask list
+- [x] `LoopDetector`: fingerprint-based anti-loop (warn@3x, correct@5x)
+- [x] `compact_messages()`: context window compression
+- [x] `AutonomousRunner`: retry logic, timeout, progress tracking
+- [x] Wired into `run_agent()` loop
+
+### screen_vision.py — OBSERVE→REASON→ACT→VERIFY Loop
+- [x] `observe()`: take screenshot → `ObservationFrame` with description
+- [x] `build_vision_prompt()`: structures AI reasoning about screen state
+- [x] `run_vision_cycle()`: full autonomous GUI cycle, max N steps
+- [x] `_parse_ai_action_response()`: JSON + keyword fallback parser
+- [x] `_execute_action()`: click/type/key/scroll/wait/done/fail
+- [x] `screen_find_element()`: OCR-based element location (pytesseract)
+- [x] `screen_wait_for()`: poll until element appears
+- [x] 5 new tools registered in TOOLS: screen_observe, screen_find_element,
+  screen_click_element, screen_wait_for, screen_status
+
+### .env Configuration
+- [x] `GEMINI_API_KEY` — Gemini 2.5 Flash as primary provider
+- [x] `HF_TOKEN` — HuggingFace free-tier (Qwen3-235B, DeepSeek-V3, Llama3.3)
+- [x] `DEVIN_PROVIDER=gemini` — explicit provider selection
+- [x] `.env` is gitignored — no secrets in source ever
