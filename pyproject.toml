@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "Devin"
+version = "4.0.0"
+description = "The most capable open-source autonomous AI agent — fully controls your OS, works with zero API keys"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Kevin Hamza", email = "kevin.x.hamza@gmail.com"}]
+requires-python = ">=3.9"
+dynamic = ["dependencies"]
+
+[project.urls]
+Homepage = "https://github.com/kevinhamza/Devin-4.0"
+Issues = "https://github.com/kevinhamza/Devin-4.0/issues"
+
+[project.scripts]
+devin = "agent:main"
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "repos*", "docs*"]

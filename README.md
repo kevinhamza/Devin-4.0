@@ -20,7 +20,23 @@
 
 ## ⚡ Quick Start
 
-### 1 — Clone & install
+### Option A — pip install (easiest)
+
+```bash
+pip install git+https://github.com/kevinhamza/Devin-4.0
+devin                        # starts the interactive REPL
+```
+
+### Option B — curl one-liner
+
+```bash
+curl -fsSL https://github.com/kevinhamza/Devin-4.0/raw/main/scripts/install.sh | sh
+cd ~/Devin-4.0 && python3 agent.py
+```
+
+### Option C — manual clone
+
+#### 1 — Clone & install
 
 ```bash
 git clone https://github.com/kevinhamza/Devin-4.0
@@ -28,7 +44,7 @@ cd Devin-4.0
 pip install -r requirements.txt
 ```
 
-### 2 — Add an API key (optional — works without one)
+#### 2 — Add an API key (optional — works without one)
 
 ```bash
 cp .env.example .env
@@ -38,7 +54,7 @@ cp .env.example .env
 #   ANTHROPIC_API_KEY=...     ← paid, best quality
 ```
 
-### 3 — Run
+#### 3 — Run
 
 ```bash
 # Interactive REPL (recommended)
