@@ -1,141 +1,262 @@
-# Devin AGI 4.0
+<div align="center">
 
-Devin 4.0 is a fully autonomous OS-controlling AI agent. It operates a
-real computer like a human — using mouse, keyboard, and screen vision —
-while reasoning with state-of-the-art language models.
+<h1>🤖 Devin 4.0</h1>
+<h3>The most capable open-source autonomous AI agent — fully controls your OS, works with zero API keys</h3>
 
-## What Devin Can Do
+[![CI](https://github.com/kevinhamza/Devin-4.0/actions/workflows/devin-ci.yml/badge.svg)](https://github.com/kevinhamza/Devin-4.0/actions/workflows/devin-ci.yml)
+[![Security Scan](https://github.com/kevinhamza/Devin-4.0/actions/workflows/security-scan.yml/badge.svg)](https://github.com/kevinhamza/Devin-4.0/actions/workflows/security-scan.yml)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/kevinhamza/Devin-4.0?style=social)](https://github.com/kevinhamza/Devin-4.0/stargazers)
 
-- **See the screen** — takes screenshots, analyzes them with AI vision,
-  and describes what it observes
-- **Control the mouse and keyboard** — clicks, types, scrolls, drags,
-  uses hotkeys on Linux, macOS, and Windows
-- **Open and operate applications** — browsers, terminals, editors,
-  any GUI app
-- **Automate the web** — full browser control via Playwright or Selenium
-  with vision-guided element finding
-- **Speak and listen** — text-to-speech output, speech-to-text input,
-  continuous voice command mode
-- **Write and run code** — Python exec with stdout capture, shell
-  subprocess with timeout
-- **Search the web** — HTTP requests, web scraping, search APIs
-- **Manage files** — read, write, move, archive, diff
-- **Monitor the system** — CPU, memory, disk, processes, network, GPU
-- **Remember things** — persistent SQLite memory, session history,
-  named facts
-- **Use any LLM** — Claude, Gemini, OpenAI, HuggingFace free-tier,
-  Ollama local, free Claude fallback
+<br/>
 
-## Quick Start
+> **Works completely free — no API key required.**  
+> Uses HuggingFace free tier or free-claude-code proxy automatically when no paid key is set.
+
+</div>
+
+---
+
+## ⚡ 60-Second Install
 
 ```bash
-# Clone
 git clone https://github.com/kevinhamza/Devin-4.0
 cd Devin-4.0
-
-# Install Python deps
 pip install -r requirements.txt
-
-# Copy and fill environment variables
-cp .env.example .env
-# Edit .env — add at minimum HF_TOKEN for free HuggingFace models
-
-# Start the REPL
-./devin
-
-# Or run a one-shot task
-python3 agent.py "open a browser and search for Python docs"
-
-# Run tests
-python3 agent.py --test
-
-# Show loaded capabilities
-python3 main.py --caps
+cp .env.example .env          # optional: add API keys for best quality
+python3 agent.py              # start the REPL — works with zero keys
 ```
 
-## AI Provider Setup
+That's it. Devin is running.
 
-Devin automatically selects the best available provider based on
-environment variables. Set at least one:
+---
 
-| Provider | Environment Variable | Free? |
-|---|---|---|
-| HuggingFace | `HF_TOKEN` | Yes (free tier) |
-| Claude | `ANTHROPIC_API_KEY` | No |
-| Gemini | `GEMINI_API_KEY` | Limited free |
-| OpenAI | `OPENAI_API_KEY` | No |
-| Ollama | `OLLAMA_BASE_URL` | Yes (local) |
-| Free Claude | `CLAUDE_SESSION_KEY` | Yes |
+## 🧠 What Makes Devin Different
 
-Priority order: Claude → Gemini → OpenAI → HuggingFace → Free Claude
+| Feature | Devin 4.0 | AutoGPT | Open Interpreter | Devin (commercial) |
+|---|:---:|:---:|:---:|:---:|
+| **Zero API key needed** | ✅ | ❌ | ❌ | ❌ |
+| **Full OS mouse/keyboard control** | ✅ | ❌ | Partial | ✅ |
+| **Screen vision (AI sees your screen)** | ✅ | ❌ | ❌ | ✅ |
+| **Voice input + output** | ✅ | ❌ | ❌ | ❌ |
+| **213 built-in tools** | ✅ | ~30 | ~20 | Unknown |
+| **5 AI providers + auto-fallback** | ✅ | 1–2 | 1–2 | 1 |
+| **110+ capability modules** | ✅ | ❌ | ❌ | ❌ |
+| **Local LLM support (Ollama)** | ✅ | Partial | ✅ | ❌ |
+| **Open source** | ✅ | ✅ | ✅ | ❌ |
+| **Price** | **Free** | API cost | API cost | $500/mo |
 
-Override with: `DEVIN_PROVIDER=huggingface`
+---
 
-## HuggingFace Free Tier
+## 🎯 What Devin Can Do
 
-Set `HF_TOKEN` in your `.env` file to use HuggingFace's free inference
-API. Devin will automatically cycle through these free models:
+### 👁️ See & Understand
+- Takes screenshots and analyzes them with AI vision
+- Reads any UI element, window, dialog, or terminal output
+- Identifies positions, text, and state of everything on screen
 
-1. `Qwen/Qwen2.5-72B-Instruct` (best quality)
-2. `meta-llama/Meta-Llama-3.1-70B-Instruct`
-3. `mistralai/Mixtral-8x7B-Instruct-v0.1`
-4. `mistralai/Mistral-7B-Instruct-v0.3`
-5. `HuggingFaceH4/zephyr-7b-beta` (fallback)
+### 🖱️ Control Your Computer
+- Clicks, types, scrolls, drags — full mouse + keyboard control
+- Works on Linux (X11/Wayland), macOS, and Windows
+- Opens and operates any GUI application
 
-## OS Requirements
+### 🌐 Automate the Web
+- Full browser control via Playwright and Selenium
+- Vision-guided element finding — no selectors needed
+- Scrapes, fills forms, logs in, navigates complex SPAs
 
-| Platform | Status | Notes |
-|---|---|---|
-| Linux | Full support | Requires display (X11/Wayland) or `_HAS_DISPLAY=false` for headless |
-| macOS | Full support | May need accessibility permissions for mouse/keyboard |
-| Windows | Full support | PowerShell required for some fallbacks |
+### 🗣️ Speak & Listen
+- Text-to-speech (pyttsx3, gTTS, ElevenLabs)
+- Speech-to-text via Whisper and SpeechRecognition
+- Continuous voice command mode
 
-## Optional Dependencies
+### 💻 Write & Execute Code
+- Python execution with live stdout capture
+- Shell subprocess with timeout and safety checks
+- Iterates until the code actually works
+
+### 📁 Manage Everything
+- Files: read, write, move, archive, diff, search
+- Processes: list, kill, monitor, spawn
+- Network: HTTP requests, scraping, API calls
+- Databases: SQLite, query, CRUD
+
+### 🔐 Security & Pentesting (Authorized Use)
+- nmap, sqlmap, Metasploit integration
+- Network analysis, vulnerability scanning
+- Requires explicit authorization — refuses unauthorized use
+
+---
+
+## 🤖 AI Providers
+
+Devin automatically picks the best available provider. Set any one key — or none.
+
+| Priority | Provider | Variable | Free? | Best Model |
+|:---:|---|---|:---:|---|
+| 1 | **Anthropic Claude** | `ANTHROPIC_API_KEY` | No | claude-sonnet-5 |
+| 2 | **Google Gemini** | `GEMINI_API_KEY` | Limited | gemini-2.5-flash |
+| 3 | **OpenAI GPT** | `OPENAI_API_KEY` | No | gpt-4o |
+| 4 | **HuggingFace** | `HF_TOKEN` | ✅ Yes | Qwen2.5-72B |
+| 5 | **Ollama (local)** | `OLLAMA_BASE_URL` | ✅ Yes | llama3.1 |
+| 6 | **Free Claude proxy** | `CLAUDE_SESSION_KEY` | ✅ Yes | claude-sonnet |
+
+**Override:** `DEVIN_PROVIDER=huggingface python3 agent.py`
+
+### Zero-Key Setup (Completely Free)
 
 ```bash
-# Core (highly recommended)
-pip install psutil pynput pillow mss pyperclip
+# Option A: HuggingFace free tier
+HF_TOKEN=your_free_token  # get at huggingface.co/settings/tokens
 
-# Browser automation
-pip install playwright selenium beautifulsoup4
-python3 -m playwright install chromium
+# Option B: Free Claude proxy (no account needed)
+# Install: curl -fsSL https://github.com/Alishahryar1/free-claude-code/raw/main/scripts/install.sh | sh
+# Run in background: fcc-server
+CLAUDE_SESSION_KEY=your_session_cookie
 
-# Voice
-pip install pyttsx3 gtts SpeechRecognition openai-whisper pyaudio
-
-# GPU monitoring
-pip install GPUtil
-
-# Vision AI (if using Claude/Gemini/OpenAI for vision)
-pip install anthropic google-generativeai openai
+# Option C: Local Ollama (fully offline)
+OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-## Architecture
+---
 
-See `docs/ARCHITECTURE.md` for the full system diagram.
-
-## Directory Structure
+## 🏗️ Architecture
 
 ```
-agent.py          # Runtime (136 tools, 5 AI providers, REPL)
-main.py           # Entry point with dynamic module discovery
-devin             # Bash launcher
-modules/          # 103+ capability modules
-tests/            # Test suite (40 core tests)
-docs/             # Architecture, compliance, integration docs
-src/              # Legacy TypeScript CLI
-.env.example      # All supported environment variables
+┌─────────────────────────────────────────────────────────┐
+│                      agent.py                           │
+│              11,776 lines · 213 tools                   │
+│                                                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐             │
+│  │ AI Core  │  │ OS Layer │  │  Tools   │             │
+│  │ 5 provs  │  │mouse/kbd │  │ 213 fns  │             │
+│  │ fallback │  │ vision   │  │ REPL loop│             │
+│  └──────────┘  └──────────┘  └──────────┘             │
+└─────────────────────────────────────────────────────────┘
+          ↕ graceful import (fails silently)
+┌─────────────────────────────────────────────────────────┐
+│                   modules/  (110+ files)                │
+│                                                         │
+│  browser     │ voice        │ os_agent    │ security    │
+│  reasoning   │ web_scrape   │ analytics   │ automation  │
+│  memory      │ social_media │ robotics    │ cloud       │
+│  Gemini      │ OpenAI       │ HuggingFace │ Claude      │
+│  + 70 more capability modules…                          │
+└─────────────────────────────────────────────────────────┘
+          ↕
+┌─────────────────────────────────────────────────────────┐
+│            src/  — TypeScript CLI (optional)            │
+│   providers · memory · tools · voice · agents · ui     │
+└─────────────────────────────────────────────────────────┘
 ```
 
-## Security
+---
 
-Devin is designed for **authorized use only**. Security tools (nmap,
-sqlmap, Responder, nishang) require explicit user authorization in the
-conversation. Unauthorized targeting, credential theft, persistence,
-and lateral movement are refused at the tool level.
+## 📦 Project Structure
 
-See `docs/INTEGRATION_MATRIX.md` §Security Repositories.
+```
+Devin-4.0/
+├── agent.py           # Core runtime — 11,776 lines, 213 tools, 5 AI providers
+├── main.py            # Entry point with dynamic module discovery
+├── devin              # Shell launcher (chmod +x devin && ./devin)
+├── modules/           # 110+ plug-in capability modules
+│   ├── browser.py          # Playwright/Selenium browser control
+│   ├── browser_agent.py    # Vision-guided autonomous browsing
+│   ├── os_agent.py         # Full OS control (mouse, keyboard, screen)
+│   ├── voice_engine.py     # Speech I/O
+│   ├── reasoning_engine.py # Chain-of-thought planning
+│   ├── free_claude_provider.py  # Zero-key Claude fallback
+│   └── ...  (100+ more)
+├── src/               # TypeScript CLI (optional alternative interface)
+│   ├── providers/     # Claude · Gemini · OpenAI · HuggingFace · Ollama
+│   ├── tools/         # Tool definitions and executors
+│   ├── memory/        # SQLite conversation memory
+│   └── ui/            # Terminal UI components
+├── tests/             # 130 tests
+├── .env.example       # All supported environment variables
+└── requirements.txt   # Python dependencies
+```
 
-## License
+---
 
-MIT License — see `LICENSE`.
+## 🖥️ Platform Support
+
+| Platform | Status | Notes |
+|---|:---:|---|
+| **Linux** | ✅ Full | X11/Wayland or headless with `_HAS_DISPLAY=false` |
+| **macOS** | ✅ Full | May need accessibility permissions |
+| **Windows** | ✅ Full | PowerShell required for some features |
+
+---
+
+## 🛠️ Advanced Usage
+
+```bash
+# One-shot task
+python3 agent.py "take a screenshot, describe what's on screen, and open a browser"
+
+# Run the test suite
+python3 agent.py --test
+
+# Show all loaded capabilities
+python3 main.py --caps
+
+# Use a specific provider
+DEVIN_PROVIDER=gemini python3 agent.py
+
+# Headless (no display, e.g. CI/server)
+_HAS_DISPLAY=false python3 agent.py "write and run a Python web scraper"
+
+# TypeScript CLI (alternative interface)
+npm install && npm run dev
+```
+
+### Useful `.env` Options
+
+```bash
+DEVIN_MODEL=claude-sonnet-5        # override model name
+DEVIN_MAX_TOKENS=8192              # token limit per response
+DEVIN_THINKING=true                # enable chain-of-thought reasoning
+DEVIN_PERMISSION_MODE=auto_approve # auto-approve all tool calls
+DEVIN_VOICE=true                   # enable voice I/O
+DEVIN_VERBOSE=true                 # verbose logging
+```
+
+---
+
+## 🔐 Security
+
+Devin is built for **authorized use only**:
+
+- Security and pentesting tools require explicit authorization in the conversation
+- Unauthorized targeting, credential theft, persistence, and lateral movement are refused at the tool level
+- API keys are never hard-coded — always loaded from `.env`
+- `.env` is in `.gitignore` and must never be committed
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repo
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Add your changes (a new module goes in `modules/`, register its tools in `agent.py`)
+4. Run tests: `python3 agent.py --test`
+5. Open a PR
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full system design.
+
+---
+
+## 📄 License
+
+MIT — free for personal and commercial use. See [`LICENSE`](LICENSE).
+
+---
+
+<div align="center">
+
+**If Devin helped you — give it a ⭐ and share it.**  
+[GitHub Issues](https://github.com/kevinhamza/Devin-4.0/issues) · [Discussions](https://github.com/kevinhamza/Devin-4.0/discussions)
+
+</div>
