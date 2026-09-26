@@ -241,24 +241,103 @@ class _HFProvider(_BaseProvider):
         yield '[HuggingFace: all models unavailable. Check HF_TOKEN in .env]'
 
 
+class _FCCProvider(_BaseProvider):
+    """Free Claude Code server — OpenAI-compatible HTTP proxy at FCC_BASE_URL."""
+    name = 'free_claude'
+
+    def __init__(self):
+        self._base = (os.environ.get('FCC_BASE_URL') or '').rstrip('/')
+        self._model = os.environ.get('FCC_MODEL', 'claude-opus-4-5')
+
+    def available(self) -> bool:
+        return bool(self._base)
+
+    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
+        import urllib.request as _ur
+        import json as _json
+
+        all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
+        payload = _json.dumps({
+            'model': self._model,
+            'messages': all_msgs,
+            'stream': True,
+            'max_tokens': 4096,
+        }).encode()
+        try:
+            req = _ur.Request(
+                f'{self._base}/v1/chat/completions',
+                data=payload,
+                headers={'Content-Type': 'application/json'},
+            )
+            with _ur.urlopen(req, timeout=120) as resp:
+                for raw in resp:
+                    line = raw.decode('utf-8', errors='replace').strip()
+                    if not line.startswith('data:'):
+                        continue
+                    chunk_str = line[5:].strip()
+                    if chunk_str == '[DONE]':
+                        return
+                    try:
+                        chunk = _json.loads(chunk_str)
+                        delta = chunk['choices'][0]['delta']
+                        if delta.get('content'):
+                            yield delta['content']
+                    except Exception:
+                        pass
+        except Exception as e:
+            yield f'[FCC server error: {e}]'
+
+
+class _FreeClaudeSubprocProvider(_BaseProvider):
+    """Free Claude via subprocess/session (no FCC_BASE_URL needed)."""
+    name = 'free_claude_sub'
+
+    def available(self) -> bool:
+        try:
+            from modules.free_claude_provider import is_available
+            return is_available()
+        except Exception:
+            return False
+
+    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
+        try:
+            from modules.free_claude_provider import chat as fc_chat
+            text, _ = fc_chat(messages, system=system)
+            yield text
+        except Exception as e:
+            yield f'[free-claude-code unavailable: {e}]'
+
+
 def _select_provider(forced: str = '') -> _BaseProvider:
+    fcc = _FCCProvider()
+    fcc_sub = _FreeClaudeSubprocProvider()
     candidates = {
         'gemini': _GeminiProvider(),
         'claude': _ClaudeProvider(),
         'openai': _OpenAIProvider(),
         'hf': _HFProvider(),
         'huggingface': _HFProvider(),
+        'free_claude': fcc if fcc.available() else fcc_sub,
+        'fcc': fcc,
     }
-    name = forced or os.environ.get('DEVIN_PROVIDER', '')
+    name = (forced or os.environ.get('DEVIN_PROVIDER', '')).lower().strip()
     if name and name in candidates:
         p = candidates[name]
         if p.available():
             return p
-    # Auto-select: try in order
-    for p in [candidates['claude'], candidates['gemini'], candidates['openai'], candidates['hf']]:
+    # Auto-select: Claude → Gemini → OpenAI → HF → FCC server → free-claude subprocess
+    for p in [
+        candidates['claude'],
+        candidates['gemini'],
+        candidates['openai'],
+        candidates['hf'],
+        fcc,
+        fcc_sub,
+    ]:
         if p.available():
             return p
-    return candidates['hf']
+    # Nothing available — return FCC so user sees helpful message
+    return fcc
 
 
 # ── System prompt ──────────────────────────────────────────────────────────────
@@ -304,7 +383,7 @@ _SLASH_HELP = """
     /repos             List integrated repositories
     /think <task>      Run full agentic reasoning loop on a task
     /voice             Toggle voice mode
-    /provider <p>      Switch AI provider (claude|gemini|openai|hf)
+    /provider <p>      Switch AI provider (claude|gemini|openai|hf|free_claude|fcc)
     /model <m>         Set model for current provider
     /mem               Conversation memory stats
     /cwd               Show working directory

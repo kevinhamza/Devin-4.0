@@ -303,7 +303,32 @@ def test_provider_selection_auto():
     """Auto-selection picks an available provider."""
     from modules.devin_repl import _select_provider
     provider = _select_provider('')
-    assert provider.name in ['claude', 'gemini', 'openai', 'huggingface', 'none']
+    assert provider.name in ['claude', 'gemini', 'openai', 'huggingface', 'free_claude', 'free_claude_sub', 'none']
+
+
+def test_provider_fcc_available_with_env(monkeypatch):
+    """FCC provider becomes available when FCC_BASE_URL is set."""
+    monkeypatch.setenv('FCC_BASE_URL', 'http://localhost:8080')
+    from modules.devin_repl import _FCCProvider
+    fcc = _FCCProvider()
+    assert fcc.available() is True
+    assert fcc.name == 'free_claude'
+
+
+def test_provider_fcc_unavailable_without_env(monkeypatch):
+    """FCC provider is unavailable when FCC_BASE_URL is not set."""
+    monkeypatch.delenv('FCC_BASE_URL', raising=False)
+    from modules.devin_repl import _FCCProvider
+    fcc = _FCCProvider()
+    assert fcc.available() is False
+
+
+def test_provider_selection_fcc(monkeypatch):
+    """Selecting 'free_claude' returns FCC when FCC_BASE_URL set."""
+    monkeypatch.setenv('FCC_BASE_URL', 'http://localhost:8080')
+    from modules.devin_repl import _select_provider
+    provider = _select_provider('free_claude')
+    assert provider.name == 'free_claude'
 
 
 # ─── REPL slash command parsing ───────────────────────────────────────────────
