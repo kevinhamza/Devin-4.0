@@ -43,6 +43,8 @@ ultralytics
 Pillow
 tiktoken
 sentence-transformers
+huggingface_hub
+transformers
 
 # --- Social & Communication ---
 tweepy

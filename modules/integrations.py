@@ -26,12 +26,11 @@ for _name in [
 ]:
     _add(_EXT / _name)
 
-# copied repos
-for _d in _REPOS_DIR.iterdir() if _REPOS_DIR.exists() else []:
-    _add(_d)
-    for _sub in _d.iterdir() if _d.is_dir() else []:
-        if _sub.is_dir() and not _sub.name.startswith('.'):
-            _add(_sub)
+# copied repos — add only the repo root, never subdirectories (subdirs can
+# shadow stdlib modules, e.g. repos/aia/operate/utils/logging.py)
+for _d in (_REPOS_DIR.iterdir() if _REPOS_DIR.exists() else []):
+    if _d.is_dir() and not _d.name.startswith('.'):
+        _add(_d)
 
 # own modules
 _add(_ROOT / "modules")
