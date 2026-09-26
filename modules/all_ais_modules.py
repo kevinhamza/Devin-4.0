@@ -29,7 +29,6 @@ def _load_all():
     _try_import("system_monitor", lambda: __import__("modules.system_monitor_enhanced", fromlist=["get_system_monitor"]))
     _try_import("voice", lambda: __import__("modules.voice_engine", fromlist=["get_voice_engine"]))
     _try_import("browser", lambda: __import__("modules.browser_agent", fromlist=["get_browser_agent"]))
-    _try_import("hf_provider", lambda: __import__("modules.hf_provider", fromlist=["chat"]))
     _try_import("keyboard_mouse", lambda: __import__("modules.keyboard_mouse_control", fromlist=["KeyboardMouseController"]))
 
 
@@ -91,7 +90,6 @@ def capability_map() -> Dict[str, bool]:
         "system_monitor": "system_monitor" in _MODULES,
         "voice_engine": "voice" in _MODULES,
         "browser_agent": "browser" in _MODULES,
-        "hf_provider": "hf_provider" in _MODULES,
         "keyboard_mouse": "keyboard_mouse" in _MODULES,
     }
 
@@ -109,6 +107,17 @@ def print_capabilities() -> str:
     return "\n".join(lines)
 
 
+def _coerce_result(result) -> str:
+    """Coerce ActionResult or str to plain string."""
+    if isinstance(result, str):
+        return result
+    if hasattr(result, 'vision_result') and result.vision_result:
+        return str(result.vision_result)
+    if hasattr(result, 'message'):
+        return str(result.message)
+    return str(result)
+
+
 def system_summary() -> str:
     mon = get_system_monitor()
     if mon:
@@ -119,14 +128,14 @@ def system_summary() -> str:
 def speak(text: str) -> str:
     ve = get_voice_engine()
     if ve:
-        return ve.speak(text)
+        return _coerce_result(ve.speak(text))
     return "ERROR: voice_engine not loaded"
 
 
 def listen(timeout: float = 10.0) -> str:
     ve = get_voice_engine()
     if ve:
-        return ve.listen_once(timeout=timeout)
+        return _coerce_result(ve.listen_once(timeout=timeout))
     return "ERROR: voice_engine not loaded"
 
 
@@ -140,7 +149,7 @@ def browse(url: str) -> str:
 def observe_screen() -> str:
     oa = get_os_agent()
     if oa:
-        return oa.observe()
+        return _coerce_result(oa.observe())
     return "ERROR: os_agent not loaded"
 
 
@@ -148,5 +157,7 @@ def think(task: str, context: str = "") -> str:
     re = get_reasoning_engine()
     if re:
         result = re.think(task, context=context)
-        return result.answer
+        if hasattr(result, 'answer'):
+            return result.answer
+        return str(result)
     return "ERROR: reasoning_engine not loaded"
