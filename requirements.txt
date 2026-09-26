@@ -1,5 +1,8 @@
 # Devin AGI - Python Dependencies
 
+# --- Build Tools ---
+setuptools>=83.0.0  # PYSEC-2026-3447: fix requires >=83.0.0
+
 # --- Core & Servers ---
 flask
 flask-socketio
@@ -44,7 +47,7 @@ sentence-transformers
 # --- Social & Communication ---
 tweepy
 praw
-cryptography
+cryptography>=49.0.0
 # Multi-channel messaging (modules/messaging_gateway.py) -- Telegram is
 # covered by python-telegram-bot above; these add Discord and Slack,
 # following openclaw's pattern of pluggable channel integrations.
@@ -85,7 +88,7 @@ face_recognition
 python-nmap
 beautifulsoup4
 scapy
-pymetasploit3
+pymetasploit3  # PYSEC-2026-500: no fix version available upstream
 
 # --- Other Utilities ---
 tqdm
