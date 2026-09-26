@@ -23,11 +23,11 @@
 ### pip install
 
 ```bash
-pip install devin
-devin          # done — interactive REPL starts
+pip install devin-agi
+devin          # interactive REPL starts
 ```
 
-> _Once published to PyPI. Until then use the git URL:_
+> Or install directly from GitHub (no PyPI account needed):
 > ```bash
 > pip install git+https://github.com/kevinhamza/Devin-4.0
 > devin

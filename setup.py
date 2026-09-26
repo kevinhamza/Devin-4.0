@@ -14,7 +14,7 @@ def read_requirements():
     ]
 
 setup(
-    name="devin",
+    name="devin-agi",
     version="4.0.0",
     author="Kevin Hamza",
     author_email="kevin.x.hamza@gmail.com",
