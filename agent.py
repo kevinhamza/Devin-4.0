@@ -1092,6 +1092,90 @@ for _bdir_name in _BULK_SCAN_DIRS:
         sys.path.insert(0, _s)
     _bulk_loaded.update(_bulk_load_dir(_bdir))
 
+# Load free_claude_provider (zero-key free AI fallback)
+_free_claude_mod = None
+try:
+    _free_claude_mod = _il.import_module('free_claude_provider')
+except BaseException:
+    pass
+
+# Load reasoning_engine (chain-of-thought + tool selection)
+_reasoning_engine_mod = None
+try:
+    _reasoning_engine_mod = _il.import_module('reasoning_engine')
+except BaseException:
+    pass
+
+# Load browser_agent (full Playwright/Selenium browser automation)
+_browser_agent_mod = None
+try:
+    _browser_agent_mod = _il.import_module('browser_agent')
+except BaseException:
+    pass
+
+# Load os_agent (full OS observation + action loop)
+_os_agent_mod = None
+try:
+    _os_agent_mod = _il.import_module('os_agent')
+except BaseException:
+    pass
+
+# Load devin_repl (Devin REPL — default interactive mode)
+_devin_repl_mod = None
+try:
+    _devin_repl_mod = _il.import_module('devin_repl')
+except BaseException:
+    pass
+
+# Load devin_integration (capability bridge for Phase 4)
+_devin_integration_mod = None
+try:
+    _devin_integration_mod = _il.import_module('devin_integration')
+except BaseException:
+    pass
+
+# Load external_repos (24-repo registry management)
+_external_repos_mod = None
+try:
+    _external_repos_mod = _il.import_module('external_repos')
+except BaseException:
+    pass
+
+# Load gemini_stream (streaming Gemini provider)
+_gemini_stream_mod = None
+try:
+    _gemini_stream_mod = _il.import_module('gemini_stream')
+except BaseException:
+    pass
+
+# Load hf_enhanced_provider (enhanced HuggingFace with tool calling)
+_hf_enhanced_mod = None
+try:
+    _hf_enhanced_mod = _il.import_module('hf_enhanced_provider')
+except BaseException:
+    pass
+
+# Load system_monitor_enhanced (CPU/RAM/disk alerts)
+_sysmon_enhanced_mod = None
+try:
+    _sysmon_enhanced_mod = _il.import_module('system_monitor_enhanced')
+except BaseException:
+    pass
+
+# Load voice_engine (TTS/STT engine)
+_voice_engine_mod = None
+try:
+    _voice_engine_mod = _il.import_module('voice_engine')
+except BaseException:
+    pass
+
+# Load conversation_engine (multi-turn conversation management)
+_conv_engine_mod = None
+try:
+    _conv_engine_mod = _il.import_module('conversation_engine')
+except BaseException:
+    pass
+
 # Load cc_interface (Claude Code-style terminal UI)
 _cc_ui_mod = None
 try:
@@ -1254,6 +1338,19 @@ def _modules_status() -> Dict[str, bool]:
         'os_controller':     _os_ctrl_mod           is not None,
         'autonomous_core':   _auto_core_mod         is not None,
         'screen_vision':     _screen_vision_mod     is not None,
+        # ── Free/zero-key providers ───────────────────────────────────────────
+        'free_claude':       _free_claude_mod       is not None,
+        'reasoning_engine':  _reasoning_engine_mod  is not None,
+        'browser_agent':     _browser_agent_mod     is not None,
+        'os_agent':          _os_agent_mod          is not None,
+        'devin_repl':        _devin_repl_mod        is not None,
+        'devin_integration': _devin_integration_mod is not None,
+        'external_repos':    _external_repos_mod    is not None,
+        'gemini_stream':     _gemini_stream_mod     is not None,
+        'hf_enhanced':       _hf_enhanced_mod       is not None,
+        'sysmon_enhanced':   _sysmon_enhanced_mod   is not None,
+        'voice_engine':      _voice_engine_mod      is not None,
+        'conv_engine':       _conv_engine_mod       is not None,
         # ── bulk-loaded directories ───────────────────────────────────────────
         **{k.replace('/', '.').replace(os.sep, '.'): (v is not None)
            for k, v in _bulk_loaded.items()},
@@ -9567,13 +9664,20 @@ class FreeClaudeProvider:
 
     @classmethod
     def is_available(cls) -> bool:
-        """Return True if fcc-server is reachable."""
+        """Return True if fcc-server is reachable OR the module provider is available."""
         port = int(os.environ.get('FCC_PORT', str(cls.DEFAULT_PORT)))
         base = os.environ.get('FCC_BASE_URL', f'http://localhost:{port}').rstrip('/')
         try:
             import urllib.request
             urllib.request.urlopen(f"{base}/v1/models", timeout=2)
             return True
+        except Exception:
+            pass
+        # Check if free_claude_provider module has a session key or binary
+        try:
+            import importlib as _il2
+            _fcm = _il2.import_module('free_claude_provider')
+            return _fcm.is_available()
         except Exception:
             return False
 
@@ -9632,8 +9736,19 @@ class FreeClaudeProvider:
                     last_err = e
                     if attempt == 0:
                         time.sleep(1)
-        raise ValueError(f"FreeClaudeProvider: all models failed. Last error: {last_err}\n"
-                         "Make sure fcc-server is running (run: fcc-server)")
+        # Final fallback: use the free_claude_provider module (subprocess/session-key)
+        try:
+            import importlib as _il2
+            _fcm = _il2.import_module('free_claude_provider')
+            text, calls = _fcm.chat(messages, system)
+            return text, calls
+        except Exception as e2:
+            last_err = e2
+        raise ValueError(f"FreeClaudeProvider: all methods failed. Last error: {last_err}\n"
+                         "Options:\n"
+                         "  1. Run fcc-server (pip install free-claude-code && fcc-server)\n"
+                         "  2. Set CLAUDE_SESSION_KEY in .env\n"
+                         "  3. Set any API key (GEMINI_API_KEY, HF_TOKEN, etc.)")
 
 
 # ─── HuggingFace ──────────────────────────────────────────────────────────────
