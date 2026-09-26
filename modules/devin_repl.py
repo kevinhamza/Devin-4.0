@@ -175,15 +175,33 @@ class _HFProvider(_BaseProvider):
 
     def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
         try:
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(token=self._key)
+            import json as _json, urllib.request as _ur, urllib.error as _ue
             all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-            for chunk in client.chat.completions.create(
-                model=self._model, messages=all_msgs, stream=True, max_tokens=2048
-            ):
-                d = chunk.choices[0].delta
-                if d.content:
-                    yield d.content
+            payload = _json.dumps({
+                'model': self._model, 'messages': all_msgs,
+                'stream': True, 'max_tokens': 2048,
+            }).encode()
+            req = _ur.Request(
+                'https://api-inference.huggingface.co/v1/chat/completions',
+                data=payload,
+                headers={'Authorization': f'Bearer {self._key}',
+                         'Content-Type': 'application/json'},
+            )
+            with _ur.urlopen(req, timeout=60) as resp:
+                for raw in resp:
+                    line = raw.decode().strip()
+                    if not line.startswith('data:'):
+                        continue
+                    chunk_str = line[5:].strip()
+                    if chunk_str == '[DONE]':
+                        break
+                    try:
+                        chunk = _json.loads(chunk_str)
+                        delta = chunk['choices'][0]['delta']
+                        if delta.get('content'):
+                            yield delta['content']
+                    except Exception:
+                        pass
         except Exception as e:
             yield f'[HuggingFace error: {e}]'
 
