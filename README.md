@@ -18,17 +18,44 @@
 
 ---
 
-## ⚡ 60-Second Install
+## ⚡ Quick Start
+
+### 1 — Clone & install
 
 ```bash
 git clone https://github.com/kevinhamza/Devin-4.0
 cd Devin-4.0
 pip install -r requirements.txt
-cp .env.example .env          # optional: add API keys for best quality
-python3 agent.py              # start the REPL — works with zero keys
 ```
 
-That's it. Devin is running.
+### 2 — Add an API key (optional — works without one)
+
+```bash
+cp .env.example .env
+# Then open .env and paste at least one key, e.g.:
+#   HF_TOKEN=hf_...          ← free at huggingface.co/settings/tokens
+#   GEMINI_API_KEY=...        ← free tier at aistudio.google.com
+#   ANTHROPIC_API_KEY=...     ← paid, best quality
+```
+
+### 3 — Run
+
+```bash
+# Interactive REPL (recommended)
+python3 agent.py
+
+# Or use the shell launcher (same thing, picks Python automatically)
+chmod +x devin
+./devin
+
+# One-shot task — no REPL
+python3 agent.py "open a browser and go to github.com"
+
+# Headless / server (no display)
+_HAS_DISPLAY=false python3 agent.py "scrape the top 10 Hacker News headlines"
+```
+
+> **Zero-key mode:** if no key is set, Devin falls back to the HuggingFace free tier automatically.
 
 ---
 
