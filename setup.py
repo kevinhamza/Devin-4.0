@@ -15,18 +15,18 @@ def read_requirements():
 
 setup(
     name="devin-agi",
-    version="1.0.0",
-    author="Kevin Devin",
+    version="4.0.0",
+    author="Kevin Hamza",
     author_email="kevin.x.hamza@gmail.com",
-    description="Devin: An Autonomous General Intelligence for Complex Software and Cybersecurity Tasks",
+    description="Devin 4.0: The most capable open-source autonomous AI agent — fully controls your OS, works with zero API keys",
     long_description=Path("README.md").read_text(),
     long_description_content_type="text/markdown",
-    url="https://github.com/kevinhamza/Devin-2.0",  # Replace with your project's URL
+    url="https://github.com/kevinhamza/Devin-4.0",
     packages=find_packages(),
     install_requires=read_requirements(),
     entry_points={
         "console_scripts": [
-            "devin=main:main_entry",  # This allows running 'devin' from the command line
+            "devin=agent:main",
         ],
     },
     classifiers=[

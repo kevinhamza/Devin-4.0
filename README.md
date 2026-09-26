@@ -18,7 +18,33 @@
 
 ---
 
-## ⚡ Quick Start
+## ⚡ Install
+
+### pip install
+
+```bash
+pip install devin-agi
+devin          # interactive REPL starts
+```
+
+> Or install directly from GitHub (no PyPI account needed):
+> ```bash
+> pip install git+https://github.com/kevinhamza/Devin-4.0
+> devin
+> ```
+
+### curl one-liner
+
+```bash
+curl -fsSL https://github.com/kevinhamza/Devin-4.0/raw/main/scripts/install.sh | sh
+devin
+```
+
+Both methods install the `devin` command globally — no `cd`, no virtual-env activation needed.
+
+---
+
+## ⚡ Quick Start (manual clone)
 
 ### 1 — Clone & install
 
