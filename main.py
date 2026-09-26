@@ -273,8 +273,8 @@ class DevinAGI:
         'edge', 'edge_ai', 'enterprise', 'experimental', 'external',
         'hardware', 'hexstrike-ai', 'hmi', 'infra', 'legal', 'mlops',
         'monitoring', 'notes', 'plugins', 'privacy', 'prototypes',
-        'quantum', 'reality_engine', 'recovery', 'repos',
-        'scripts', 'self-operating-computer', 'singularity',
+        'quantum', 'reality_engine', 'recovery',
+        'scripts', 'singularity',
         'threat_intel', 'web', 'xr_env',
     ]
 
