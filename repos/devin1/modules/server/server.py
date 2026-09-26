@@ -2,13 +2,7 @@ import socket, threading
 
 server_ip = '127.0.0.1'
 server_port = 999
-server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 clients = {}
-
-server.bind((server_ip,server_port))
-
-server.listen()
-print("Waiting for connections\n")
 
 def redirectMessages(client_socket):
     while(True):
@@ -113,14 +107,18 @@ def redirectMessages(client_socket):
 #             print("The client you want to contact is offline")
         
 
-while(True):
-    client_socket, client_address = server.accept()
-    print(client_address," is connected")
-    client_name = client_socket.recv(1024).decode()
-    print(client_name)
-    clients.update({client_name : client_socket})
-    print(clients.keys())
-    client_socket.send("Connected to server successfully".encode())
-
-    thread = threading.Thread(target=redirectMessages, args=(client_socket,))
-    thread.start()
+if __name__ == '__main__':
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((server_ip, server_port))
+    server.listen()
+    print("Waiting for connections\n")
+    while True:
+        client_socket, client_address = server.accept()
+        print(client_address, " is connected")
+        client_name = client_socket.recv(1024).decode()
+        print(client_name)
+        clients.update({client_name: client_socket})
+        print(clients.keys())
+        client_socket.send("Connected to server successfully".encode())
+        thread = threading.Thread(target=redirectMessages, args=(client_socket,))
+        thread.start()
