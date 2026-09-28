@@ -47,7 +47,7 @@ typing_extensions==4.8.0
 urllib3==2.7.0
 wcwidth==0.2.9
 zipp==4.1.0
-google-generativeai==0.3.0
+google-generativeai==0.8.6
 aiohttp==3.14.3
 ultralytics==8.4.131
 easyocr==1.7.1
