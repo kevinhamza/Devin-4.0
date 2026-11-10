@@ -183,21 +183,93 @@ def _call_huggingface(messages: List[Dict], system: str, tools: Optional[List] =
         raise RuntimeError(f"HuggingFace call failed: {e}") from e
 
 
+def _call_fcc(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List]:
+    """Call free-claude-code server (Anthropic Messages API at FCC_BASE_URL/v1/messages).
+    FCC exposes /v1/messages (Anthropic format) not /v1/chat/completions.
+    Returns (text, tool_calls).
+    """
+    base = (os.environ.get("FCC_BASE_URL") or "").rstrip("/")
+    if not base:
+        raise RuntimeError("FCC_BASE_URL not set")
+
+    import json as _json
+    try:
+        import requests  # type: ignore
+    except ImportError:
+        raise RuntimeError("pip install requests")
+
+    # Pick a free OpenRouter model by default (available via FCC openrouter provider)
+    model = os.environ.get("FCC_MODEL", "anthropic/open_router/qwen/qwen3-235b-a22b")
+
+    # Build Anthropic-format messages (no system role in messages array)
+    anth_messages = []
+    for m in messages:
+        if m.get("role") != "system":
+            anth_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+    if not anth_messages:
+        anth_messages = [{"role": "user", "content": "Hello"}]
+
+    body: Dict = {
+        "model": model,
+        "messages": anth_messages,
+        "max_tokens": 4096,
+    }
+    if system:
+        body["system"] = system
+    if tools:
+        # Convert OpenAI tool format to Anthropic tool format
+        anth_tools = []
+        for t in tools:
+            fn = t.get("function") or t
+            anth_tools.append({
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+            })
+        body["tools"] = anth_tools
+
+    headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+    }
+
+    resp = requests.post(f"{base}/v1/messages", headers=headers, json=body, timeout=120)
+    if resp.status_code != 200:
+        raise RuntimeError(f"FCC server HTTP {resp.status_code}: {resp.text[:300]}")
+
+    data = resp.json()
+
+    # Parse Anthropic response format
+    raw_text = ""
+    tool_calls: List[Dict] = []
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            raw_text += block.get("text", "")
+        elif block.get("type") == "tool_use":
+            tool_calls.append({"name": block.get("name", ""), "input": block.get("input") or {}})
+
+    return raw_text, tool_calls
+
+
 def _call_best_available(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List, str]:
     """Try providers in priority order. Returns (text, tool_calls, model_name)."""
     preferred = os.environ.get("DEVIN_PROVIDER", "").lower()
 
     order = []
     if preferred == "claude":
-        order = ["claude", "gemini", "openai", "huggingface"]
+        order = ["claude", "gemini", "openai", "huggingface", "fcc"]
     elif preferred == "gemini":
-        order = ["gemini", "claude", "openai", "huggingface"]
+        order = ["gemini", "claude", "openai", "huggingface", "fcc"]
     elif preferred == "openai":
-        order = ["openai", "claude", "gemini", "huggingface"]
+        order = ["openai", "claude", "gemini", "huggingface", "fcc"]
     elif preferred in ("huggingface", "hf"):
-        order = ["huggingface", "gemini", "claude", "openai"]
+        order = ["huggingface", "gemini", "claude", "openai", "fcc"]
+    elif preferred in ("free_claude", "fcc"):
+        order = ["fcc", "claude", "gemini", "openai", "huggingface"]
     else:
         order = []
+        if os.environ.get("FCC_BASE_URL"):
+            order.append("fcc")
         if os.environ.get("ANTHROPIC_API_KEY"):
             order.append("claude")
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
@@ -207,7 +279,7 @@ def _call_best_available(messages: List[Dict], system: str, tools: Optional[List
         if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY"):
             order.append("huggingface")
         if not order:
-            order = ["gemini", "claude", "openai", "huggingface"]
+            order = ["fcc", "gemini", "claude", "openai", "huggingface"]
 
     last_error = "No provider available"
     for provider in order:
@@ -224,6 +296,10 @@ def _call_best_available(messages: List[Dict], system: str, tools: Optional[List
             elif provider == "huggingface":
                 text, calls = _call_huggingface(messages, system, tools)
                 return text, calls, "huggingface/qwen-72b"
+            elif provider == "fcc":
+                text, calls = _call_fcc(messages, system, tools)
+                model = os.environ.get("FCC_MODEL", "claude-opus-4-5")
+                return text, calls, f"fcc/{model}"
         except Exception as e:
             last_error = f"{provider}: {e}"
             log.debug("Provider %s failed: %s", provider, e)
