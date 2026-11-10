@@ -39,7 +39,27 @@ _SYSTEM = platform.system()  # 'Linux', 'Darwin', 'Windows'
 _IS_LINUX   = _SYSTEM == "Linux"
 _IS_MAC     = _SYSTEM == "Darwin"
 _IS_WIN     = _SYSTEM == "Windows"
-_HAS_DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY") or _IS_MAC or _IS_WIN)
+def _has_display() -> bool:
+    """Check display availability at call time (not import time)."""
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        return True
+    if _IS_MAC or _IS_WIN:
+        return True
+    # Try to find any :N display
+    for n in range(3):
+        try:
+            import socket
+            s = socket.socket(socket.AF_UNIX)
+            s.settimeout(0.5)
+            s.connect(f"/tmp/.X11-unix/X{n}")
+            s.close()
+            os.environ.setdefault("DISPLAY", f":{n}")
+            return True
+        except Exception:
+            continue
+    return False
+
+_HAS_DISPLAY = _has_display()  # cache for startup check
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Screenshot backend
@@ -52,16 +72,7 @@ def _take_screenshot(path: Optional[str] = None) -> Optional[str]:
         os.close(fd)
 
     try:
-        # PIL/Pillow (preferred, cross-platform)
-        try:
-            from PIL import ImageGrab  # type: ignore
-            img = ImageGrab.grab()
-            img.save(path)
-            return path
-        except Exception:
-            pass
-
-        # pyscreenshot / mss fallbacks
+        # mss — most reliable on Linux X11 (try first)
         try:
             import mss  # type: ignore
             with mss.mss() as sct:
@@ -69,6 +80,16 @@ def _take_screenshot(path: Optional[str] = None) -> Optional[str]:
                 sct_img = sct.grab(monitor)
                 from mss.tools import to_png  # type: ignore
                 to_png(sct_img.rgb, sct_img.size, output=path)
+            if os.path.exists(path) and os.path.getsize(path) > 100:
+                return path
+        except Exception:
+            pass
+
+        # PIL/Pillow (cross-platform fallback)
+        try:
+            from PIL import ImageGrab  # type: ignore
+            img = ImageGrab.grab()
+            img.save(path)
             return path
         except Exception:
             pass
@@ -82,8 +103,10 @@ def _take_screenshot(path: Optional[str] = None) -> Optional[str]:
                 ["xwd", "-root", "-silent", "-out", path + ".xwd"],
             ]:
                 try:
-                    if subprocess.run(cmd, timeout=5, capture_output=True).returncode == 0:
-                        return path
+                    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+                    if subprocess.run(cmd, timeout=5, capture_output=True, env=env).returncode == 0:
+                        if os.path.exists(path) and os.path.getsize(path) > 100:
+                            return path
                 except Exception:
                     continue
         elif _IS_MAC:
@@ -637,13 +660,13 @@ class OSAgent:
 
     def __init__(self, vision_provider=None, take_verification_shots: bool = True):
         self._vision_provider = vision_provider
-        self._verify = take_verification_shots and _HAS_DISPLAY
+        self._verify = take_verification_shots
         self._action_history: List[Dict[str, Any]] = []
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _snap(self) -> Optional[str]:
-        if not _HAS_DISPLAY:
+        if not _has_display():
             return None
         return _take_screenshot()
 
@@ -671,11 +694,84 @@ class OSAgent:
         return r
 
     def observe(self) -> str:
-        """Capture current screen state and return a text description."""
+        """Capture current screen state and return a text description.
+        Uses screenshot + vision when available, falls back to X11 accessibility info."""
         result = self.screenshot("Describe everything visible on the screen in detail: open applications, text, UI elements, status bars, any error messages.")
-        if result.success:
-            return result.vision_result or "Screen captured but vision unavailable"
-        return "Screen observation unavailable"
+        if result.success and result.vision_result and result.vision_result not in (
+            "No screenshot available", "Screen observation unavailable", "Screen captured but vision unavailable"
+        ):
+            # Check if screenshot was actually black (empty screen)
+            if result.screenshot_before:
+                try:
+                    from PIL import Image
+                    img = Image.open(result.screenshot_before)
+                    px = img.getpixel((img.width // 2, img.height // 2))
+                    if all(c < 10 for c in (px[:3] if len(px) >= 3 else [px, px, px])):
+                        # Black screenshot — use X11 state instead
+                        return self._x11_observe()
+                except Exception:
+                    pass
+            return result.vision_result or "Screen captured"
+        return self._x11_observe()
+
+    def _x11_observe(self) -> str:
+        """Get screen state using X11 tools (xdotool, xprop) without screenshots."""
+        lines = []
+        display = os.environ.get("DISPLAY", ":0")
+        env = {**os.environ, "DISPLAY": display}
+        try:
+            # Active window name
+            r = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowname"],
+                capture_output=True, text=True, timeout=3, env=env
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                lines.append(f"Active window: {r.stdout.strip()}")
+        except Exception:
+            pass
+        try:
+            # Mouse position
+            r = subprocess.run(
+                ["xdotool", "getmouselocation"],
+                capture_output=True, text=True, timeout=3, env=env
+            )
+            if r.returncode == 0:
+                lines.append(f"Mouse: {r.stdout.strip()}")
+        except Exception:
+            pass
+        try:
+            # List open windows
+            r = subprocess.run(
+                ["xdotool", "search", "--name", ""],
+                capture_output=True, text=True, timeout=3, env=env
+            )
+            if r.returncode == 0:
+                wids = r.stdout.strip().splitlines()[:5]
+                for wid in wids:
+                    nr = subprocess.run(
+                        ["xdotool", "getwindowname", wid],
+                        capture_output=True, text=True, timeout=2, env=env
+                    )
+                    name = nr.stdout.strip()
+                    if name:
+                        lines.append(f"Window: {name}")
+        except Exception:
+            pass
+        if not lines:
+            # Last resort: list processes that have windows
+            try:
+                r = subprocess.run(
+                    ["sh", "-c", "ps aux | grep -E '(firefox|chrome|code|terminal|nautilus|gedit|vlc|mpv)' | grep -v grep | awk '{print $11}'"],
+                    capture_output=True, text=True, timeout=3
+                )
+                if r.stdout.strip():
+                    for app in r.stdout.strip().splitlines()[:5]:
+                        lines.append(f"Running: {app}")
+            except Exception:
+                pass
+        if lines:
+            return "Screen state (X11):\n" + "\n".join(lines)
+        return "Display available but screen content unavailable — ensure app is in foreground"
 
     # ── Mouse actions ─────────────────────────────────────────────────────────
 

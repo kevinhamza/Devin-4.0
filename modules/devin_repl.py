@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Devin AGI 4.0 — Claude Code-style Interactive REPL
+Devin AGI 4.0 — Grok-style CLI with Agentic Tool Execution
 
 All credentials via .env / environment variables only.
 Never hardcode API keys.
 """
 from __future__ import annotations
-import os, sys, shutil, signal, subprocess, threading, time, json
+import os, sys, shutil, signal, subprocess, threading, time, json, re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Generator
+from typing import Any, Dict, List, Optional, Generator, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 _ENV = ROOT / '.env'
@@ -21,8 +21,12 @@ if _ENV.exists():
 
 
 # ── Terminal helpers ───────────────────────────────────────────────────────────
+
 def _cols() -> int:
-    return shutil.get_terminal_size((80, 24)).columns
+    return shutil.get_terminal_size((120, 24)).columns
+
+def _rows() -> int:
+    return shutil.get_terminal_size((120, 24)).lines
 
 _IS_TTY = sys.stdout.isatty()
 
@@ -31,23 +35,119 @@ def _c(code: str, text: str) -> str:
         return text
     return f'\033[{code}m{text}\033[0m'
 
-CYAN_B = '36;1'
-CYAN   = '36'
+def _bg(code: str, text: str) -> str:
+    if not _IS_TTY:
+        return text
+    return f'\033[{code}m{text}\033[0m'
+
+# ANSI codes
+CYAN_B  = '36;1'
+CYAN    = '36'
 WHITE_B = '37;1'
-GRAY   = '2'
-YELLOW = '33'
-GREEN  = '32'
-RED    = '31'
+GRAY    = '2'
+GRAY_B  = '90'
+YELLOW  = '33'
+GREEN   = '32'
+RED     = '31'
 MAGENTA = '35'
+BLUE    = '34;1'
+DIM     = '2'
+BOLD    = '1'
+
+# Background colors
+BG_DARK  = '48;5;236'   # dark gray bg for user msg
+BG_BLACK = '48;5;232'
+BG_TOOL  = '48;5;234'   # slightly lighter for tool blocks
+
+def _now_hhmm() -> str:
+    return time.strftime('%I:%M %p').lstrip('0')
+
+def _elapsed(start: float) -> str:
+    s = time.time() - start
+    if s < 60:
+        return f'{s:.1f}s'
+    return f'{int(s//60)}m {int(s%60)}s'
+
+def _hr(w: int, char: str = '─') -> str:
+    return char * max(w, 1)
+
+def _tok_estimate(messages: List[Dict]) -> int:
+    total = sum(len(m.get('content', '')) for m in messages)
+    return total // 4  # rough chars-to-tokens
 
 
 # ── AI Provider wrappers ───────────────────────────────────────────────────────
 
+def _tools_to_openai_schema(tools: Dict) -> List[Dict]:
+    """Convert devin tool registry to OpenAI-compatible function schema."""
+    result = []
+    for name, info in tools.items():
+        props = {}
+        for pname, pdesc in info.get('params', {}).items():
+            props[pname] = {'type': 'string', 'description': str(pdesc)}
+        result.append({
+            'type': 'function',
+            'function': {
+                'name': name,
+                'description': info.get('desc', ''),
+                'parameters': {
+                    'type': 'object',
+                    'properties': props,
+                    'required': list(props.keys()),
+                },
+            },
+        })
+    return result
+
+
+def _tools_to_anthropic_schema(tools: Dict) -> List[Dict]:
+    """Convert devin tool registry to Anthropic tool schema."""
+    result = []
+    for name, info in tools.items():
+        props = {}
+        for pname, pdesc in info.get('params', {}).items():
+            props[pname] = {'type': 'string', 'description': str(pdesc)}
+        result.append({
+            'name': name,
+            'description': info.get('desc', ''),
+            'input_schema': {
+                'type': 'object',
+                'properties': props,
+                'required': list(props.keys()),
+            },
+        })
+    return result
+
+
 class _BaseProvider:
     name = 'none'
-    def available(self) -> bool: return False
+
+    def available(self) -> bool:
+        return False
+
     def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
         yield '[No provider available — set API key in .env]'
+
+    def complete(self, messages: List[Dict], system: str = '') -> str:
+        return ''.join(self.stream(messages, system))
+
+    def call_with_tools(
+        self, messages: List[Dict], tools: Dict, system: str = ''
+    ) -> Dict:
+        """
+        Single LLM call with tool definitions. Returns:
+          {"content": str, "tool_calls": [{"name": str, "arguments": dict}]}
+        Default implementation uses streaming + ReAct text parsing (no native tool calls).
+        Subclasses override for native tool calling.
+        """
+        full = self.complete(messages, system)
+        action_name, inputs, _ = _parse_action(full)
+        final_m = _FINAL_RE.search(full)
+        if final_m:
+            return {'content': final_m.group(1).strip(), 'tool_calls': []}
+        if action_name:
+            return {'content': '', 'tool_calls': [{'name': action_name, 'arguments': inputs or {}}]}
+        return {'content': full.strip(), 'tool_calls': []}
 
 
 class _GeminiProvider(_BaseProvider):
@@ -138,6 +238,28 @@ class _ClaudeProvider(_BaseProvider):
         except Exception as e:
             yield f'[Claude error: {e}]'
 
+    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=self._key)
+            anth_tools = _tools_to_anthropic_schema(tools)
+            resp = client.messages.create(
+                model=self._model, max_tokens=4096,
+                system=system or 'You are Devin, an autonomous AI assistant.',
+                messages=messages,
+                tools=anth_tools,
+            )
+            content_text = ''
+            tool_calls = []
+            for block in resp.content:
+                if hasattr(block, 'text'):
+                    content_text += block.text
+                elif getattr(block, 'type', '') == 'tool_use':
+                    tool_calls.append({'name': block.name, 'arguments': block.input or {}})
+            return {'content': content_text, 'tool_calls': tool_calls}
+        except Exception as e:
+            return {'content': f'[Claude tool call error: {e}]', 'tool_calls': []}
+
 
 class _OpenAIProvider(_BaseProvider):
     name = 'openai'
@@ -163,8 +285,29 @@ class _OpenAIProvider(_BaseProvider):
         except Exception as e:
             yield f'[OpenAI error: {e}]'
 
+    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
+        try:
+            import openai
+            client = openai.OpenAI(api_key=self._key)
+            all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
+            oai_tools = _tools_to_openai_schema(tools)
+            resp = client.chat.completions.create(
+                model=self._model, messages=all_msgs,
+                tools=oai_tools, tool_choice='auto',
+            )
+            msg = resp.choices[0].message
+            tool_calls = []
+            for tc in (msg.tool_calls or []):
+                try:
+                    args = json.loads(tc.function.arguments)
+                except Exception:
+                    args = {}
+                tool_calls.append({'name': tc.function.name, 'arguments': args})
+            return {'content': msg.content or '', 'tool_calls': tool_calls}
+        except Exception as e:
+            return {'content': f'[OpenAI tool call error: {e}]', 'tool_calls': []}
 
-# HF model fallback chain — best reasoning first
+
 _HF_MODELS = [
     'Qwen/Qwen2.5-72B-Instruct',
     'meta-llama/Meta-Llama-3.1-70B-Instruct',
@@ -186,7 +329,6 @@ class _HFProvider(_BaseProvider):
 
     def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
         try:
-            # Try the enhanced provider first (supports model fallback)
             from modules.hf_enhanced_provider import stream_chat as hf_stream
             all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
             model = self._model or _HF_MODELS[0]
@@ -196,7 +338,6 @@ class _HFProvider(_BaseProvider):
         except (ImportError, Exception):
             pass
 
-        # Direct fallback using HF Router OpenAI-compatible endpoint
         import urllib.request as _ur
         import json as _json
 
@@ -234,7 +375,7 @@ class _HFProvider(_BaseProvider):
                                 yield delta['content']
                         except Exception:
                             pass
-                return  # success
+                return
             except Exception:
                 continue
 
@@ -242,12 +383,11 @@ class _HFProvider(_BaseProvider):
 
 
 class _FCCProvider(_BaseProvider):
-    """Free Claude Code server — OpenAI-compatible HTTP proxy at FCC_BASE_URL."""
     name = 'free_claude'
 
     def __init__(self):
         self._base = (os.environ.get('FCC_BASE_URL') or '').rstrip('/')
-        self._model = os.environ.get('FCC_MODEL', 'claude-opus-4-5')
+        self._model = os.environ.get('FCC_MODEL', 'anthropic/open_router/qwen/qwen3-235b-a22b')
 
     def available(self) -> bool:
         return bool(self._base)
@@ -256,40 +396,35 @@ class _FCCProvider(_BaseProvider):
         import urllib.request as _ur
         import json as _json
 
-        all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-        payload = _json.dumps({
+        anth_msgs = [m for m in messages if m.get('role') != 'system']
+        if not anth_msgs:
+            anth_msgs = [{'role': 'user', 'content': ''}]
+
+        body: Dict = {
             'model': self._model,
-            'messages': all_msgs,
-            'stream': True,
+            'messages': anth_msgs,
             'max_tokens': 4096,
-        }).encode()
+        }
+        if system:
+            body['system'] = system
+
+        payload = _json.dumps(body).encode()
         try:
             req = _ur.Request(
-                f'{self._base}/v1/chat/completions',
+                f'{self._base}/v1/messages',
                 data=payload,
-                headers={'Content-Type': 'application/json'},
+                headers={'Content-Type': 'application/json', 'anthropic-version': '2023-06-01'},
             )
             with _ur.urlopen(req, timeout=120) as resp:
-                for raw in resp:
-                    line = raw.decode('utf-8', errors='replace').strip()
-                    if not line.startswith('data:'):
-                        continue
-                    chunk_str = line[5:].strip()
-                    if chunk_str == '[DONE]':
-                        return
-                    try:
-                        chunk = _json.loads(chunk_str)
-                        delta = chunk['choices'][0]['delta']
-                        if delta.get('content'):
-                            yield delta['content']
-                    except Exception:
-                        pass
+                data = _json.loads(resp.read())
+                for block in data.get('content', []):
+                    if block.get('type') == 'text':
+                        yield block.get('text', '')
         except Exception as e:
             yield f'[FCC server error: {e}]'
 
 
 class _FreeClaudeSubprocProvider(_BaseProvider):
-    """Free Claude via subprocess/session (no FCC_BASE_URL needed)."""
     name = 'free_claude_sub'
 
     def available(self) -> bool:
@@ -308,10 +443,52 @@ class _FreeClaudeSubprocProvider(_BaseProvider):
             yield f'[free-claude-code unavailable: {e}]'
 
 
+class _OllamaProvider(_BaseProvider):
+    """Local Ollama LLM provider — no API key, fully offline."""
+    name = 'ollama'
+
+    def __init__(self):
+        self._base = (os.environ.get('OLLAMA_BASE_URL') or 'http://localhost:11434').rstrip('/')
+        self._model = os.environ.get('OLLAMA_MODEL') or 'qwen2.5:0.5b'
+
+    def available(self) -> bool:
+        try:
+            import urllib.request as _ur
+            with _ur.urlopen(f'{self._base}/api/tags', timeout=3) as r:
+                data = json.loads(r.read())
+                return bool(data.get('models'))
+        except Exception:
+            return False
+
+    def _best_model(self) -> str:
+        try:
+            from modules.ollama_provider import _best_model as _bm
+            return _bm()
+        except Exception:
+            return self._model
+
+    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
+        try:
+            from modules.ollama_provider import stream_chat
+            for chunk in stream_chat(messages, system_prompt=system, model=self._best_model()):
+                yield chunk
+        except Exception as e:
+            yield f'[Ollama error: {e}]'
+
+    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
+        try:
+            from modules.ollama_provider import chat_with_tools
+            return chat_with_tools(messages, tools, system_prompt=system, model=self._best_model())
+        except Exception as e:
+            return {'content': f'[Ollama tool error: {e}]', 'tool_calls': []}
+
+
 def _select_provider(forced: str = '') -> _BaseProvider:
     fcc = _FCCProvider()
     fcc_sub = _FreeClaudeSubprocProvider()
+    ollama = _OllamaProvider()
     candidates = {
+        'ollama': ollama,
         'gemini': _GeminiProvider(),
         'claude': _ClaudeProvider(),
         'openai': _OpenAIProvider(),
@@ -325,8 +502,10 @@ def _select_provider(forced: str = '') -> _BaseProvider:
         p = candidates[name]
         if p.available():
             return p
-    # Auto-select: Claude → Gemini → OpenAI → HF → FCC server → free-claude subprocess
+        # Named provider not available — fall through to auto-select
+    # Auto-select priority: Ollama (local) > Claude > Gemini > OpenAI > HF > FCC
     for p in [
+        ollama,
         candidates['claude'],
         candidates['gemini'],
         candidates['openai'],
@@ -336,69 +515,15 @@ def _select_provider(forced: str = '') -> _BaseProvider:
     ]:
         if p.available():
             return p
-    # Nothing available — return FCC so user sees helpful message
-    return fcc
+    return ollama  # return Ollama even if unavailable — gives helpful error msg
 
 
-# ── System prompt ──────────────────────────────────────────────────────────────
+# ── Tool registry ──────────────────────────────────────────────────────────────
 
-_SYSTEM = """You are Devin, a powerful autonomous AI agent running inside Devin AGI v4.0.
+def _build_agent_tools() -> Dict[str, Dict]:
+    tools: Dict[str, Dict] = {}
 
-You can reason, plan, and act to complete complex tasks on a real computer — exactly like a
-senior software engineer combined with a security researcher would. You control the OS through
-screenshots, mouse, keyboard, and shell commands.
-
-Your core capabilities:
-- **OS Control**: take screenshots, move/click mouse, type, press keys, manage windows
-- **Browser Automation**: open URLs, search, fill forms, extract data from web pages
-- **Shell Execution**: run any shell command, scripts, tools
-- **Code**: write, run, and debug Python/TypeScript/Bash/any language
-- **File System**: read, write, organize files and directories
-- **System Monitor**: check CPU, memory, disk, processes, network
-- **Memory**: store and recall facts across sessions
-- **Security tools**: authorized vulnerability scanning, pentesting (with explicit permission only)
-- **AI Reasoning**: break down complex problems, think step-by-step
-
-Operating principles:
-1. **Think before acting**: analyze the task, plan steps
-2. **Observe**: use screenshot/shell to understand current state
-3. **Act incrementally**: one step at a time, verify each step worked
-4. **Recover**: if something fails, diagnose and try an alternative
-5. **Complete**: report exactly what happened, not what should have happened
-
-For security work: only operate on systems you own or have explicit written authorization to test.
-Format responses in Markdown. Be concise, direct, and action-oriented."""
-
-_SLASH_HELP = """
-  Slash commands:
-    /help              Show this help
-    /clear             Clear screen + conversation history
-    /status            System and module status
-    /tools             List registered tools
-    /screenshot        Take + show current screenshot description
-    /memory            Show saved memories
-    /remember <fact>   Save a fact to persistent memory
-    /shell <cmd>       Run a shell command directly
-    /git <args>        Run a git command
-    /repos             List integrated repositories
-    /think <task>      Run full agentic reasoning loop on a task
-    /voice             Toggle voice mode
-    /provider <p>      Switch AI provider (claude|gemini|openai|hf|free_claude|fcc)
-    /model <m>         Set model for current provider
-    /mem               Conversation memory stats
-    /cwd               Show working directory
-    /reset             Reset conversation history
-    /exit  /q          Exit Devin
-"""
-
-
-# ── Agentic tool registration ──────────────────────────────────────────────────
-
-def _build_agent_tools():
-    """Build the tool registry for the agentic reasoning engine."""
-    tools = {}
-
-    # OS tools
+    # OS/browser tools
     try:
         from modules.os_agent import get_os_agent
         agent = get_os_agent()
@@ -407,78 +532,81 @@ def _build_agent_tools():
             r = agent.screenshot('Describe the current screen state in detail')
             return f"Screenshot: {r.message}\nVision: {r.vision_result or 'no vision'}"
 
-        def _click_tool(x: int, y: int, button: str = 'left', **_):
+        def _click_tool(x: int = 0, y: int = 0, button: str = 'left', **_):
             r = agent.click(int(x), int(y), button)
             return f"Click at ({x},{y}): {'OK' if r.success else r.message}"
 
-        def _type_text_tool(text: str, **_):
+        def _type_text_tool(text: str = '', **_):
             r = agent.type_text(str(text))
-            return f"Typed '{text}': {'OK' if r.success else r.message}"
+            return f"Typed: {'OK' if r.success else r.message}"
 
-        def _press_key_tool(key: str, **_):
+        def _press_key_tool(key: str = '', **_):
             r = agent.press_key(str(key))
             return f"Key '{key}': {'OK' if r.success else r.message}"
 
-        def _hotkey_tool(keys: str, **_):
+        def _hotkey_tool(keys: str = '', **_):
             r = agent.hotkey(*str(keys).split('+'))
             return f"Hotkey '{keys}': {'OK' if r.success else r.message}"
 
-        def _open_app_tool(name: str, **_):
+        def _open_app_tool(name: str = '', **_):
             r = agent.open_application(str(name))
             return f"Open '{name}': {'OK — pid=' + str(r.data.get('pid','?')) if r.success else r.message}"
 
-        def _navigate_tool(url: str, **_):
+        def _navigate_tool(url: str = '', **_):
             r = agent.navigate_browser(str(url))
             return f"Navigate to '{url}': {'OK' if r.success else r.message}"
 
-        def _browser_search_tool(query: str, **_):
+        def _browser_search_tool(query: str = '', **_):
             r = agent.browser_search(str(query))
             return f"Browser search '{query}': {'OK' if r.success else r.message}"
 
-        def _find_click_tool(description: str, **_):
+        def _click_element_tool(description: str = '', **_):
             r = agent.click_element(str(description))
-            return f"Click element '{description}': {'OK' if r.success else r.message}"
+            return f"Click '{description}': {'OK' if r.success else r.message}"
 
-        def _observe_screen(**_):
+        def _observe_tool(**_):
             return agent.observe()
 
-        tools['screenshot'] = {'fn': _screenshot_tool, 'description': 'Take a screenshot and describe the current screen', 'params': {}}
-        tools['click'] = {'fn': _click_tool, 'description': 'Click at pixel coordinates', 'params': {'x': 'x coordinate', 'y': 'y coordinate', 'button': 'left|right|middle'}}
-        tools['type_text'] = {'fn': _type_text_tool, 'description': 'Type text using keyboard', 'params': {'text': 'text to type'}}
-        tools['press_key'] = {'fn': _press_key_tool, 'description': 'Press a keyboard key (e.g. Return, Tab, Escape)', 'params': {'key': 'key name'}}
-        tools['hotkey'] = {'fn': _hotkey_tool, 'description': 'Press a keyboard hotkey combo (e.g. ctrl+c)', 'params': {'keys': 'keys joined by + e.g. ctrl+c'}}
-        tools['open_application'] = {'fn': _open_app_tool, 'description': 'Launch an application by name', 'params': {'name': 'application name e.g. firefox, chrome, terminal'}}
-        tools['navigate_browser'] = {'fn': _navigate_tool, 'description': 'Navigate browser to a URL', 'params': {'url': 'URL to navigate to'}}
-        tools['browser_search'] = {'fn': _browser_search_tool, 'description': 'Search for a query in the browser', 'params': {'query': 'search query'}}
-        tools['click_element'] = {'fn': _find_click_tool, 'description': 'Find and click a UI element by description', 'params': {'description': 'element description e.g. "address bar" or "submit button"'}}
-        tools['observe_screen'] = {'fn': _observe_screen, 'description': 'Take a screenshot and return description of current screen state', 'params': {}}
-    except Exception as e:
+        tools['screenshot']     = {'fn': _screenshot_tool,  'desc': 'Take a screenshot and describe current screen', 'params': {}}
+        tools['click']          = {'fn': _click_tool,        'desc': 'Click at pixel (x,y)', 'params': {'x': 'int', 'y': 'int', 'button': 'left|right|middle'}}
+        tools['type_text']      = {'fn': _type_text_tool,    'desc': 'Type text via keyboard', 'params': {'text': 'string to type'}}
+        tools['press_key']      = {'fn': _press_key_tool,    'desc': 'Press a key e.g. Return, Tab, Escape', 'params': {'key': 'key name'}}
+        tools['hotkey']         = {'fn': _hotkey_tool,       'desc': 'Press hotkey combo e.g. ctrl+c', 'params': {'keys': 'e.g. ctrl+c'}}
+        tools['open_app']       = {'fn': _open_app_tool,     'desc': 'Launch an application by name', 'params': {'name': 'app name'}}
+        tools['navigate_browser']= {'fn': _navigate_tool,   'desc': 'Navigate browser to URL', 'params': {'url': 'URL'}}
+        tools['browser_search'] = {'fn': _browser_search_tool, 'desc': 'Search for query in browser', 'params': {'query': 'search query'}}
+        tools['click_element']  = {'fn': _click_element_tool,'desc': 'Click UI element by description', 'params': {'description': 'e.g. address bar'}}
+        tools['observe_screen'] = {'fn': _observe_tool,      'desc': 'Observe current screen state', 'params': {}}
+    except Exception:
         pass
 
-    # Shell tools
-    def _shell_tool(cmd: str, timeout: int = 30, **_):
+    # Shell
+    def _shell_tool(cmd: str = '', timeout: int = 30, **_):
         try:
             r = subprocess.run(str(cmd), shell=True, capture_output=True, text=True, timeout=int(timeout))
-            out = (r.stdout or '')[:2000]
-            err = (r.stderr or '')[:500]
-            return f"$ {cmd}\n{out}" + (f"\nSTDERR: {err}" if err else "")
+            out = (r.stdout or '')[:3000]
+            err = (r.stderr or '')[:800]
+            result = f"$ {cmd}\n{out}"
+            if err:
+                result += f"\nSTDERR: {err}"
+            return result
         except subprocess.TimeoutExpired:
             return f"[timeout after {timeout}s: {cmd}]"
         except Exception as e:
             return f"[shell error: {e}]"
 
-    def _read_file_tool(path: str, **_):
+    def _read_file_tool(path: str = '', **_):
         try:
             p = Path(str(path))
             if not p.exists():
                 return f"[file not found: {path}]"
             if p.stat().st_size > 100_000:
-                return f"[file too large: {p.stat().st_size} bytes — use shell_run with head/tail]"
-            return p.read_text(errors='replace')[:3000]
+                return f"[file too large — use shell_run with head/tail]"
+            return p.read_text(errors='replace')[:4000]
         except Exception as e:
             return f"[read error: {e}]"
 
-    def _write_file_tool(path: str, content: str, **_):
+    def _write_file_tool(path: str = '', content: str = '', **_):
         try:
             p = Path(str(path))
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -487,12 +615,25 @@ def _build_agent_tools():
         except Exception as e:
             return f"[write error: {e}]"
 
-    tools['shell_run'] = {'fn': _shell_tool, 'description': 'Execute a shell command and return stdout', 'params': {'cmd': 'shell command', 'timeout': 'seconds (default 30)'}}
-    tools['read_file'] = {'fn': _read_file_tool, 'description': 'Read a file and return its contents', 'params': {'path': 'file path'}}
-    tools['write_file'] = {'fn': _write_file_tool, 'description': 'Write content to a file', 'params': {'path': 'file path', 'content': 'content to write'}}
+    def _list_dir_tool(path: str = '.', **_):
+        try:
+            p = Path(str(path))
+            entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name))
+            lines = []
+            for e in entries[:60]:
+                mark = '' if e.is_dir() else ''
+                lines.append(f"  {mark} {e.name}{'/' if e.is_dir() else ''}")
+            return '\n'.join(lines) or '(empty)'
+        except Exception as e:
+            return f"[list error: {e}]"
 
-    # Memory tools
-    def _remember_tool(fact: str, **_):
+    tools['shell_run']  = {'fn': _shell_tool,    'desc': 'Run shell command, return stdout+stderr', 'params': {'cmd': 'command', 'timeout': 'seconds (default 30)'}}
+    tools['read_file']  = {'fn': _read_file_tool, 'desc': 'Read file contents', 'params': {'path': 'file path'}}
+    tools['write_file'] = {'fn': _write_file_tool,'desc': 'Write content to file', 'params': {'path': 'file path', 'content': 'content'}}
+    tools['list_dir']   = {'fn': _list_dir_tool,  'desc': 'List directory contents', 'params': {'path': 'directory path (default .)'}}
+
+    # Memory
+    def _remember_tool(fact: str = '', **_):
         try:
             _save_memory(str(fact))
             return f"Remembered: {fact}"
@@ -511,33 +652,42 @@ def _build_agent_tools():
         except Exception as e:
             return f"[recall error: {e}]"
 
-    tools['remember'] = {'fn': _remember_tool, 'description': 'Save a fact to persistent memory', 'params': {'fact': 'fact to remember'}}
-    tools['recall'] = {'fn': _recall_tool, 'description': 'Recall stored memories, optionally filtered by query', 'params': {'query': 'optional search string'}}
+    tools['remember'] = {'fn': _remember_tool, 'desc': 'Save fact to persistent memory', 'params': {'fact': 'fact to remember'}}
+    tools['recall']   = {'fn': _recall_tool,   'desc': 'Recall memories, optionally filtered', 'params': {'query': 'search string (optional)'}}
 
-    # System monitor
+    # System info
     try:
         import psutil
 
-        def _sysinfo(**_):
+        def _sysinfo_tool(**_):
             cpu = psutil.cpu_percent(interval=0.5)
             mem = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
             return (f"CPU: {cpu}%  RAM: {mem.percent}% ({mem.used//1024//1024}MB/{mem.total//1024//1024}MB)"
                     f"  Disk: {disk.percent}% ({disk.used//1024//1024//1024}GB/{disk.total//1024//1024//1024}GB)")
 
-        def _list_processes(filter_name: str = '', **_):
+        def _procs_tool(filter_name: str = '', **_):
             procs = []
-            for p in psutil.process_iter(['pid', 'name', 'cpu_percent']):
+            for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info']):
                 try:
                     info = p.info
                     if not filter_name or filter_name.lower() in info['name'].lower():
-                        procs.append(f"PID {info['pid']:>6}  {info['name']}")
+                        mem_mb = info.get('memory_info').rss // 1024 // 1024 if info.get('memory_info') else 0
+                        procs.append(f"PID {info['pid']:>6}  {info['name']:<30}  {mem_mb}MB")
                 except Exception:
                     pass
-            return '\n'.join(procs[:30]) or 'No processes found'
+            return '\n'.join(procs[:40]) or 'No processes found'
 
-        tools['system_info'] = {'fn': _sysinfo, 'description': 'Get system CPU/RAM/disk usage', 'params': {}}
-        tools['list_processes'] = {'fn': _list_processes, 'description': 'List running processes', 'params': {'filter_name': 'optional name filter'}}
+        def _network_tool(**_):
+            stats = psutil.net_io_counters()
+            conns = psutil.net_connections()
+            listening = [c for c in conns if c.status == 'LISTEN']
+            return (f"Bytes sent: {stats.bytes_sent//1024//1024}MB  Recv: {stats.bytes_recv//1024//1024}MB\n"
+                    f"Active connections: {len(conns)}  Listening ports: {[c.laddr.port for c in listening[:10]]}")
+
+        tools['system_info']     = {'fn': _sysinfo_tool, 'desc': 'Get CPU/RAM/disk usage', 'params': {}}
+        tools['list_processes']  = {'fn': _procs_tool,   'desc': 'List running processes', 'params': {'filter_name': 'optional name filter'}}
+        tools['network_status']  = {'fn': _network_tool, 'desc': 'Get network IO and connections', 'params': {}}
     except ImportError:
         pass
 
@@ -548,7 +698,6 @@ def _build_agent_tools():
 
 _MEMORY_FILE = ROOT / '.devin_memories.json'
 
-
 def _load_memories() -> List[Dict]:
     try:
         if _MEMORY_FILE.exists():
@@ -557,36 +706,261 @@ def _load_memories() -> List[Dict]:
         pass
     return []
 
-
 def _save_memory(content: str) -> None:
     mems = _load_memories()
     mems.append({'content': content, 'ts': time.strftime('%Y-%m-%d %H:%M')})
     _MEMORY_FILE.write_text(json.dumps(mems, indent=2))
 
 
-# ── Agentic reasoning loop ─────────────────────────────────────────────────────
+# ── ReAct system prompt ────────────────────────────────────────────────────────
 
-def _run_agentic_task(task: str, on_step=None) -> str:
-    """Run the full reasoning→tool→verify loop on a task."""
+def _build_system_prompt(tools: Dict[str, Dict]) -> str:
+    tool_lines = []
+    for name, info in sorted(tools.items()):
+        params = ', '.join(f'{k}: {v}' for k, v in info.get('params', {}).items())
+        tool_lines.append(f"  - {name}({params}): {info['desc']}")
+    tool_desc = '\n'.join(tool_lines)
+
+    return f"""You are Devin, an autonomous AI agent running inside Devin AGI v4.0 on a real Linux system.
+You can directly control the OS: run shell commands, navigate browsers, read/write files, monitor system, and more.
+
+## Available Tools
+{tool_desc}
+
+## Response Format
+You MUST follow this EXACT format in your responses:
+
+Thought: [your reasoning about what to do next]
+Action: tool_name
+Action Input: {{"key": "value"}}
+
+After observing the tool result, continue with more Thought/Action pairs until done.
+When you have enough information to give a final answer:
+
+Thought: I now have the complete answer
+Final Answer: [your complete response to the user]
+
+## Rules
+1. ALWAYS use the Thought/Action/Action Input format when you need to do something
+2. NEVER just describe what you would do — actually DO it via Action
+3. For simple questions needing no tools, skip directly to: Thought: This is a simple question\nFinal Answer: [answer]
+4. After each tool use, observe the result and decide the next step
+5. Loop through as many steps as needed to fully complete the task
+6. For security work: only operate on systems you own or have authorization to test
+7. Be concise and action-oriented. Show real results, not hypothetical ones."""
+
+
+# ── ReAct execution loop ───────────────────────────────────────────────────────
+
+_ACTION_RE     = re.compile(r'Action:\s*(.+?)(?:\n|$)', re.IGNORECASE)
+_INPUT_RE      = re.compile(r'Action\s+Input:\s*(.+?)(?=\nThought:|\nAction:|\nFinal Answer:|$)', re.IGNORECASE | re.DOTALL)
+_FINAL_RE      = re.compile(r'Final\s+Answer:\s*(.+)', re.IGNORECASE | re.DOTALL)
+_THOUGHT_RE    = re.compile(r'Thought:\s*(.+?)(?=\nAction:|\nFinal Answer:|$)', re.IGNORECASE | re.DOTALL)
+
+
+def _parse_action(text: str) -> Tuple[Optional[str], Optional[Dict], Optional[str]]:
+    """Parse one Thought/Action/Action Input block. Returns (action_name, inputs, thought)."""
+    thought_m = _THOUGHT_RE.search(text)
+    thought = thought_m.group(1).strip() if thought_m else None
+
+    action_m = _ACTION_RE.search(text)
+    if not action_m:
+        return None, None, thought
+
+    action_name = action_m.group(1).strip()
+    input_m = _INPUT_RE.search(text)
+    inputs: Dict = {}
+    if input_m:
+        raw = input_m.group(1).strip()
+        try:
+            inputs = json.loads(raw)
+        except json.JSONDecodeError:
+            # Try to extract key=value or bare string
+            inputs = {'cmd': raw} if action_name in ('shell_run',) else {'query': raw}
+    return action_name, inputs, thought
+
+
+def _run_tool(tools: Dict[str, Dict], name: str, inputs: Dict) -> str:
+    name = name.strip().lower().replace('-', '_').replace(' ', '_')
+    # Try exact match first, then prefix match
+    fn_info = tools.get(name)
+    if not fn_info:
+        for k, v in tools.items():
+            if name in k or k in name:
+                fn_info = v
+                name = k
+                break
+    if not fn_info:
+        return f"[Unknown tool: {name}. Available: {', '.join(sorted(tools.keys()))}]"
     try:
-        from modules.reasoning_engine import get_reasoning_engine
-        engine = get_reasoning_engine()
-
-        # Register tools
-        tools = _build_agent_tools()
-        for name, info in tools.items():
-            engine.register_tool(name, info['fn'], info['description'], info.get('params'))
-
-        result = engine.think(task)
-        return result.answer
+        return str(fn_info['fn'](**inputs))
     except Exception as e:
-        return f"[Agentic error: {e}]"
+        return f"[Tool error in {name}: {e}]"
 
 
-# ── DevinREPL ──────────────────────────────────────────────────────────────────
+# ── Grok-style UI renderer ─────────────────────────────────────────────────────
+
+class GrokUI:
+    """Renders grok-style CLI output."""
+
+    def __init__(self, provider_name: str = 'devin'):
+        self.provider_name = provider_name
+        self._chars_sent = 0
+        self._max_tokens = 200000  # rough estimate
+
+    def _w(self) -> int:
+        return _cols()
+
+    def print_header(self, cwd: str, tokens: int) -> None:
+        w = self._w()
+        left = f'  \033[32mmain\033[0m \033[2m{cwd}\033[0m'
+        right = f'\033[2m{tokens}K / {self._max_tokens//1000}K\033[0m'
+        gap = w - len(cwd) - len('  main ') - len(f'{tokens}K / {self._max_tokens//1000}K') - 2
+        print(f'{left}{" " * max(gap, 2)}{right}')
+
+    def print_user_msg(self, text: str) -> None:
+        w = self._w()
+        ts = _now_hhmm()
+        # Dark-bg row for user message
+        prefix = '  ❯ '
+        inner = text[:w - len(prefix) - len(ts) - 4]
+        padlen = w - len(prefix) - len(inner) - len(ts) - 2
+        if _IS_TTY:
+            # dark background bar
+            line = f'\033[{BG_DARK}m{prefix}\033[1m{inner}\033[0m\033[{BG_DARK}m{" " * max(padlen,1)}\033[2m{ts}\033[0m'
+        else:
+            line = f'{prefix}{inner}  {ts}'
+        print(line)
+
+    def print_thought(self, duration: float) -> None:
+        print(_c(GRAY_B, f'  ◆ Thought for {duration:.1f}s'))
+
+    def start_response(self, ts: str) -> None:
+        """Print timestamp at start of response (grok shows it inline)."""
+        pass  # We'll put timestamp at the end
+
+    def stream_text(self, text: str, end: str = '') -> None:
+        print(text, end=end, flush=True)
+
+    def print_tool_header(self, tool_name: str, inputs: Dict) -> str:
+        """Print collapsible tool call line. Returns the label for later."""
+        # Summarize inputs
+        if 'cmd' in inputs:
+            summary = inputs['cmd'][:60]
+        elif 'url' in inputs:
+            summary = inputs['url'][:60]
+        elif 'query' in inputs:
+            summary = inputs['query'][:60]
+        elif 'path' in inputs:
+            summary = inputs['path'][:60]
+        elif inputs:
+            summary = str(list(inputs.values())[0])[:60]
+        else:
+            summary = ''
+
+        label = f'{tool_name}: {summary}' if summary else tool_name
+        if _IS_TTY:
+            print(f'\033[{BG_TOOL}m  \033[36m›\033[0m\033[{BG_TOOL}m \033[2m{label}\033[0m')
+        else:
+            print(f'  › {label}')
+        return label
+
+    def print_tool_result(self, result: str, label: str, duration: float) -> None:
+        lines = result.strip().splitlines()
+        shown = lines[:8]  # show first 8 lines, collapse rest
+        for ln in shown:
+            print(_c(GRAY, f'    {ln}'))
+        if len(lines) > 8:
+            print(_c(GRAY, f'    … ({len(lines)-8} more lines)'))
+        print(_c(DIM, f'  \033[2mRan {label.split(":")[0]} in {duration:.2f}s\033[0m'))
+
+    def print_worked_for(self, duration: float) -> None:
+        print()
+        print(_c(GRAY, f'  Worked for {_elapsed(0 if duration >= 60 else 0)}'.replace('0.0s', f'{duration:.1f}s')))
+        # simpler:
+        s = duration
+        if s < 60:
+            print(_c(GRAY_B, f'\n  Worked for {s:.1f}s'))
+        else:
+            print(_c(GRAY_B, f'\n  Worked for {int(s//60)}m {int(s%60)}s'))
+
+    def print_final(self, text: str, ts: str) -> None:
+        # Print the response with timestamp at right of first line
+        lines = text.strip().splitlines()
+        if not lines:
+            return
+        w = self._w()
+        first = lines[0]
+        padlen = w - len('  ' + first) - len(ts) - 2
+        if _IS_TTY and padlen > 0:
+            print(f'  \033[0m{first}\033[{GRAY_B}m{" " * padlen}{ts}\033[0m')
+        else:
+            print(f'  {first}  {ts}')
+        for ln in lines[1:]:
+            print(f'  {ln}')
+
+    def print_elapsed(self, seconds: float) -> None:
+        print()
+        if seconds < 60:
+            print(_c(GRAY_B, f'  Worked for {seconds:.1f}s'))
+        else:
+            print(_c(GRAY_B, f'  Worked for {int(seconds//60)}m {int(seconds%60)}s'))
+
+    def print_status_bar(self, provider: str, model_hint: str = '') -> None:
+        w = self._w()
+        shortcuts = 'Shift+Tab:mode  |  Ctrl+c:cancel  |  Ctrl+x:shortcuts'
+        right = f'{provider} (medium)' if not model_hint else model_hint
+        gap = w - len(shortcuts) - len(right) - 4
+        print(_c(GRAY, f'  {shortcuts}{" " * max(gap,2)}{right}'))
+
+    def print_input_prompt(self) -> str:
+        return '  ❯ '
+
+    def banner(self, provider_name: str, cwd: str) -> None:
+        w = self._w()
+        sep = _hr(w - 4)
+        print()
+        print(_c(CYAN_B, f'  ╭{sep}╮'))
+        title = '  Devin AGI v4.0  ·  Autonomous OS-Controlling AI'
+        prov  = f'[{provider_name}]'
+        pad   = w - len(title) - len(prov) - 4
+        print(_c(CYAN_B, '  │') + _c(WHITE_B, title) +
+              ' ' * max(pad, 1) + _c(GRAY, prov) + _c(CYAN_B, ' │'))
+        sub = '  Type /help for commands · /think <task> for agentic mode · Ctrl+D to exit'
+        pad2 = w - len(sub) - 4
+        print(_c(CYAN_B, '  │') + _c(GRAY, sub) + ' ' * max(pad2, 0) + _c(CYAN_B, '│'))
+        print(_c(CYAN_B, f'  ╰{sep}╯'))
+        print()
+
+
+# ── Slash commands ─────────────────────────────────────────────────────────────
+
+_SLASH_HELP = """
+  Slash commands:
+    /help              Show this help
+    /clear             Clear screen + conversation history
+    /status            System and module status
+    /tools             List registered tools
+    /screenshot        Take + show screenshot
+    /memory            Show saved memories
+    /remember <fact>   Save a fact to persistent memory
+    /shell <cmd>       Run a shell command directly
+    /git <args>        Run a git command
+    /think <task>      Force agentic mode on a task
+    /voice             Toggle voice mode
+    /provider <p>      Switch provider (claude|gemini|openai|hf|free_claude|fcc)
+    /model <m>         Set model for current provider
+    /mem               Conversation memory stats
+    /cwd               Show working directory
+    /reset             Reset conversation history
+    /exit  /q          Exit Devin
+"""
+
+
+# ── Main DevinREPL ─────────────────────────────────────────────────────────────
 
 class DevinREPL:
-    """Claude Code-style interactive REPL for Devin AGI 4.0."""
+    """Grok-style interactive REPL with agentic tool execution."""
 
     def __init__(self, devin_agi: Optional[Any] = None, provider_name: str = ''):
         self._agi = devin_agi
@@ -594,6 +968,9 @@ class DevinREPL:
         self._history: List[Dict[str, str]] = []
         self._voice_mode = os.environ.get('DEVIN_VOICE_MODE') == '1'
         self._running = True
+        self._tools = _build_agent_tools()
+        self._system = _build_system_prompt(self._tools)
+        self._ui = GrokUI(provider_name=self._provider.name)
         self._session = None
         self._use_pt = False
         self._setup_input()
@@ -604,12 +981,16 @@ class DevinREPL:
             from prompt_toolkit.history import FileHistory
             from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
             from prompt_toolkit.styles import Style
-            style = Style.from_dict({'prompt': 'ansicyan bold'})
+            style = Style.from_dict({
+                'prompt': '#00ffff bold',
+                '': 'bg:#1a1a1a',
+            })
             self._session = PromptSession(
                 history=FileHistory(str(Path.home() / '.devin_history')),
                 auto_suggest=AutoSuggestFromHistory(),
                 enable_history_search=True,
                 style=style,
+                multiline=False,
             )
             self._use_pt = True
         except (ImportError, Exception):
@@ -618,6 +999,7 @@ class DevinREPL:
     def _get_input(self, prompt: str) -> Optional[str]:
         if self._use_pt and self._session:
             try:
+                from prompt_toolkit import print_formatted_text
                 return self._session.prompt(prompt)
             except (KeyboardInterrupt, EOFError):
                 return None
@@ -626,21 +1008,195 @@ class DevinREPL:
         except (KeyboardInterrupt, EOFError):
             return None
 
-    def _banner(self) -> None:
-        w = _cols()
-        sep = '─' * max(w - 4, 4)
+    # ── Core: Agentic loop (native tool calling + ReAct fallback) ─────────────
+
+    def _native_tool_loop(self, user_text: str) -> str:
+        """
+        Universal agentic tool-calling loop — works with ALL providers.
+        Uses provider.call_with_tools() which dispatches to native tool calling
+        (Claude/OpenAI/Ollama) or falls back to ReAct text parsing.
+        """
+        task_start = time.time()
+
+        # Build conversation for this task
+        loop_messages = []
+        for m in self._history[-16:]:
+            loop_messages.append({'role': m['role'], 'content': m.get('content', '')})
+        loop_messages.append({'role': 'user', 'content': user_text})
+
+        # Concise system prompt for tool calling (less ReAct scaffolding needed)
+        system = (
+            "You are Devin, an autonomous AI agent running on a real Linux system. "
+            "Use the available tools to complete tasks. "
+            "When asked to run a command, call shell_run. "
+            "When asked about system state, call system_info or shell_run. "
+            "When asked to open a URL or navigate, call navigate_browser. "
+            "Always use tools — never just describe what you would do."
+        )
+
+        max_tool_rounds = 6
+        all_observations = []
+        final_content = ''
+        seen_calls = set()  # prevent duplicate tool calls
+
+        for step in range(max_tool_rounds):
+            think_start = time.time()
+            result = self._provider.call_with_tools(loop_messages, self._tools, system=system)
+            think_dur = time.time() - think_start
+            self._ui.print_thought(think_dur)
+
+            tool_calls = result.get('tool_calls', [])
+            content = result.get('content', '').strip()
+
+            if not tool_calls:
+                # No more tool calls — take the content as final answer
+                if content and not content.startswith('Using tool:'):
+                    final_content = content
+                break
+
+            # Execute each unique tool call
+            executed_any = False
+            tool_results_text = []
+            for tc in tool_calls:
+                tool_name = tc.get('name', '')
+                tool_args = tc.get('arguments', {})
+
+                # Deduplicate: skip if we already ran this exact call
+                call_key = f'{tool_name}:{json.dumps(tool_args, sort_keys=True)}'
+                if call_key in seen_calls:
+                    continue
+                seen_calls.add(call_key)
+                executed_any = True
+
+                tool_label = self._ui.print_tool_header(tool_name, tool_args)
+                t_start = time.time()
+                observation = _run_tool(self._tools, tool_name, tool_args)
+                t_dur = time.time() - t_start
+                self._ui.print_tool_result(observation, tool_label, t_dur)
+
+                obs_line = f'{tool_name}: {observation}'
+                all_observations.append(obs_line)
+                tool_results_text.append(f'[{tool_name} result]\n{observation}')
+
+            if not executed_any:
+                break  # all tool calls were duplicates
+
+            # Feed results back as a single user message (not per-tool)
+            loop_messages.append({'role': 'assistant', 'content': content or 'Calling tools...'})
+            loop_messages.append({
+                'role': 'user',
+                'content': '\n\n'.join(tool_results_text) + '\n\nWhat is your conclusion?',
+            })
+
+        # Build final answer from real data
+        if not final_content:
+            if all_observations:
+                final_content = '\n'.join(all_observations[-8:])
+            else:
+                final_content = '[Task executed — no output captured]'
+
+        return final_content
+
+    def _react_loop(self, user_text: str) -> str:
+        """
+        Main agentic loop. Uses native tool calling for Ollama, ReAct text format otherwise.
+        """
+        task_start = time.time()
+        self._history.append({'role': 'user', 'content': user_text})
+
+        # Try native tool calling for all providers (each implements call_with_tools)
+        try:
+            final_answer = self._native_tool_loop(user_text)
+            total_dur = time.time() - task_start
+            ts = _now_hhmm()
+            print()
+            self._ui.print_final(final_answer, ts)
+            self._ui.print_elapsed(total_dur)
+            print()
+            self._history.append({'role': 'assistant', 'content': final_answer})
+            self._speak(final_answer)
+            return final_answer
+        except Exception:
+            pass  # fall through to ReAct text loop
+
+        # ReAct text-based fallback
+        return self._react_text_loop(user_text, task_start)
+
+    def _react_text_loop(self, user_text: str, task_start: float) -> str:
+        """ReAct text-based loop for providers without native tool calling."""
+        messages = list(self._history[-20:])
+        max_steps = 15
+        final_answer = ''
+
+        for step in range(max_steps):
+            think_start = time.time()
+            full_response = ''
+            try:
+                for chunk in self._provider.stream(messages, self._system):
+                    full_response += chunk
+            except Exception as e:
+                full_response = f"[Provider error: {e}]"
+                break
+
+            think_dur = time.time() - think_start
+            self._ui.print_thought(think_dur)
+
+            # Check for Final Answer first
+            final_m = _FINAL_RE.search(full_response)
+            if final_m:
+                final_answer = final_m.group(1).strip()
+                break
+
+            # Parse action
+            action_name, inputs, thought = _parse_action(full_response)
+
+            if not action_name:
+                # Treat whole response as final answer
+                final_answer = full_response.strip()
+                for prefix in ('Thought:', 'thought:'):
+                    if final_answer.lower().startswith(prefix.lower()):
+                        idx = final_answer.find('\n')
+                        if idx > 0:
+                            rest = final_answer[idx+1:].strip()
+                            if rest:
+                                final_answer = rest
+                break
+
+            # Execute tool
+            tool_label = self._ui.print_tool_header(action_name, inputs or {})
+            tool_start = time.time()
+            observation = _run_tool(self._tools, action_name, inputs or {})
+            tool_dur = time.time() - tool_start
+            self._ui.print_tool_result(observation, tool_label, tool_dur)
+
+            messages.append({'role': 'assistant', 'content': full_response})
+            messages.append({'role': 'user', 'content': f'Observation: {observation}\nContinue.'})
+
+        total_dur = time.time() - task_start
+
+        if not final_answer:
+            final_answer = '[No answer produced]'
+
+        ts = _now_hhmm()
         print()
-        print(_c(CYAN_B, f'  ╭{sep}╮'))
-        title = '  Devin AGI v4.0  ·  Autonomous OS-Controlling AI'
-        prov  = f'[{self._provider.name}]'
-        pad   = w - len(title) - len(prov) - 4
-        print(_c(CYAN_B, '  │') + _c(WHITE_B, title) +
-              ' ' * max(pad, 1) + _c(GRAY, prov) + _c(CYAN_B, ' │'))
-        sub = '  Type /help for commands · /think <task> for agentic mode · Ctrl+D to exit'
-        pad2 = w - len(sub) - 4
-        print(_c(CYAN_B, '  │') + _c(GRAY, sub) + ' ' * max(pad2, 0) + _c(CYAN_B, '│'))
-        print(_c(CYAN_B, f'  ╰{sep}╯'))
+        self._ui.print_final(final_answer, ts)
+        self._ui.print_elapsed(total_dur)
         print()
+
+        self._history.append({'role': 'assistant', 'content': final_answer})
+        self._speak(final_answer)
+        return final_answer
+
+    def _speak(self, text: str) -> None:
+        if self._voice_mode and text:
+            try:
+                from main import CAPS
+                if CAPS.voice and hasattr(CAPS.voice, 'speak'):
+                    CAPS.voice.speak(text[:400])
+            except Exception:
+                pass
+
+    # ── Slash command handler ──────────────────────────────────────────────────
 
     def _handle_slash(self, line: str) -> bool:
         parts = line.strip().split(None, 1)
@@ -659,7 +1215,7 @@ class DevinREPL:
         if cmd == '/clear':
             os.system('clear' if os.name == 'posix' else 'cls')
             self._history.clear()
-            self._banner()
+            self._ui.banner(self._provider.name, os.getcwd())
             return True
 
         if cmd == '/reset':
@@ -694,13 +1250,9 @@ class DevinREPL:
                 print(_c(YELLOW, '  Usage: /remember <fact>'))
             return True
 
-        if cmd == '/repos':
-            self._show_repos()
-            return True
-
         if cmd == '/think':
             if arg:
-                self._run_task(arg)
+                self._react_loop(arg)
             else:
                 print(_c(YELLOW, '  Usage: /think <task description>'))
             return True
@@ -722,8 +1274,9 @@ class DevinREPL:
         if cmd == '/mem':
             n = len(self._history)
             chars = sum(len(m.get('content', '')) for m in self._history)
+            tok = chars // 4
             mems = _load_memories()
-            print(_c(GRAY, f'  Conversation: {n} messages, {chars} chars  |  Memories: {len(mems)} facts'))
+            print(_c(GRAY, f'  Conversation: {n} messages, ~{tok}K tokens  |  Memories: {len(mems)} facts'))
             return True
 
         if cmd == '/voice':
@@ -734,6 +1287,8 @@ class DevinREPL:
         if cmd == '/provider':
             if arg:
                 self._provider = _select_provider(arg.strip())
+                self._system = _build_system_prompt(self._tools)
+                self._ui.provider_name = self._provider.name
                 print(_c(YELLOW, f'  Provider switched to: {self._provider.name}'))
             else:
                 print(_c(GRAY, f'  Current provider: {self._provider.name}'))
@@ -760,14 +1315,16 @@ class DevinREPL:
             print(_c(GRAY, f'  {os.getcwd()}'))
             return True
 
-        # Unknown slash command
         print(_c(YELLOW, f'  Unknown command: {cmd}  (type /help)'))
         return True
 
+    # ── Utility methods ────────────────────────────────────────────────────────
+
     def _shell(self, cmd: str) -> None:
+        t = time.time()
         print(_c(GRAY, f'  $ {cmd}'))
         try:
-            r = subprocess.run(cmd, shell=True, text=True, capture_output=True, timeout=30)
+            r = subprocess.run(cmd, shell=True, text=True, capture_output=True, timeout=60)
             for ln in (r.stdout or '').splitlines():
                 print(_c(GRAY, f'  {ln}'))
             for ln in (r.stderr or '').splitlines():
@@ -776,6 +1333,7 @@ class DevinREPL:
             print(_c(RED, '  [timeout]'))
         except Exception as e:
             print(_c(RED, f'  [error: {e}]'))
+        print(_c(GRAY_B, f'  ({time.time()-t:.2f}s)'))
 
     def _do_screenshot(self) -> None:
         print(_c(CYAN, '  Taking screenshot…'))
@@ -785,10 +1343,8 @@ class DevinREPL:
             r = agent.screenshot('Describe the current screen')
             if r.success:
                 print(_c(GREEN, f'  ✓ {r.message}'))
-                if r.screenshot_before:
-                    print(_c(GRAY, f'  Saved: {r.screenshot_before}'))
                 if r.vision_result and r.vision_result != '[Vision analysis unavailable — no AI provider configured]':
-                    print(_c(GRAY, f'  Screen: {r.vision_result[:200]}'))
+                    print(_c(GRAY, f'  Screen: {r.vision_result[:300]}'))
             else:
                 print(_c(RED, f'  ✗ {r.message}'))
         except Exception as e:
@@ -806,38 +1362,8 @@ class DevinREPL:
             print(_c(GRAY, f'  [{ts}] {content}'))
         print()
 
-    def _show_repos(self) -> None:
-        repos_dir = ROOT / 'repos'
-        print(_c(CYAN, '\n  Integrated repositories:'))
-        if repos_dir.exists():
-            for d in sorted(repos_dir.iterdir()):
-                if d.is_dir():
-                    mark = _c(GREEN, '●') if (d / '.git').exists() or any(d.iterdir()) else _c(GRAY, '○')
-                    print(f'  {mark} {d.name}')
-        # Also show repos from integration matrix if it exists
-        matrix = ROOT / 'docs' / 'INTEGRATION_MATRIX.md'
-        if matrix.exists():
-            print(_c(GRAY, f'\n  See docs/INTEGRATION_MATRIX.md for full details'))
-        print()
-
-    def _run_task(self, task: str) -> None:
-        print(_c(MAGENTA, f'\n  ⚙ Agentic mode: {task[:60]}{"…" if len(task) > 60 else ""}'))
-        print(_c(CYAN, '  ' + '─' * (_cols() - 4)))
-        try:
-            result = _run_agentic_task(task, on_step=lambda s: print(_c(GRAY, f'  ↳ {s}')))
-            print()
-            print(_c(WHITE_B, '  Result:'))
-            print(result)
-            print()
-            self._history.append({'role': 'user', 'content': f'[Task] {task}'})
-            self._history.append({'role': 'assistant', 'content': result})
-        except Exception as e:
-            print(_c(RED, f'\n  [Task error: {e}]'))
-
     def _show_status(self) -> None:
         print(_c(CYAN, f'\n  Provider: {self._provider.name}  Available: {self._provider.available()}'))
-
-        # Module status from main
         try:
             from main import CAPS, get_devin
             d = get_devin()
@@ -849,8 +1375,6 @@ class DevinREPL:
                 ('System Monitor', 'system_monitor'),
                 ('Voice Engine',   'voice'),
                 ('Browser Agent',  'browser'),
-                ('HF Provider',    'hf_provider'),
-                ('Free Claude',    'free_claude'),
             ]
             for label, attr in rows:
                 obj = getattr(CAPS, attr, None)
@@ -858,8 +1382,6 @@ class DevinREPL:
                 print(f'  {label:<22} {mark}')
         except Exception as e:
             print(_c(YELLOW, f'  Module status unavailable: {e}'))
-
-        # System info
         try:
             import psutil
             cpu = psutil.cpu_percent(interval=0.3)
@@ -867,52 +1389,27 @@ class DevinREPL:
             print(_c(GRAY, f'\n  CPU: {cpu}%  RAM: {mem.percent}% ({mem.used//1024//1024}MB used)'))
         except ImportError:
             pass
-
-        # Memory
         mems = _load_memories()
         print(_c(GRAY, f'  Memories: {len(mems)}  Conversation: {len(self._history)} messages'))
         print()
 
     def _show_tools(self) -> None:
-        tools = _build_agent_tools()
-        print(_c(CYAN, f'\n  Available tools ({len(tools)}):'))
-        for name, info in sorted(tools.items()):
-            desc = info.get('description', '')[:55]
+        self._tools = _build_agent_tools()
+        print(_c(CYAN, f'\n  Available tools ({len(self._tools)}):'))
+        for name, info in sorted(self._tools.items()):
+            desc = info.get('desc', '')[:55]
             params = ', '.join(info.get('params', {}).keys())
-            print(_c(GRAY, f'  ⏺ {name:<26} {desc}'))
+            print(_c(GRAY, f'  › {name:<26} {desc}'))
             if params:
                 print(_c(GRAY, f'    {"params:":<24} {params}'))
         print()
 
-    def _stream_response(self, user_text: str) -> str:
-        self._history.append({'role': 'user', 'content': user_text})
-        messages = self._history[-30:]
-        full = ''
-        print()
-        print(_c(CYAN_B, '  Devin'))
-        print(_c(CYAN, '  ' + '─' * max(_cols() - 4, 4)))
-        try:
-            for chunk in self._provider.stream(messages, _SYSTEM):
-                full += chunk
-                print(chunk, end='', flush=True)
-        except Exception as e:
-            print(_c(RED, f'\n  [Error: {e}]'))
-            full = str(e)
-        print('\n')
-        if full:
-            self._history.append({'role': 'assistant', 'content': full})
-        if self._voice_mode and full:
-            try:
-                from main import CAPS
-                if CAPS.voice and hasattr(CAPS.voice, 'speak'):
-                    CAPS.voice.speak(full[:400])
-            except Exception:
-                pass
-        return full
+    # ── Main REPL loop ─────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        self._banner()
-        prompt = '  > '
+        self._ui.banner(self._provider.name, os.getcwd())
+        cwd = os.getcwd()
+
         while self._running:
             try:
                 if self._voice_mode:
@@ -923,25 +1420,44 @@ class DevinREPL:
                             text = CAPS.voice.listen_once()
                             if text:
                                 print(_c(WHITE_B, f'  You: {text}'))
-                                self._stream_response(text)
+                                self._react_loop(text)
                                 continue
                     except Exception:
                         pass
-                line = self._get_input(prompt)
+
+                # Show token count in header area
+                tok = _tok_estimate(self._history)
+                if _IS_TTY:
+                    print(_c(GRAY, f'  \033[2mmain {cwd}  {tok}K / 200K\033[0m'))
+
+                line = self._get_input(self._ui.print_input_prompt())
                 if line is None:
                     print()
                     break
                 line = line.strip()
                 if not line:
                     continue
+
                 if line.startswith('/'):
                     self._handle_slash(line)
                     continue
-                self._stream_response(line)
+
+                # Print user message block
+                self._ui.print_user_msg(line)
+                print()
+
+                # Run the agentic ReAct loop
+                self._react_loop(line)
+
+                # Update shortcuts hint
+                self._ui.print_status_bar(self._provider.name)
+                print()
+
             except KeyboardInterrupt:
                 print(_c(YELLOW, '\n  (Ctrl+D or /exit to quit)'))
             except Exception as e:
                 print(_c(RED, f'\n  [REPL error: {e}]'))
+
         print(_c(GRAY, '  Session ended.\n'))
 
 
@@ -958,7 +1474,6 @@ def get_repl(devin_agi: Optional[Any] = None) -> DevinREPL:
 
 
 def start_repl(devin_agi: Optional[Any] = None) -> None:
-    """Start the Devin REPL. Called by main.py."""
     get_repl(devin_agi).run()
 
 

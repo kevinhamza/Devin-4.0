@@ -52,16 +52,35 @@ _FIRST_PARTY = [
     'threat_intel', 'web', 'xr_env',
 ]
 
+# Stdlib modules that must never be shadowed by project subdirectories
+_STDLIB_SHADOW_GUARD = {
+    'email', 'http', 'json', 'os', 'sys', 'io', 'logging',
+    'threading', 'socket', 'ssl', 'urllib', 'uuid', 'typing',
+    'collections', 'functools', 'itertools', 'pathlib', 'hashlib',
+    'base64', 'time', 'datetime', 'math', 'random', 'string',
+    'struct', 're', 'abc', 'ast', 'copy', 'csv', 'gc', 'stat',
+    'traceback', 'warnings', 'weakref', 'queue', 'signal',
+}
+
+def _safe_add_path(p: Path) -> None:
+    """Add p to sys.path only if it doesn't contain stdlib-shadowing files."""
+    if not p.is_dir():
+        return
+    for name in _STDLIB_SHADOW_GUARD:
+        if (p / f'{name}.py').exists() or (p / name).is_dir():
+            return  # skip — would shadow stdlib
+    _add_path(p)
+
 _add_path(ROOT)
 for _base_name in _FIRST_PARTY:
     _base = ROOT / _base_name
-    _add_path(_base)
+    _safe_add_path(_base)
     if _base.is_dir():
         for _sub in _base.rglob('*'):
             if _sub.is_dir() and not _sub.name.startswith('.') \
                     and '__pycache__' not in str(_sub) \
                     and 'node_modules' not in str(_sub):
-                _add_path(_sub)
+                _safe_add_path(_sub)
 
 import importlib as _il
 import importlib.util as _ilu
@@ -117,6 +136,7 @@ class _Capabilities:
     conversation   = None
     hf_provider    = None
     free_claude    = None
+    ollama         = None
     system_monitor = None
     voice          = None
     browser        = None
@@ -162,6 +182,15 @@ def _bootstrap_capabilities() -> None:
     try:
         from modules import free_claude_provider
         CAPS.free_claude = free_claude_provider
+    except BaseException:
+        pass
+
+    # Ollama local provider
+    try:
+        from modules import ollama_provider
+        CAPS.ollama = ollama_provider
+        if ollama_provider.is_available():
+            models = ollama_provider.list_models()
     except BaseException:
         pass
 
@@ -378,6 +407,7 @@ class DevinAGI:
         lines.append(f'  browser_agent  : {"ready" if CAPS.browser else "not loaded"}')
         lines.append(f'  hf_provider    : {"ready" if CAPS.hf_provider else "not loaded"}')
         lines.append(f'  free_claude    : {"ready" if CAPS.free_claude else "not loaded"}')
+        lines.append(f'  ollama         : {"ready (" + str(CAPS.ollama.list_models()) + ")" if CAPS.ollama and CAPS.ollama.is_available() else "not running"}')
         return '\n'.join(lines)
 
 
@@ -415,6 +445,14 @@ def _banner(devin: DevinAGI) -> None:
     ]:
         mark = '✅' if obj else '⚪'
         caps_str += f'{mark}{label}  '
+    # Show active AI provider
+    ollama_ok = CAPS.ollama and CAPS.ollama.is_available()
+    hf_ok = bool(os.environ.get('HF_TOKEN'))
+    provider_label = (
+        '🟢Ollama' if ollama_ok else
+        ('🟡HF' if hf_ok else '⚪NoAI')
+    )
+    caps_str += f'  {provider_label}'
     print(_c('36;1', '│') + caps_str + _c('36;1', ''))
     print(_c('36;1', f'╰{line}╯') + '\n')
 
