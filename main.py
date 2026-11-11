@@ -18,7 +18,8 @@ Usage:
   DEVIN_USE_CLASSIC_REPL=1 python main.py  # Use agent.py REPL instead
 """
 from __future__ import annotations
-import os, sys, json, time, platform, threading, subprocess, shutil, signal
+import os, sys, json, time, platform, threading, subprocess, shutil, signal, warnings
+warnings.filterwarnings('ignore')  # silence ALL Python-level warnings globally (scapy/cryptography/etc.)
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
@@ -82,6 +83,12 @@ for _base_name in _FIRST_PARTY:
                     and 'node_modules' not in str(_sub):
                 _safe_add_path(_sub)
 
+# Re-anchor ROOT first so repos/ subdirs never shadow top-level modules/
+_root_s = str(ROOT)
+if _root_s in sys.path:
+    sys.path.remove(_root_s)
+sys.path.insert(0, _root_s)
+
 import importlib as _il
 import importlib.util as _ilu
 import logging as _logging
@@ -132,13 +139,22 @@ def _quiet_load_start():
         return
     _warnings.filterwarnings('ignore')  # suppress all Python warnings
     _logging.root.addFilter(_startup_filter)
-    _logging.root.setLevel(_logging.ERROR)  # only errors bubble through root
-    # Suppress known noisy third-party and project loggers
+    _logging.root.setLevel(_logging.CRITICAL)  # silence everything below CRITICAL at root
+    # Suppress all known noisy third-party and project loggers
     for _noisy in (
         'scapy', 'cryptography', 'urllib3', 'paramiko', 'asyncio',
         'ToolExecutor', 'RealityEngineFacade', 'XRFacade', 'QuantumFacade',
         'PrivacyFacade', 'ResilienceFacade', 'PlatformOps', 'PostQuantumCrypto',
         'modules', 'ai_core', 'ai_ethics', 'experimental',
+        'SpeakerRecognition', 'GestureControl', 'FacialRecognition',
+        'PowerManagement', 'SpeechRecognition', 'DiskScanner', 'NetworkMonitor',
+        'PasswordCracker', 'ForensicTools', 'OSFingerprint',
+        'AzureIntegration', 'GCPIntegration', 'AWSIntegration',
+        'SSOIntegration', 'DigitalTwin', 'AICommander', 'SwarmOrchestrator',
+        'OllamaProvider', 'HFProvider', 'FreeClaudeProvider',
+        'ReasoningEngine', 'ConversationEngine', 'VoiceEngine',
+        'BrowserAgent', 'SystemMonitor', 'DataLogger',
+        'sentence_transformers', 'transformers', 'torch', 'PIL', 'matplotlib',
     ):
         _logging.getLogger(_noisy).setLevel(_logging.CRITICAL)
 

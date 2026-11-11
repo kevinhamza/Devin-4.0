@@ -7,6 +7,7 @@ Never hardcode API keys.
 """
 from __future__ import annotations
 import os, sys, shutil, signal, subprocess, threading, time, json, re
+import urllib.parse as _uparse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Generator, Tuple
 
@@ -1249,19 +1250,28 @@ class DevinREPL:
 
         # System prompt for native tool calling
         system = (
-            "You are Devin, an autonomous AI OS controller on a real Linux (GNOME Wayland) desktop. "
-            "You have already been given the CURRENT SCREEN STATE at the start of the user message — "
-            "use that to reason about what is visible before acting.\n"
-            "MANDATORY RULES (violating these is an error):\n"
-            "1. NEVER fabricate video IDs, file paths, or URLs — if you don't know an exact URL, search for it.\n"
-            "2. For YouTube: use youtube_search(query='...') — it opens Chrome, navigates to youtube.com, "
-            "   and searches using real mouse+keyboard. NEVER call navigate_browser with a /watch?v= URL.\n"
-            "3. For Google: use browser_search(query='...').\n"
-            "4. For any browser URL: use navigate_browser(url='https://...').\n"
-            "5. Use click(x,y) and type_text(text) for direct mouse+keyboard control.\n"
-            "6. After each action, call screenshot() to verify the result.\n"
-            "7. For shell/terminal tasks: use shell_run(cmd='...').\n"
-            "8. ALWAYS execute with tools — never just describe what you would do."
+            "You are Devin, an autonomous AI that physically controls a real Linux GNOME Wayland desktop "
+            "using mouse clicks, keyboard input, and screenshots — exactly like a human.\n\n"
+            "CURRENT SCREEN STATE is provided at the start of every message. Read it before acting.\n\n"
+            "TOOL USAGE RULES — follow exactly:\n"
+            "• YouTube: ALWAYS use youtube_search(query='channel or video name'). "
+            "  NEVER call navigate_browser with any youtube.com URL — the system blocks it.\n"
+            "• Google search: use browser_search(query='...')\n"
+            "• Open any website: use navigate_browser(url='https://example.com')\n"
+            "• Mouse click: use click(x=NNN, y=NNN)\n"
+            "• Type text: use type_text(text='...')\n"
+            "• Press a key: use key_press(key='Return')\n"
+            "• Shell command: use shell_run(cmd='...')\n"
+            "• See current screen: use screenshot()\n"
+            "• Open app (Chrome, Files, Terminal, etc): use open_app(app_name='...')\n\n"
+            "WORKFLOW — for every task:\n"
+            "1. Read CURRENT SCREEN STATE\n"
+            "2. Decide one action\n"
+            "3. Call the tool\n"
+            "4. screenshot() is taken automatically — check the result\n"
+            "5. Decide next action based on new screen\n"
+            "6. Repeat until done\n\n"
+            "NEVER describe what you would do — just call tools and act."
         )
 
         max_tool_rounds = 20
@@ -1298,11 +1308,39 @@ class DevinREPL:
                 seen_calls.add(call_key)
                 executed_any = True
 
+                # ── Auto-intercept: redirect YouTube watch URLs to youtube_search ──
+                if tool_name in ('navigate_browser', 'navigate') and tool_args:
+                    url_val = str(tool_args.get('url', ''))
+                    if 'youtube.com/watch' in url_val or 'youtu.be/' in url_val:
+                        # Silently rewrite: use user_text as query (much better than a hardcoded fallback)
+                        qs = _uparse.parse_qs(_uparse.urlparse(url_val).query)
+                        query_guess = (
+                            qs.get('search_query', [None])[0] or
+                            qs.get('q', [None])[0] or
+                            user_text  # original user request is the best query
+                        )
+                        tool_name = 'youtube_search'
+                        tool_args = {'query': str(query_guess)}
+
                 tool_label = self._ui.print_tool_header(tool_name, tool_args)
                 t_start = time.time()
                 observation = _run_tool(self._tools, tool_name, tool_args)
                 t_dur = time.time() - t_start
                 self._ui.print_tool_result(observation, tool_label, t_dur)
+
+                # ── Auto-screenshot: inject screen state after every visual action ──
+                _VISUAL_TOOLS = {
+                    'click', 'double_click', 'right_click', 'type_text', 'key_press',
+                    'scroll', 'drag', 'navigate_browser', 'browser_search', 'youtube_search',
+                    'open_app', 'browser_address', 'shell_run',
+                }
+                if tool_name in _VISUAL_TOOLS:
+                    try:
+                        snap = _run_tool(self._tools, 'screenshot', {})
+                        if snap and 'saved' in snap.lower():
+                            observation = observation + f'\n[Screen after action: {snap}]'
+                    except Exception:
+                        pass
 
                 obs_line = f'{tool_name}: {observation}'
                 all_observations.append(obs_line)
