@@ -2,6 +2,7 @@
 # Purpose: A high-performance, asynchronous, structured data logger that
 #          writes events to efficient binary files (Apache Feather format).
 
+import random
 import logging
 import threading
 import time

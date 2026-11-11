@@ -191,6 +191,7 @@
 # Purpose: A functional, high-level toolbox for performing Windows-specific
 #          administrative and operational tasks using PowerShell and Win32 APIs.
 
+import random
 import logging
 import subprocess
 import json

@@ -1,6 +1,7 @@
 # Devin/hmi/neural_interface/eeg_integration.py
 # Purpose: Conceptual interface for EEG-based Brain-Computer Interface integration.
 
+from pathlib import Path
 import logging
 import time
 import threading
@@ -333,7 +334,7 @@ if __name__ == "__main__":
                     time.sleep(1)
                     command, ts = eeg_interface.get_last_command()
                     if command != EEGCommand.NO_COMMAND:
-                         print(f"  [{time.strftime('%H:%M:%S')}] Last Command: {command.value} (Timestamp: {ts:.2f if ts else 'N/A'})")
+                         print(f"  [{time.strftime('%H:%M:%S')}] Last Command: {command.value} (Timestamp: {f'{ts:.2f}' if ts else 'N/A'})")
                     else:
                          print(f"  [{time.strftime('%H:%M:%S')}] Last Command: {command.value}")
 

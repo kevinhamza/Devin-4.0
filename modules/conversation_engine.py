@@ -12,6 +12,8 @@ Provides rich, context-aware conversation for Devin that:
 """
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
 import json
 import logging
 import os
@@ -283,11 +285,15 @@ class ConversationEngine:
 
     def _cmd_screenshot(self, args: str) -> str:
         try:
-            from modules.os_agent import take_screenshot  # type: ignore
-            result = take_screenshot(args or "Describe what is visible on the screen")
-            if result.success:
-                return f"Screenshot: {result.screenshot_before}\n{result.vision_result or ''}"
-            return f"Screenshot failed: {result.message}"
+            from modules import os_automation as _oa  # type: ignore
+            path = _oa.take_screenshot()
+            if path and not path.startswith('ERROR'):
+                return f"Screenshot saved: {path}"
+            # Fallback: use os_agent observe
+            from modules.os_agent import OSAgent  # type: ignore
+            agent = OSAgent()
+            obs = agent.observe("What is visible on screen?")
+            return obs if obs else "Screenshot taken"
         except Exception as e:
             return f"Screenshot error: {e}"
 

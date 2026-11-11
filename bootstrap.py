@@ -13,7 +13,7 @@ Usage:
 from __future__ import annotations
 import os, sys, shutil, subprocess, importlib.util
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent
 
@@ -152,7 +152,7 @@ def run_checks() -> Dict[str, bool]:
     results['bs4']        = _check_pkg('bs4', 'beautifulsoup4', optional=True)
 
     _head('External CLI tools (optional)')
-    for cmd in ['espeak', 'mpg123', 'xdotool', 'wmctrl', 'scrot', 'adb']:
+    for cmd in ['espeak', 'mpg123', 'ydotool', 'xdotool', 'wmctrl', 'scrot', 'adb']:
         _check_cmd(cmd, optional=True)
 
     return results
@@ -197,10 +197,6 @@ def init_capabilities() -> Dict[str, bool]:
             status[name] = False
 
     return status
-
-
-# Needed for _check_env return value
-from typing import Optional  # noqa: E402
 
 
 def main() -> None:

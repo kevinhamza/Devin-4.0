@@ -1,8 +1,14 @@
 # Devin/modules/keyboard_mouse_control.py
 # Purpose: A functional, low-level interface for controlling and monitoring
-#          keyboard and mouse peripherals using the 'pynput' library.
+#          keyboard and mouse peripherals.
+#
+# Backend selection (auto-detected at init):
+#   Wayland + ydotoold running → ydotool (kernel uinput, works for all Wayland apps)
+#   Otherwise                  → pynput _xorg (works for X11 / XWayland apps)
 
 import logging
+import os
+import subprocess
 import time
 from typing import Tuple, Optional
 
@@ -22,11 +28,54 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 logger.propagate = False
 
+# ydotool key-name map (ydotool uses Linux key names)
+_YDOTOOL_KEY_MAP = {
+    'enter': 'enter', 'return': 'enter',
+    'esc': 'esc', 'escape': 'esc',
+    'shift': 'shift', 'ctrl': 'ctrl', 'alt': 'alt',
+    'tab': 'tab', 'backspace': 'backspace', 'delete': 'delete',
+    'space': 'space', 'up': 'up', 'down': 'down',
+    'left': 'left', 'right': 'right',
+    'home': 'home', 'end': 'end',
+    'page_up': 'pageup', 'page_down': 'pagedown',
+    'insert': 'insert', 'caps_lock': 'capslock',
+    'super': 'super', 'cmd': 'super',
+    'f1': 'f1', 'f2': 'f2', 'f3': 'f3', 'f4': 'f4',
+    'f5': 'f5', 'f6': 'f6', 'f7': 'f7', 'f8': 'f8',
+    'f9': 'f9', 'f10': 'f10', 'f11': 'f11', 'f12': 'f12',
+}
+
+
+def _ydotool_available() -> Optional[str]:
+    """Return the ydotool socket path if ydotoold is running and accessible."""
+    # Check common socket locations
+    for sock in [
+        os.environ.get('YDOTOOL_SOCKET', ''),
+        '/tmp/.ydotool_socket',
+        f'/run/user/{os.getuid()}/.ydotool_socket',
+    ]:
+        if sock and os.path.exists(sock):
+            try:
+                os.access(sock, os.W_OK)
+                # Quick sanity test
+                r = subprocess.run(
+                    ['ydotool', 'type', '--next-delay', '1', ''],
+                    env={**os.environ, 'YDOTOOL_SOCKET': sock},
+                    capture_output=True, timeout=2,
+                )
+                if r.returncode == 0:
+                    return sock
+            except Exception:
+                pass
+    return None
+
 
 class KeyboardMouseController:
     """
-    Low-level keyboard and mouse control via pynput.
-    Gracefully raises ImportError when pynput is not installed.
+    Unified keyboard+mouse controller.
+    On GNOME Wayland with ydotoold running: uses ydotool (kernel uinput).
+    Otherwise falls back to pynput (X11/XWayland).
+    Mouse always uses pynput (cursor position is Wayland-global).
     """
 
     def __init__(self):
@@ -34,7 +83,16 @@ class KeyboardMouseController:
             raise ImportError("pynput is required: pip install pynput")
         self._mc = _mouse.Controller()
         self._kc = _keyboard.Controller()
-        # Map of common key-name strings → pynput Key constants
+
+        # Detect Wayland + ydotool
+        self._ydotool_socket = _ydotool_available()
+        self._use_ydotool = bool(self._ydotool_socket)
+        if self._use_ydotool:
+            logger.info(f"Keyboard backend: ydotool (socket={self._ydotool_socket})")
+        else:
+            logger.info("Keyboard backend: pynput _xorg")
+
+        # pynput key map (used as fallback)
         self._key_map = {
             'enter': _keyboard.Key.enter, 'return': _keyboard.Key.enter,
             'esc': _keyboard.Key.esc, 'escape': _keyboard.Key.esc,
@@ -53,6 +111,13 @@ class KeyboardMouseController:
             'f7': _keyboard.Key.f7, 'f8': _keyboard.Key.f8, 'f9': _keyboard.Key.f9,
             'f10': _keyboard.Key.f10, 'f11': _keyboard.Key.f11, 'f12': _keyboard.Key.f12,
         }
+
+    # ── Internal ydotool helpers ───────────────────────────────────────────────
+
+    def _yd(self, *args):
+        """Run a ydotool command with the detected socket."""
+        env = {**os.environ, 'YDOTOOL_SOCKET': self._ydotool_socket}
+        return subprocess.run(['ydotool'] + list(args), env=env, capture_output=True)
 
     # ── Mouse ─────────────────────────────────────────────────────────────────
 
@@ -96,28 +161,52 @@ class KeyboardMouseController:
     def _resolve_key(self, key: str):
         return self._key_map.get(key.lower(), key)
 
+    def _yd_key_name(self, key: str) -> str:
+        return _YDOTOOL_KEY_MAP.get(key.lower(), key.lower())
+
     def press_key(self, key: str):
-        self._kc.press(self._resolve_key(key))
+        if self._use_ydotool:
+            self._yd('key', '--key-delay', '10', f'{self._yd_key_name(key)}:1')
+        else:
+            self._kc.press(self._resolve_key(key))
 
     def release_key(self, key: str):
-        self._kc.release(self._resolve_key(key))
+        if self._use_ydotool:
+            self._yd('key', '--key-delay', '10', f'{self._yd_key_name(key)}:0')
+        else:
+            self._kc.release(self._resolve_key(key))
 
     def tap(self, key: str):
-        k = self._resolve_key(key)
-        self._kc.press(k)
-        self._kc.release(k)
+        """Press and release a key (single keystroke)."""
+        if self._use_ydotool:
+            self._yd('key', '--key-delay', '50', self._yd_key_name(key))
+        else:
+            k = self._resolve_key(key)
+            self._kc.press(k)
+            self._kc.release(k)
 
     def type_text(self, text: str, interval: float = 0.0):
-        if interval:
-            for ch in text:
-                self._kc.type(ch)
-                time.sleep(interval)
+        """Type a string of text character by character."""
+        if self._use_ydotool:
+            delay_ms = max(1, int(interval * 1000)) if interval else 50
+            self._yd('type', '--next-delay', str(delay_ms), '--', text)
         else:
-            self._kc.type(text)
+            if interval:
+                for ch in text:
+                    self._kc.type(ch)
+                    time.sleep(interval)
+            else:
+                self._kc.type(text)
 
     def hotkey(self, *keys: str):
-        resolved = [self._resolve_key(k) for k in keys]
-        for k in resolved:
-            self._kc.press(k)
-        for k in reversed(resolved):
-            self._kc.release(k)
+        """Press a keyboard shortcut (e.g. ctrl+c)."""
+        if self._use_ydotool:
+            # ydotool key accepts space-separated key names for combos
+            combo = '+'.join(self._yd_key_name(k) for k in keys)
+            self._yd('key', '--key-delay', '50', combo)
+        else:
+            resolved = [self._resolve_key(k) for k in keys]
+            for k in resolved:
+                self._kc.press(k)
+            for k in reversed(resolved):
+                self._kc.release(k)

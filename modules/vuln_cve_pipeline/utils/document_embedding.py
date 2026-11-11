@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+from typing import Union
 import copy
 import json
 import logging

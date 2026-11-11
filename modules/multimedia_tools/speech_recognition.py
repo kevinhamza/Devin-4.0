@@ -89,6 +89,9 @@ class LiveSpeechRecognizer:
         """
         Listens for a single phrase from the microphone and transcribes it.
         """
+        if not self.recognizer or not self.microphone:
+            logger.error("Speech recognition unavailable: SpeechRecognition and PyAudio required.")
+            return None
         with self.microphone as source:
             logger.info("Calibrating for ambient noise... Please be quiet.")
             self.recognizer.adjust_for_ambient_noise(source, duration=1)

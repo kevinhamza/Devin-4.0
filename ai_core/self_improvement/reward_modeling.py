@@ -1,6 +1,6 @@
 # Devin/ai_core/self_improvement/reward_modeling.py
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TypedDict, Literal
 
 # Placeholder for Task definition (could import if structure allows)
 class TaskOutcome(TypedDict):

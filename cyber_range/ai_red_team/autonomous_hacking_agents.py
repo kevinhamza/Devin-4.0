@@ -3,11 +3,13 @@
 # WARNING: HIGHLY EXPERIMENTAL AND SPECULATIVE. DOES NOT PERFORM REAL HACKING.
 #          Core action execution is PLACEHOLDER requiring human oversight/safe integration.
 
+import random
 import os
 import json
 import uuid
 import datetime
 import logging
+import threading
 import time
 from enum import Enum
 from typing import Dict, List, Optional, Any, TypedDict, Literal
@@ -55,10 +57,12 @@ class FindingSeverity(str, Enum):
 @dataclass
 class PotentialFinding:
     """Represents a potential vulnerability or finding identified by the agent."""
-    finding_id: str = field(default_factory=lambda: f"FIND-{uuid.uuid4().hex[:8].upper()}")
-    timestamp_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    # Required fields first
     description: str
     severity_estimate: FindingSeverity
+    # Optional / auto-generated fields with defaults
+    finding_id: str = field(default_factory=lambda: f"FIND-{uuid.uuid4().hex[:8].upper()}")
+    timestamp_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
     affected_resource: Optional[str] = None # e.g., IP, URL, hostname
     technique_id_guess: Optional[str] = None # MITRE ATT&CK ID if guessed by LLM
     confidence_score: float = 0.5 # How confident the agent/LLM is (0.0-1.0)
@@ -68,11 +72,13 @@ class PotentialFinding:
 @dataclass
 class AgentConfiguration:
     """Configuration for a specific autonomous agent instance."""
+    # Required fields first (no defaults)
     agent_id: str
-    name: str = "Unnamed Agent"
-    goal: str # High-level objective (e.g., "Find web vulnerabilities on target X", "Attempt initial access via phishing simulation")
+    goal: str # High-level objective (e.g., "Find web vulnerabilities on target X")
     target_scope: List[str] # List of IPs, domains, URLs strictly defining the allowed scope
     rules_of_engagement: List[str] # e.g., "No DoS", "No data exfiltration", "Stop on first shell"
+    # Optional / defaulted fields
+    name: str = "Unnamed Agent"
     # --- AI Configuration ---
     llm_connector_id: str = "openai" # Which configured connector to use
     llm_model_name: Optional[str] = None # Specific model override (e.g., "gpt-4-turbo")
@@ -86,9 +92,11 @@ class AgentConfiguration:
 @dataclass
 class AgentExecutionState:
     """Tracks the runtime state of an agent instance."""
-    instance_id: str = field(default_factory=lambda: f"AGENT-RUN-{uuid.uuid4().hex[:12].upper()}")
+    # Required fields first
     agent_id: str
     config: AgentConfiguration
+    # Auto-generated / defaulted fields
+    instance_id: str = field(default_factory=lambda: f"AGENT-RUN-{uuid.uuid4().hex[:12].upper()}")
     status: AgentStatus = AgentStatus.IDLE
     start_time_utc: Optional[str] = None
     end_time_utc: Optional[str] = None
@@ -129,6 +137,7 @@ class AutonomousAgentManager:
         self.action_executor = action_executor # CRITICAL: This needs to be safe/sandboxed
         self.mitre_kb = mitre_kb
 
+        self._lock = threading.Lock()
         # {agent_id: AgentConfiguration}
         self.agent_definitions: Dict[str, AgentConfiguration] = {}
         # {instance_id: AgentExecutionState}
@@ -478,7 +487,7 @@ class AutonomousAgentManager:
         logger.info(f"Requesting stop for agent instance '{instance_id}'...")
         with self._lock: # Assuming state access needs locking if run loop is threaded
              instance = self.active_executions.get(instance_id)
-             if instance and instance.status == AgentStatus.RUNNING or instance.status == AgentStatus.PAUSED_FOR_APPROVAL:
+             if instance and (instance.status == AgentStatus.RUNNING or instance.status == AgentStatus.PAUSED_FOR_APPROVAL):
                   instance.status = AgentStatus.STOPPED
                   instance.end_time_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
                   self._save_execution_state()

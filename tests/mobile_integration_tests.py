@@ -2,6 +2,7 @@
 # Purpose: An integration test suite for the mobile control pipeline, verifying
 #          the client-server communication for controlling Android devices.
 
+import subprocess
 import unittest
 import threading
 import time

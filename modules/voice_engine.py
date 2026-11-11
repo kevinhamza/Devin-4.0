@@ -3,6 +3,7 @@ Voice engine for Devin-4.0.
 STT (speech-to-text) + TTS (text-to-speech) with graceful fallback.
 """
 
+import subprocess
 import os
 import sys
 import tempfile
@@ -272,6 +273,9 @@ class VoiceEngine:
             frames = []
             for _ in range(int(RATE / CHUNK * timeout)):
                 frames.append(stream.read(CHUNK, exception_on_overflow=False))
+            # Cache sample size before terminate() — calling pa methods after
+            # terminate() is undefined and may raise OSError.
+            sample_width = pa.get_sample_size(pyaudio.paInt16)
             stream.stop_stream()
             stream.close()
             pa.terminate()
@@ -281,7 +285,7 @@ class VoiceEngine:
                 tmp = f.name
             wf = wave.open(tmp, "wb")
             wf.setnchannels(1)
-            wf.setsampwidth(pa.get_sample_size(pyaudio.paInt16))
+            wf.setsampwidth(sample_width)
             wf.setframerate(RATE)
             wf.writeframes(b"".join(frames))
             wf.close()

@@ -155,8 +155,9 @@ class CodeRetriever:
     def search_by_keyword(self, keyword: str) -> List[Dict[str, Any]]:
         """Performs a simple text search across the codebase."""
         results = []
+        kw = keyword.lower()
         for key, block in self.index.items():
-            if keyword.lower() in block.source_code.lower():
+            if kw in (block.source_code or '').lower():
                 results.append({"name": key, "file_path": block.file_path, "line": block.start_line})
         return results
 

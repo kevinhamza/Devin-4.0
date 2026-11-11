@@ -6,7 +6,7 @@ import logging
 import subprocess
 import shutil
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 # Configure basic logging
 logger = logging.getLogger("DiskForensics")

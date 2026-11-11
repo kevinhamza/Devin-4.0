@@ -14,8 +14,8 @@ load_dotenv()
 pygame.init()
 # Initialize the mixer
 mixer.init()
-SCREEN_WIDTH = int(os.getenv('SCREEN_WIDTH'))
-SCREEN_HEIGHT = int(os.getenv('SCREEN_HEIGHT'))
+SCREEN_WIDTH = int(os.getenv('SCREEN_WIDTH', '1920'))
+SCREEN_HEIGHT = int(os.getenv('SCREEN_HEIGHT', '1080'))
 SCREEN_SIZE = (SCREEN_WIDTH, SCREEN_HEIGHT)
 NAVY_BLUE = (20, 20, 40)
 LIGHT_BLUE = (173, 216, 230)
@@ -185,8 +185,8 @@ def run_home_screen(screen, camera_manager):
         pygame.time.delay(50)
 
 if __name__ == '__main__':
-    SCREEN_WIDTH = int(os.getenv('SCREEN_WIDTH'))
-    SCREEN_HEIGHT = int(os.getenv('SCREEN_HEIGHT'))
+    SCREEN_WIDTH = int(os.getenv('SCREEN_WIDTH', '1920'))
+    SCREEN_HEIGHT = int(os.getenv('SCREEN_HEIGHT', '1080'))
     os.environ['SDL_VIDEO_WINDOW_POS'] = '-3440,0'
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     pygame.display.set_caption('Home Screen')

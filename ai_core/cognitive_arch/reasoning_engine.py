@@ -1,5 +1,6 @@
 # Devin/ai_core/cognitive_arch/reasoning_engine.py
 
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 

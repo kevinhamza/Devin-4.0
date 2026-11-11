@@ -1,6 +1,9 @@
 # Devin/cyber_range/cyber_battle_simulator/ai_commander.py
 # Purpose: Orchestrates multi-vector assaults in the simulation.
 
+import time
+import datetime
+import random
 import logging
 import json
 import uuid
@@ -246,7 +249,7 @@ if __name__ == "__main__":
     # --- Dummy Dependencies ---
     # These would be real, initialized instances in the actual application
     mock_scenario_mgr = ScenarioManager() # Needs dummy implementation if used
-    mock_dt_attacker = DigitalTwinAttackSimulator(DigitalTwinManager()) # Uses DTM placeholder
+    mock_dt_attacker = DigitalTwinAttackSimulator() # Uses DTM placeholder
     mock_agent_mgr = AutonomousAgentManager() # Uses placeholders within
     mock_llm = ChatGPTConnector() # Uses placeholder within
 

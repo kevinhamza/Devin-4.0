@@ -211,6 +211,8 @@
 # Purpose: A functional system for monitoring battery status and triggering
 #          autonomous docking for charging by integrating with ROS 2.
 
+from __future__ import annotations
+
 import logging
 import threading
 import time
@@ -227,6 +229,9 @@ try:
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
+    ROS2Interface = None      # type: ignore
+    AINavigationSystem = None  # type: ignore
+    BatteryState = None       # type: ignore
 
 # Configure basic logging
 logger = logging.getLogger("PowerManagement")

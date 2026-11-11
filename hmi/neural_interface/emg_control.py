@@ -1,13 +1,15 @@
 # Devin/hmi/neural_interface/emg_control.py
 # Purpose: Conceptual interface for EMG-based control using muscle signals.
 
+from pathlib import Path
 import logging
 import time
 import threading
 import random
+from dataclasses import dataclass
 from enum import Enum
 from collections import deque
-from typing import Dict, Any, List, Optional, Tuple, Callable
+from typing import Dict, Any, List, Optional, Tuple, Callable, Union
 
 # --- Conceptual Imports for EMG/Signal Processing/ML Libraries ---
 # Requires: pip install pylsl numpy scipy scikit-learn (or other ML framework)

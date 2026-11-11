@@ -2,6 +2,7 @@
 # Purpose: An AI-powered decision engine to recommend compliant data storage
 #          regions based on the data's likely legal jurisdiction (GDPR, CCPA, etc.).
 
+import os
 import logging
 import json
 from enum import Enum
@@ -10,9 +11,11 @@ from typing import Dict, Any, Optional, List
 try:
     from modules.all_ais_modules import AIAgent, AIProvider
     DEVIN_CORE_AVAILABLE = True
-except ImportError as e:
+except (ImportError, Exception) as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
+    AIAgent = object  # type placeholder so annotations resolve
+    AIProvider = object  # type placeholder
 
 # Configure basic logging
 logger = logging.getLogger("DataRouter")

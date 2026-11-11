@@ -17,6 +17,7 @@ Architecture: MCP Client for AI agent communication with HexStrike server
 Framework: FastMCP integration for tool orchestration
 """
 
+from pathlib import Path
 import sys
 import os
 import argparse

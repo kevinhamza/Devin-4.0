@@ -2,13 +2,16 @@
 # Purpose: The central task management and execution engine for Devin.
 #          Manages a queue of tasks and a pool of worker threads.
 
+import os
+import sys
+import time
 import logging
 import queue
 import threading
 import uuid
 import importlib
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
 
 # Configure basic logging

@@ -3,6 +3,7 @@
 #          post-quantum-cryptography, and quantum-pentesting toolkits into a
 #          single, agent-friendly interface.
 
+import json
 import base64
 import importlib.util
 import logging

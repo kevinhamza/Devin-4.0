@@ -10,12 +10,22 @@
 # There is no real IPFS upload or blockchain mint happening, so it has no
 # genuine capability to expose as an agent tool.
 
+from pathlib import Path
 import logging
 from typing import Any, Dict, List, Optional
 
 # --- Import the low-level XR tools this facade will manage ---
-from xr_env.metaverse.unity_integration import UnityClient
-from xr_env.metaverse.spatial_computing import SpatialComputer, NavMeshNode, DEVIN_CORE_AVAILABLE
+try:
+    from xr_env.metaverse.unity_integration import UnityClient
+    from xr_env.metaverse.spatial_computing import SpatialComputer, NavMeshNode, DEVIN_CORE_AVAILABLE
+    _XR_AVAILABLE = True
+except ImportError as e:
+    _XR_AVAILABLE = False
+    _xr_import_error = e
+    UnityClient = None  # type: ignore
+    SpatialComputer = None  # type: ignore
+    NavMeshNode = None  # type: ignore
+    DEVIN_CORE_AVAILABLE = False
 
 # Configure basic logging
 logger = logging.getLogger("XRFacade")
@@ -55,6 +65,8 @@ class XRFacade:
         Args:
             unity_uri (str): WebSocket URI of the Unity DevinListener bridge.
         """
+        if not _XR_AVAILABLE:
+            raise ImportError(f"xr_env package not available: {_xr_import_error}")
         self.unity_client = UnityClient(uri=unity_uri)
         self._unity_connected = False
 

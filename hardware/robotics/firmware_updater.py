@@ -1,12 +1,15 @@
 # Devin/hardware/robotics/firmware_updater.py
 # Purpose: Conceptual framework for safe Over-The-Air (OTA) firmware updates for robots.
 
+from pathlib import Path
 import logging
 import os
 import hashlib
+import shutil
 import time
 import json
-from typing import Dict, Any, List, Optional, Tuple, NamedTuple
+from enum import Enum
+from typing import Dict, Any, List, Optional, Tuple, Union, NamedTuple
 
 # --- Conceptual Imports ---
 try:
@@ -318,43 +321,6 @@ class RobotFirmwareUpdater:
         logger.info("  - Conceptual signature verification PASSED.")
         return True
 
-# Ensure logger, Enums, FirmwareInfo, and other necessary components from Part 1 are conceptually available
-import logging
-logger = logging.getLogger("RobotFirmwareUpdater") # Ensure logger is accessible
-
-import os
-import hashlib
-import time
-import json
-from enum import Enum # Assuming UpdateStatus was defined in Part 1
-from typing import Dict, Any, List, Optional, Tuple, NamedTuple, Union
-
-# If UpdateStatus and FirmwareInfo were defined in Part 1, they are in scope.
-# For clarity if this part is viewed standalone, ensure they're conceptually here:
-class UpdateStatus(Enum): # From Part 1
-    IDLE = "Idle"; CHECKING_FOR_UPDATES = "Checking for Updates"; NO_UPDATES_FOUND = "No Updates Found"
-    UPDATE_AVAILABLE = "Update Available"; DOWNLOADING = "Downloading Firmware"; DOWNLOAD_FAILED = "Download Failed"
-    VERIFYING_CHECKSUM = "Verifying Checksum"; CHECKSUM_MISMATCH = "Checksum Mismatch"
-    VERIFYING_SIGNATURE = "Verifying Signature"; SIGNATURE_INVALID = "Signature Invalid"
-    READY_TO_FLASH = "Ready to Flash"; PREPARING_ROBOT = "Preparing Robot for Update"
-    UPLOADING_TO_ROBOT = "Uploading Firmware to Robot"; FLASHING = "Flashing Firmware on Robot"
-    FLASH_FAILED = "Flashing Failed"; REBOOTING_ROBOT = "Rebooting Robot"
-    VERIFYING_POST_UPDATE = "Verifying Post-Update"; UPDATE_SUCCESSFUL = "Update Successful"
-    ROLLING_BACK = "Attempting Rollback"; ROLLBACK_SUCCESSFUL = "Rollback Successful"
-    ROLLBACK_FAILED = "Rollback Failed"; ERROR = "Error"
-
-class FirmwareInfo(NamedTuple): # From Part 1
-    version: str; url: str; size_bytes: Optional[int]; release_date: Optional[str]
-    checksum_sha256: Optional[str]; signature_url: Optional[str]; release_notes: Optional[str]
-    compatibility: List[str]
-
-
-# --- Continue RobotFirmwareUpdater Class ---
-class RobotFirmwareUpdater:
-    # (Assume __init__, _fetch_firmware_manifest, check_for_updates,
-    #  download_firmware_file, verify_firmware_checksum,
-    #  and _verify_firmware_signature_placeholder from Part 1 are here)
-
     def _update_robot_status(self, robot_id: str, status: UpdateStatus, message: Optional[str] = None):
         """Helper to update and log current status for a robot's update process."""
         self.current_update_status[robot_id] = status
@@ -458,7 +424,7 @@ class RobotFirmwareUpdater:
         logger.warning(f"  - !!! CONCEPTUAL: Triggering firmware rollback for robot '{robot_id}' !!!")
         if not self.robot_comm:
             logger.warning("    - No robot communicator, cannot send 'rollback' command (simulating success).")
-            self._update_robot_status(robot_id, UpdateStatus.ROLLED_BACK)
+            self._update_robot_status(robot_id, UpdateStatus.ROLLBACK_SUCCESSFUL)
             return True
 
         # --- Placeholder: Trigger rollback ---
@@ -466,7 +432,7 @@ class RobotFirmwareUpdater:
         #     success = self.robot_comm.trigger_firmware_rollback(robot_id)
         #     if success:
         #         logger.info("    - Rollback command sent successfully. Robot should attempt to revert.")
-        #         self._update_robot_status(robot_id, UpdateStatus.ROLLED_BACK) # Assume it worked
+        #         self._update_robot_status(robot_id, UpdateStatus.ROLLBACK_SUCCESSFUL) # Assume it worked
         #         return True
         #     else:
         #         logger.error("    - Rollback command failed to send or was NACKed by robot.")
@@ -478,7 +444,7 @@ class RobotFirmwareUpdater:
         #     return False
         # --- End Placeholder ---
         time.sleep(5) # Simulate rollback action
-        self._update_robot_status(robot_id, UpdateStatus.ROLLED_BACK)
+        self._update_robot_status(robot_id, UpdateStatus.ROLLBACK_SUCCESSFUL)
         logger.info("    - Conceptual rollback completed.")
         return True
 

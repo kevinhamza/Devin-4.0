@@ -366,6 +366,8 @@
 #          including GPT models (with streaming and tool-calling), DALL-E 3,
 #          and the latest text embedding models.
 
+import uuid
+import random
 import logging
 import os
 import requests

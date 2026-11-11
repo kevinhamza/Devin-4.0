@@ -6,7 +6,7 @@ import logging
 import threading
 import time
 import requests
-from typing import List, Dict, Any, Callable
+from typing import List, Dict, Any, Callable, Tuple
 from collections import defaultdict
 import numpy as np
 

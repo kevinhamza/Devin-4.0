@@ -1,5 +1,6 @@
 # Devin/cloud/azure_integration.py # Purpose: Provides integration support for Microsoft Azure services.
 
+import datetime
 import os
 import logging
 from typing import Dict, Any, List, Optional, Tuple, Generator
@@ -242,7 +243,7 @@ class AzureIntegration:
              logger.error(f"Listing failed: Container '{container_name}' not found.")
         except ClientAuthenticationError as e:
               logger.error(f"Listing failed: Authentication error. Error: {e}")
-              return False
+              return
         except HttpResponseError as e:
              logger.error(f"Listing failed: Azure HTTP Response Error: {e}")
         except Exception as e:

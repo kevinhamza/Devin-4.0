@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+from typing import Callable
 import asyncio
 import logging
 import time

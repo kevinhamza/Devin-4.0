@@ -210,6 +210,7 @@
 import logging
 import subprocess
 import shlex
+import shutil
 import plistlib
 import platform
 from typing import Optional, Any, Dict, List, Literal

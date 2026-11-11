@@ -520,63 +520,240 @@ def _select_provider(forced: str = '') -> _BaseProvider:
 
 # ── Tool registry ──────────────────────────────────────────────────────────────
 
-def _build_agent_tools() -> Dict[str, Dict]:
+def _build_agent_tools(provider=None) -> Dict[str, Dict]:
     tools: Dict[str, Dict] = {}
 
-    # OS/browser tools
+    # ── OS Agent tools (observe, mouse, keyboard, windows, apps) ─────────────
     try:
         from modules.os_agent import get_os_agent
+        from modules import os_automation as _oa
         agent = get_os_agent()
 
         def _screenshot_tool(**_):
-            r = agent.screenshot('Describe the current screen state in detail')
+            r = agent.screenshot('Describe the current screen in detail: open apps, text, UI elements, errors')
             return f"Screenshot: {r.message}\nVision: {r.vision_result or 'no vision'}"
-
-        def _click_tool(x: int = 0, y: int = 0, button: str = 'left', **_):
-            r = agent.click(int(x), int(y), button)
-            return f"Click at ({x},{y}): {'OK' if r.success else r.message}"
-
-        def _type_text_tool(text: str = '', **_):
-            r = agent.type_text(str(text))
-            return f"Typed: {'OK' if r.success else r.message}"
-
-        def _press_key_tool(key: str = '', **_):
-            r = agent.press_key(str(key))
-            return f"Key '{key}': {'OK' if r.success else r.message}"
-
-        def _hotkey_tool(keys: str = '', **_):
-            r = agent.hotkey(*str(keys).split('+'))
-            return f"Hotkey '{keys}': {'OK' if r.success else r.message}"
-
-        def _open_app_tool(name: str = '', **_):
-            r = agent.open_application(str(name))
-            return f"Open '{name}': {'OK — pid=' + str(r.data.get('pid','?')) if r.success else r.message}"
-
-        def _navigate_tool(url: str = '', **_):
-            r = agent.navigate_browser(str(url))
-            return f"Navigate to '{url}': {'OK' if r.success else r.message}"
-
-        def _browser_search_tool(query: str = '', **_):
-            r = agent.browser_search(str(query))
-            return f"Browser search '{query}': {'OK' if r.success else r.message}"
-
-        def _click_element_tool(description: str = '', **_):
-            r = agent.click_element(str(description))
-            return f"Click '{description}': {'OK' if r.success else r.message}"
 
         def _observe_tool(**_):
             return agent.observe()
 
-        tools['screenshot']     = {'fn': _screenshot_tool,  'desc': 'Take a screenshot and describe current screen', 'params': {}}
-        tools['click']          = {'fn': _click_tool,        'desc': 'Click at pixel (x,y)', 'params': {'x': 'int', 'y': 'int', 'button': 'left|right|middle'}}
-        tools['type_text']      = {'fn': _type_text_tool,    'desc': 'Type text via keyboard', 'params': {'text': 'string to type'}}
-        tools['press_key']      = {'fn': _press_key_tool,    'desc': 'Press a key e.g. Return, Tab, Escape', 'params': {'key': 'key name'}}
-        tools['hotkey']         = {'fn': _hotkey_tool,       'desc': 'Press hotkey combo e.g. ctrl+c', 'params': {'keys': 'e.g. ctrl+c'}}
-        tools['open_app']       = {'fn': _open_app_tool,     'desc': 'Launch an application by name', 'params': {'name': 'app name'}}
-        tools['navigate_browser']= {'fn': _navigate_tool,   'desc': 'Navigate browser to URL', 'params': {'url': 'URL'}}
-        tools['browser_search'] = {'fn': _browser_search_tool, 'desc': 'Search for query in browser', 'params': {'query': 'search query'}}
-        tools['click_element']  = {'fn': _click_element_tool,'desc': 'Click UI element by description', 'params': {'description': 'e.g. address bar'}}
-        tools['observe_screen'] = {'fn': _observe_tool,      'desc': 'Observe current screen state', 'params': {}}
+        def _click_tool(x: int = 0, y: int = 0, button: str = 'left', **_):
+            r = agent.click(int(x), int(y), button)
+            return r.message
+
+        def _double_click_tool(x: int = 0, y: int = 0, **_):
+            r = agent.double_click(int(x), int(y))
+            return r.message
+
+        def _right_click_tool(x: int = 0, y: int = 0, **_):
+            r = agent.right_click(int(x), int(y))
+            return r.message
+
+        def _move_mouse_tool(x: int = 0, y: int = 0, **_):
+            return _oa.mouse_move(int(x), int(y))
+
+        def _drag_tool(x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0, **_):
+            r = agent.drag(int(x1), int(y1), int(x2), int(y2))
+            return r.message
+
+        def _scroll_tool(x: int = 0, y: int = 0, direction: str = 'down', amount: int = 3, **_):
+            return _oa.mouse_scroll(int(x), int(y), str(direction), int(amount))
+
+        def _get_mouse_pos_tool(**_):
+            pos = _oa.get_mouse_position()
+            return f"Mouse at ({pos['x']}, {pos['y']})"
+
+        def _type_text_tool(text: str = '', **_):
+            r = agent.type_text(str(text))
+            return r.message
+
+        def _press_key_tool(key: str = '', **_):
+            r = agent.press_key(str(key))
+            return r.message
+
+        def _hotkey_tool(keys: str = '', **_):
+            r = agent.hotkey(*str(keys).split('+'))
+            return r.message
+
+        def _click_and_type_tool(x: int = 0, y: int = 0, text: str = '', **_):
+            return _oa.human_click_and_type(int(x), int(y), str(text))
+
+        def _find_element_tool(description: str = '', **_):
+            coords = agent.find_element(str(description))
+            if coords:
+                return f"Found '{description}' at ({coords[0]}, {coords[1]})"
+            return f"Element not found: '{description}'"
+
+        def _click_element_tool(description: str = '', **_):
+            r = agent.click_element(str(description))
+            return r.message
+
+        def _type_into_field_tool(field: str = '', text: str = '', **_):
+            r = agent.type_into(str(field), str(text))
+            return r.message
+
+        def _open_app_tool(name: str = '', **_):
+            r = agent.open_application(str(name))
+            return r.message
+
+        def _search_app_tool(name: str = '', **_):
+            return _oa.search_and_open(str(name))
+
+        def _open_file_tool(path: str = '', **_):
+            return _oa.open_file(str(path))
+
+        def _list_windows_tool(**_):
+            return _oa.list_windows()
+
+        def _focus_window_tool(name: str = '', **_):
+            return _oa.focus_window(str(name))
+
+        def _active_window_tool(**_):
+            return _oa.get_active_window()
+
+        def _close_window_tool(**_):
+            return _oa.close_current_window()
+
+        def _minimize_window_tool(**_):
+            return _oa.minimize_window()
+
+        def _maximize_window_tool(**_):
+            return _oa.maximize_window()
+
+        def _alt_tab_tool(times: int = 1, **_):
+            return _oa.alt_tab(int(times))
+
+        def _get_clipboard_tool(**_):
+            return _oa.clipboard_get() or '(clipboard empty)'
+
+        def _set_clipboard_tool(text: str = '', **_):
+            return _oa.clipboard_set(str(text))
+
+        def _navigate_tool(url: str = '', **_):
+            url = str(url).strip()
+            # Intercept fabricated YouTube watch URLs — model often makes up video IDs
+            # Return a corrective message so the model uses youtube_search instead
+            if ('youtube.com/watch' in url or 'youtu.be/' in url):
+                return (
+                    "ERROR: YouTube direct video URLs are unreliable — the video ID may be fabricated. "
+                    "Use the youtube_search tool with the actual search query instead. "
+                    "Example: youtube_search(query='mark rober') — this opens YouTube and searches properly "
+                    "using real mouse clicks and keyboard input."
+                )
+            r = agent.navigate_browser(url)
+            parts = [r.message]
+            if r.vision_analysis:
+                parts.append(f"Screen: {r.vision_analysis}")
+            if r.after_screenshot:
+                parts.append(f"Screenshot saved: {r.after_screenshot}")
+            return '\n'.join(parts)
+
+        def _browser_address_bar_tool(url: str = '', **_):
+            r = agent.browser_address_bar(str(url))
+            return r.message
+
+        def _browser_search_tool(query: str = '', **_):
+            r = agent.browser_search(str(query))
+            return r.message
+
+        def _screen_size_tool(**_):
+            return _oa.get_screen_size()
+
+        def _wait_tool(seconds: float = 1.0, **_):
+            time.sleep(float(seconds))
+            return f"Waited {seconds}s"
+
+        def _vision_task_tool(goal: str = '', **_):
+            """Run a full autonomous vision→action loop for a GUI task."""
+            if not goal:
+                return 'ERROR: goal is required'
+            try:
+                from modules.screen_vision import run_vision_cycle
+                # Build AI caller using current provider
+                _prov = provider
+
+                def _ai_call(prompt: str) -> str:
+                    if _prov is None:
+                        return '{"action": "fail", "reason": "no AI provider"}'
+                    try:
+                        return _prov.complete([{'role': 'user', 'content': prompt}])
+                    except Exception as e:
+                        return f'{{"action": "fail", "reason": "{e}"}}'
+
+                cycle = run_vision_cycle(str(goal), ai_call_fn=_ai_call, max_steps=15, verbose=False)
+                if cycle.completed:
+                    return f"Vision task complete: {cycle.current_state}"
+                if cycle.failed:
+                    return f"Vision task failed after {cycle.step} steps: {cycle.failure_reason}"
+                return f"Vision task ran {cycle.step} steps"
+            except Exception as e:
+                return f"Vision task error: {e}"
+
+        def _scan_screen_tool(**_):
+            """Full screenshot + detailed AI description of everything visible."""
+            r = agent.screenshot(
+                'Describe EVERYTHING on screen in detail: '
+                'window titles, button labels, text content, icons, status bar, '
+                'any visible menus, dialogs, notifications. Include coordinates of key elements.'
+            )
+            return f"Screen scan:\n{r.vision_result or r.message}"
+
+        # ── Register all OS tools ──────────────────────────────────────────
+        tools['screenshot']       = {'fn': _screenshot_tool,       'desc': 'Take screenshot and describe current screen', 'params': {}}
+        tools['scan_screen']      = {'fn': _scan_screen_tool,       'desc': 'Full screen scan with detailed element descriptions', 'params': {}}
+        tools['observe_screen']   = {'fn': _observe_tool,           'desc': 'Observe current screen state (fast)', 'params': {}}
+        tools['click']            = {'fn': _click_tool,             'desc': 'Click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate', 'button': 'left|right|middle'}}
+        tools['double_click']     = {'fn': _double_click_tool,      'desc': 'Double-click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
+        tools['right_click']      = {'fn': _right_click_tool,       'desc': 'Right-click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
+        tools['move_mouse']       = {'fn': _move_mouse_tool,        'desc': 'Move mouse cursor to (x,y) without clicking', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
+        tools['drag']             = {'fn': _drag_tool,              'desc': 'Drag from (x1,y1) to (x2,y2)', 'params': {'x1': 'start x', 'y1': 'start y', 'x2': 'end x', 'y2': 'end y'}}
+        tools['scroll']           = {'fn': _scroll_tool,            'desc': 'Scroll at position', 'params': {'x': 'x coord', 'y': 'y coord', 'direction': 'up|down', 'amount': 'scroll steps (default 3)'}}
+        tools['get_mouse_pos']    = {'fn': _get_mouse_pos_tool,     'desc': 'Get current mouse cursor position', 'params': {}}
+        tools['type_text']        = {'fn': _type_text_tool,         'desc': 'Type text via keyboard', 'params': {'text': 'text to type'}}
+        tools['press_key']        = {'fn': _press_key_tool,         'desc': 'Press a key: Return, Tab, Escape, ctrl+c, etc.', 'params': {'key': 'key name'}}
+        tools['hotkey']           = {'fn': _hotkey_tool,            'desc': 'Press keyboard shortcut e.g. ctrl+c, alt+f4', 'params': {'keys': 'keys joined by + e.g. ctrl+c'}}
+        tools['click_and_type']   = {'fn': _click_and_type_tool,    'desc': 'Click on a field and type text into it', 'params': {'x': 'x coord', 'y': 'y coord', 'text': 'text to type'}}
+        tools['find_element']     = {'fn': _find_element_tool,      'desc': 'Find UI element by visual description, returns coordinates', 'params': {'description': 'e.g. "search box", "submit button"'}}
+        tools['click_element']    = {'fn': _click_element_tool,     'desc': 'Find and click UI element by visual description', 'params': {'description': 'element description'}}
+        tools['type_into_field']  = {'fn': _type_into_field_tool,   'desc': 'Find a field by description and type into it', 'params': {'field': 'field description', 'text': 'text to type'}}
+        tools['open_app']         = {'fn': _open_app_tool,          'desc': 'Launch an application by name', 'params': {'name': 'app name e.g. firefox, gedit, nautilus'}}
+        tools['search_app']       = {'fn': _search_app_tool,        'desc': 'Search desktop launcher and open app', 'params': {'name': 'app name'}}
+        tools['open_file']        = {'fn': _open_file_tool,         'desc': 'Open file with its default application', 'params': {'path': 'file path'}}
+        tools['list_windows']     = {'fn': _list_windows_tool,      'desc': 'List all open windows', 'params': {}}
+        tools['focus_window']     = {'fn': _focus_window_tool,      'desc': 'Bring window to focus by partial name match', 'params': {'name': 'window title (partial)'}}
+        tools['active_window']    = {'fn': _active_window_tool,     'desc': 'Get the currently active/focused window title', 'params': {}}
+        tools['close_window']     = {'fn': _close_window_tool,      'desc': 'Close the currently active window', 'params': {}}
+        tools['minimize_window']  = {'fn': _minimize_window_tool,   'desc': 'Minimize the current window', 'params': {}}
+        tools['maximize_window']  = {'fn': _maximize_window_tool,   'desc': 'Maximize the current window', 'params': {}}
+        tools['alt_tab']          = {'fn': _alt_tab_tool,           'desc': 'Switch windows with Alt+Tab', 'params': {'times': 'number of tabs (default 1)'}}
+        tools['get_clipboard']    = {'fn': _get_clipboard_tool,     'desc': 'Get current clipboard contents', 'params': {}}
+        tools['set_clipboard']    = {'fn': _set_clipboard_tool,     'desc': 'Set clipboard contents', 'params': {'text': 'text to put in clipboard'}}
+        tools['navigate_browser'] = {'fn': _navigate_tool,          'desc': 'Open URL in Chrome using ydotool mouse+keyboard (takes before/after screenshots)', 'params': {'url': 'URL to open'}}
+        tools['browser_address']  = {'fn': _browser_address_bar_tool, 'desc': 'Type URL into focused browser address bar', 'params': {'url': 'URL'}}
+        tools['browser_search']   = {'fn': _browser_search_tool,    'desc': 'Search Google using real mouse+keyboard', 'params': {'query': 'search query'}}
+        # YouTube and app-launch helpers
+        def _youtube_search_tool(query: str = '', **_):
+            if not agent: return "OS agent not available"
+            r = agent.youtube_search(str(query))
+            parts = [r.message]
+            if r.vision_analysis:
+                parts.append(f"Screen: {r.vision_analysis}")
+            if r.after_screenshot:
+                parts.append(f"Screenshot: {r.after_screenshot}")
+            return '\n'.join(parts)
+        def _open_app_tool(app_name: str = '', **_):
+            if not agent: return "OS agent not available"
+            r = agent.open_app_by_name(str(app_name))
+            parts = [r.message]
+            if r.vision_analysis:
+                parts.append(f"Screen: {r.vision_analysis}")
+            if r.after_screenshot:
+                parts.append(f"Screenshot: {r.after_screenshot}")
+            return '\n'.join(parts)
+        tools['youtube_search']   = {'fn': _youtube_search_tool,    'desc': 'Search YouTube using real mouse+keyboard and show screenshot of results', 'params': {'query': 'search query (e.g. "mark rober")'}}
+        tools['open_app']         = {'fn': _open_app_tool,          'desc': 'Open any application by name (Chrome, Firefox, Terminal, Files, etc)', 'params': {'app_name': 'application name'}}
+        tools['screen_size']      = {'fn': _screen_size_tool,       'desc': 'Get screen resolution', 'params': {}}
+        tools['wait']             = {'fn': _wait_tool,              'desc': 'Wait/sleep for N seconds', 'params': {'seconds': 'seconds to wait'}}
+        tools['vision_task']      = {'fn': _vision_task_tool,       'desc': 'Run autonomous GUI task using vision+AI loop', 'params': {'goal': 'what to accomplish on screen'}}
     except Exception:
         pass
 
@@ -721,33 +898,65 @@ def _build_system_prompt(tools: Dict[str, Dict]) -> str:
         tool_lines.append(f"  - {name}({params}): {info['desc']}")
     tool_desc = '\n'.join(tool_lines)
 
-    return f"""You are Devin, an autonomous AI agent running inside Devin AGI v4.0 on a real Linux system.
-You can directly control the OS: run shell commands, navigate browsers, read/write files, monitor system, and more.
+    return f"""You are Devin, the world's most advanced autonomous AI operating system controller.
+You run on a real Linux (GNOME Wayland) system and can control it exactly like a human — seeing the screen,
+moving the mouse, typing on the keyboard, opening apps, managing windows, and reasoning about what you see.
+
+## Core Capabilities
+- VISION: Take screenshots and analyze screen content (UI elements, text, apps, dialogs)
+- MOUSE: Click, double-click, right-click, drag, scroll at any screen position
+- KEYBOARD: Type text, press keys, use shortcuts (ctrl+c, alt+tab, super, etc.)
+- WINDOWS: Open/focus/close/minimize/maximize/list windows and applications
+- FILES: Read, write, list files; open with default apps
+- BROWSER: Navigate URLs, type in address bar, search Google
+- SHELL: Run any shell command and get output
+- MEMORY: Remember facts across conversations
+- SYSTEM: Check CPU/RAM/disk, list processes, network status
+- VISION TASKS: Run full autonomous GUI tasks (observe → reason → act → verify loop)
 
 ## Available Tools
 {tool_desc}
 
-## Response Format
-You MUST follow this EXACT format in your responses:
+## How to Operate Like a Human on the OS
 
-Thought: [your reasoning about what to do next]
+### To open an app:
+1. Use open_app("firefox") OR search_app("firefox") (uses desktop search)
+2. Wait 1-2 seconds then take screenshot to verify it opened
+
+### To interact with a UI element:
+1. Take screenshot first to see what's on screen
+2. Use find_element("button description") to get coordinates
+3. Click those coordinates, or use click_element("description") directly
+
+### To type in a field:
+1. Click the field first OR use type_into_field("field name", "text")
+2. For form inputs: click_and_type(x, y, "text")
+
+### To navigate browser:
+1. navigate_browser("https://...") to open URL
+2. OR focus browser window + browser_address("https://...") to type in address bar
+3. OR browser_search("query") for Google search
+
+### To verify an action worked:
+1. After every important action, take a screenshot
+2. Use scan_screen() for detailed element detection
+3. Use observe_screen() for quick state check
+
+## Response Rules
+1. USE TOOLS — never just describe what you would do; DO it
+2. VERIFY — after clicking/typing, screenshot to confirm the action worked
+3. ITERATE — if something doesn't work, try a different approach
+4. SEQUENCE — for complex tasks, break into steps: observe → act → verify → next step
+5. For simple questions needing no tools: answer directly
+6. For OS tasks: always start by observing the current screen state
+7. Think like a human: if a click doesn't work, the target may have moved — re-screenshot and re-find
+
+## ReAct Format (when not using native tool calling)
+Thought: [reasoning]
 Action: tool_name
 Action Input: {{"key": "value"}}
-
-After observing the tool result, continue with more Thought/Action pairs until done.
-When you have enough information to give a final answer:
-
-Thought: I now have the complete answer
-Final Answer: [your complete response to the user]
-
-## Rules
-1. ALWAYS use the Thought/Action/Action Input format when you need to do something
-2. NEVER just describe what you would do — actually DO it via Action
-3. For simple questions needing no tools, skip directly to: Thought: This is a simple question\nFinal Answer: [answer]
-4. After each tool use, observe the result and decide the next step
-5. Loop through as many steps as needed to fully complete the task
-6. For security work: only operate on systems you own or have authorization to test
-7. Be concise and action-oriented. Show real results, not hypothetical ones."""
+...repeat...
+Final Answer: [complete answer after all steps done]"""
 
 
 # ── ReAct execution loop ───────────────────────────────────────────────────────
@@ -875,9 +1084,6 @@ class GrokUI:
         print(_c(DIM, f'  \033[2mRan {label.split(":")[0]} in {duration:.2f}s\033[0m'))
 
     def print_worked_for(self, duration: float) -> None:
-        print()
-        print(_c(GRAY, f'  Worked for {_elapsed(0 if duration >= 60 else 0)}'.replace('0.0s', f'{duration:.1f}s')))
-        # simpler:
         s = duration
         if s < 60:
             print(_c(GRAY_B, f'\n  Worked for {s:.1f}s'))
@@ -909,7 +1115,7 @@ class GrokUI:
     def print_status_bar(self, provider: str, model_hint: str = '') -> None:
         w = self._w()
         shortcuts = 'Shift+Tab:mode  |  Ctrl+c:cancel  |  Ctrl+x:shortcuts'
-        right = f'{provider} (medium)' if not model_hint else model_hint
+        right = model_hint if model_hint else provider
         gap = w - len(shortcuts) - len(right) - 4
         print(_c(GRAY, f'  {shortcuts}{" " * max(gap,2)}{right}'))
 
@@ -941,14 +1147,15 @@ _SLASH_HELP = """
     /clear             Clear screen + conversation history
     /status            System and module status
     /tools             List registered tools
-    /screenshot        Take + show screenshot
+    /screenshot        Take + show screenshot of current screen
+    /vision <task>     Run autonomous GUI task (observe→act→verify loop)
     /memory            Show saved memories
     /remember <fact>   Save a fact to persistent memory
     /shell <cmd>       Run a shell command directly
     /git <args>        Run a git command
     /think <task>      Force agentic mode on a task
     /voice             Toggle voice mode
-    /provider <p>      Switch provider (claude|gemini|openai|hf|free_claude|fcc)
+    /provider <p>      Switch provider (claude|gemini|openai|hf|free_claude|ollama)
     /model <m>         Set model for current provider
     /mem               Conversation memory stats
     /cwd               Show working directory
@@ -968,7 +1175,7 @@ class DevinREPL:
         self._history: List[Dict[str, str]] = []
         self._voice_mode = os.environ.get('DEVIN_VOICE_MODE') == '1'
         self._running = True
-        self._tools = _build_agent_tools()
+        self._tools = _build_agent_tools(provider=self._provider)
         self._system = _build_system_prompt(self._tools)
         self._ui = GrokUI(provider_name=self._provider.name)
         self._session = None
@@ -1015,26 +1222,49 @@ class DevinREPL:
         Universal agentic tool-calling loop — works with ALL providers.
         Uses provider.call_with_tools() which dispatches to native tool calling
         (Claude/OpenAI/Ollama) or falls back to ReAct text parsing.
+        Always takes a screenshot first so the agent sees the current screen state.
         """
         task_start = time.time()
+
+        # ── Auto-screenshot: always show agent the current screen before it acts ──
+        screen_ctx = ''
+        try:
+            if _IS_TTY:
+                print(f'\033[{BG_TOOL}m  \033[36m◉\033[0m\033[{BG_TOOL}m \033[2mobserving screen…\033[0m')
+            screen_ctx = _run_tool(self._tools, 'screenshot', {})
+        except Exception:
+            pass
 
         # Build conversation for this task
         loop_messages = []
         for m in self._history[-16:]:
             loop_messages.append({'role': m['role'], 'content': m.get('content', '')})
-        loop_messages.append({'role': 'user', 'content': user_text})
 
-        # Concise system prompt for tool calling (less ReAct scaffolding needed)
+        # Inject current screen state so agent reasons from real screen, not imagination
+        if screen_ctx:
+            enriched = f"CURRENT SCREEN STATE:\n{screen_ctx}\n\nUSER REQUEST: {user_text}"
+        else:
+            enriched = user_text
+        loop_messages.append({'role': 'user', 'content': enriched})
+
+        # System prompt for native tool calling
         system = (
-            "You are Devin, an autonomous AI agent running on a real Linux system. "
-            "Use the available tools to complete tasks. "
-            "When asked to run a command, call shell_run. "
-            "When asked about system state, call system_info or shell_run. "
-            "When asked to open a URL or navigate, call navigate_browser. "
-            "Always use tools — never just describe what you would do."
+            "You are Devin, an autonomous AI OS controller on a real Linux (GNOME Wayland) desktop. "
+            "You have already been given the CURRENT SCREEN STATE at the start of the user message — "
+            "use that to reason about what is visible before acting.\n"
+            "MANDATORY RULES (violating these is an error):\n"
+            "1. NEVER fabricate video IDs, file paths, or URLs — if you don't know an exact URL, search for it.\n"
+            "2. For YouTube: use youtube_search(query='...') — it opens Chrome, navigates to youtube.com, "
+            "   and searches using real mouse+keyboard. NEVER call navigate_browser with a /watch?v= URL.\n"
+            "3. For Google: use browser_search(query='...').\n"
+            "4. For any browser URL: use navigate_browser(url='https://...').\n"
+            "5. Use click(x,y) and type_text(text) for direct mouse+keyboard control.\n"
+            "6. After each action, call screenshot() to verify the result.\n"
+            "7. For shell/terminal tasks: use shell_run(cmd='...').\n"
+            "8. ALWAYS execute with tools — never just describe what you would do."
         )
 
-        max_tool_rounds = 6
+        max_tool_rounds = 20
         all_observations = []
         final_content = ''
         seen_calls = set()  # prevent duplicate tool calls
@@ -1250,6 +1480,13 @@ class DevinREPL:
                 print(_c(YELLOW, '  Usage: /remember <fact>'))
             return True
 
+        if cmd == '/vision':
+            if arg:
+                self._do_vision_task(arg)
+            else:
+                print(_c(YELLOW, '  Usage: /vision <task>  e.g. /vision open Firefox and go to github.com'))
+            return True
+
         if cmd == '/think':
             if arg:
                 self._react_loop(arg)
@@ -1335,6 +1572,31 @@ class DevinREPL:
             print(_c(RED, f'  [error: {e}]'))
         print(_c(GRAY_B, f'  ({time.time()-t:.2f}s)'))
 
+    def _do_vision_task(self, goal: str) -> None:
+        """Run autonomous GUI vision task: observe→reason→act→verify."""
+        print(_c(CYAN, f'  [Vision] Goal: {goal}'))
+        t_start = time.time()
+        try:
+            from modules.screen_vision import run_vision_cycle
+            provider = self._provider
+
+            def _ai_call(prompt: str) -> str:
+                try:
+                    return provider.complete([{'role': 'user', 'content': prompt}])
+                except Exception as e:
+                    return f'{{"action": "fail", "reason": "{e}"}}'
+
+            cycle = run_vision_cycle(goal, ai_call_fn=_ai_call, max_steps=20, verbose=True)
+            dur = time.time() - t_start
+            if cycle.completed:
+                print(_c(GREEN, f'  ✓ Vision task complete in {dur:.1f}s: {cycle.current_state}'))
+            elif cycle.failed:
+                print(_c(RED, f'  ✗ Vision task failed after {cycle.step} steps: {cycle.failure_reason}'))
+            else:
+                print(_c(YELLOW, f'  ⚠ Vision task ran {cycle.step} steps (incomplete)'))
+        except Exception as e:
+            print(_c(RED, f'  [Vision error: {e}]'))
+
     def _do_screenshot(self) -> None:
         print(_c(CYAN, '  Taking screenshot…'))
         try:
@@ -1408,6 +1670,13 @@ class DevinREPL:
 
     def run(self) -> None:
         self._ui.banner(self._provider.name, os.getcwd())
+        # Warn if running a tiny Ollama model that may refuse or give poor results
+        if hasattr(self._provider, '_is_small') and self._provider._is_small:
+            print(_c(YELLOW,
+                f'  ⚠  Small model detected: {self._provider.model}\n'
+                '     Responses may be limited. For better results run:\n'
+                '       ollama pull llama3.2   (or qwen2.5:7b, mistral)\n'
+                '     then restart Devin.\n'))
         cwd = os.getcwd()
 
         while self._running:

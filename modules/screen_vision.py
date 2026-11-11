@@ -88,41 +88,121 @@ class VisionCycle:
 # ── Screenshot helper ─────────────────────────────────────────────────────────
 
 def _take_screenshot(path: str = '') -> Tuple[str, int, int, str]:
-    """Take screenshot, return (path, width, height, error)."""
+    """Take screenshot, return (path, width, height, error).
+    Backend order: gdbus portal (Wayland) → mss → pyautogui → scrot.
+    """
     if not path:
         fd, path = tempfile.mkstemp(suffix='.png', prefix='devin_vision_')
         os.close(fd)
 
-    # Try pyautogui first
+    def _ok(p: str) -> bool:
+        """File exists, >10KB, and not all-black."""
+        if not (p and os.path.exists(p) and os.path.getsize(p) > 10_000):
+            return False
+        if _PIL:
+            try:
+                with _PIL.open(p) as img:
+                    sample = img.convert('RGB').resize((16, 16))
+                    pixels = list(sample.getdata())
+                    avg = sum(sum(px) for px in pixels) // (len(pixels) * 3)
+                    return avg >= 8  # not black
+            except Exception:
+                pass
+        return True
+
+    import platform as _plat
+    import subprocess as _sub
+
+    if _plat.system() == 'Linux':
+        # ── 1. XDG Desktop Portal via gdbus (GNOME Wayland) ─────────────────
+        try:
+            import glob as _glob, shutil as _sh
+            pics = os.path.expanduser('~/Pictures')
+            before = set(_glob.glob(os.path.join(pics, 'Screenshot*.png')))
+            r = _sub.run(
+                ['gdbus', 'call', '-e',
+                 '-d', 'org.freedesktop.portal.Desktop',
+                 '-o', '/org/freedesktop/portal/desktop',
+                 '-m', 'org.freedesktop.portal.Screenshot.Screenshot',
+                 '', '{"interactive": <false>}'],
+                capture_output=True, timeout=6,
+            )
+            if r.returncode == 0:
+                deadline = time.time() + 3.0
+                while time.time() < deadline:
+                    time.sleep(0.15)
+                    after = set(_glob.glob(os.path.join(pics, 'Screenshot*.png')))
+                    new = after - before
+                    if new:
+                        newest = max(new, key=os.path.getmtime)
+                        if os.path.getsize(newest) > 10_000:
+                            _sh.copy2(newest, path)
+                            break
+        except Exception:
+            pass
+        if _ok(path):
+            if _PIL:
+                with _PIL.open(path) as img:
+                    return path, img.width, img.height, ''
+            return path, 1366, 768, ''
+
+    # ── 2. mss ───────────────────────────────────────────────────────────────
+    try:
+        import mss, mss.tools  # type: ignore
+        with mss.mss() as sct:
+            mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+            shot = sct.grab(mon)
+            mss.tools.to_png(shot.rgb, shot.size, output=path)
+        if _ok(path):
+            if _PIL:
+                with _PIL.open(path) as img:
+                    return path, img.width, img.height, ''
+            return path, shot.width, shot.height, ''
+    except Exception:
+        pass
+
+    # ── 3. pyautogui ─────────────────────────────────────────────────────────
     if _pag is not None:
         try:
             img = _pag.screenshot()
             img.save(path)
-            return path, img.width, img.height, ''
-        except Exception as e:
+            if _ok(path):
+                return path, img.width, img.height, ''
+        except Exception:
             pass
 
-    # Fallback: scrot on Linux
-    import platform
-    if platform.system() == 'Linux':
-        import subprocess
-        for tool in ['scrot', 'import', 'gnome-screenshot']:
+    # ── 4. scrot / gnome-screenshot / ImageMagick import ─────────────────────
+    if _plat.system() == 'Linux':
+        import subprocess as _sub2
+        env = {**os.environ, 'DISPLAY': os.environ.get('DISPLAY', ':0')}
+        for cmd in [
+            ['scrot', '-z', path],
+            ['gnome-screenshot', '-f', path],
+            ['import', '-window', 'root', path],
+        ]:
             try:
-                if tool == 'scrot':
-                    r = subprocess.run(['scrot', path], capture_output=True, timeout=5)
-                elif tool == 'import':
-                    r = subprocess.run(['import', '-window', 'root', path], capture_output=True, timeout=5)
-                elif tool == 'gnome-screenshot':
-                    r = subprocess.run(['gnome-screenshot', '-f', path], capture_output=True, timeout=5)
-                if r.returncode == 0 and os.path.exists(path):
+                r = _sub2.run(cmd, capture_output=True, timeout=5, env=env)
+                if r.returncode == 0 and _ok(path):
                     if _PIL:
                         with _PIL.open(path) as img:
                             return path, img.width, img.height, ''
-                    return path, 1920, 1080, ''
+                    return path, 1366, 768, ''
             except Exception:
                 continue
 
-    return '', 0, 0, 'No screenshot backend available (install pyautogui or scrot)'
+    elif _plat.system() == 'Darwin':
+        try:
+            import subprocess as _sub3
+            _sub3.run(['screencapture', '-x', path], timeout=5)
+            if _ok(path):
+                if _PIL:
+                    with _PIL.open(path) as img:
+                        return path, img.width, img.height, ''
+                return path, 1920, 1080, ''
+        except Exception:
+            pass
+
+    return '', 0, 0, 'No screenshot backend available — install gdbus (GNOME) or mss'
 
 
 def _image_to_base64(path: str) -> str:
@@ -160,55 +240,16 @@ def _describe_screenshot_basic(path: str) -> str:
 # ── Action executor ───────────────────────────────────────────────────────────
 
 def _execute_action(action: ScreenAction) -> str:
-    """Execute a ScreenAction. Returns result string."""
+    """Execute a ScreenAction using os_automation (pyautogui/xdotool/pynput).
+    Falls back gracefully when individual backends are unavailable."""
+    try:
+        from modules import os_automation as _oa
+    except ImportError:
+        _oa = None
+
     if action.action_type == ActionType.WAIT:
         time.sleep(action.wait_seconds)
         return f'Waited {action.wait_seconds}s'
-
-    if action.action_type in (ActionType.CLICK, ActionType.DOUBLE_CLICK,
-                               ActionType.RIGHT_CLICK, ActionType.MOVE):
-        if _pag is None:
-            return 'ERROR: pyautogui not available for mouse control'
-        x, y = action.x or 0, action.y or 0
-        if action.action_type == ActionType.MOVE:
-            _pag.moveTo(x, y, duration=0.2)
-            return f'Moved to ({x},{y})'
-        elif action.action_type == ActionType.CLICK:
-            _pag.click(x, y)
-            return f'Clicked ({x},{y})'
-        elif action.action_type == ActionType.DOUBLE_CLICK:
-            _pag.doubleClick(x, y)
-            return f'Double-clicked ({x},{y})'
-        elif action.action_type == ActionType.RIGHT_CLICK:
-            _pag.rightClick(x, y)
-            return f'Right-clicked ({x},{y})'
-
-    if action.action_type == ActionType.TYPE:
-        if not action.text:
-            return 'ERROR: no text to type'
-        if _pag:
-            _pag.typewrite(action.text, interval=0.02)
-            return f'Typed: {action.text[:60]}'
-        return 'ERROR: pyautogui not available for typing'
-
-    if action.action_type == ActionType.KEY:
-        if not action.key:
-            return 'ERROR: no key specified'
-        if _pag:
-            if '+' in action.key:
-                _pag.hotkey(*action.key.split('+'))
-            else:
-                _pag.press(action.key)
-            return f'Pressed: {action.key}'
-        return 'ERROR: pyautogui not available for key press'
-
-    if action.action_type == ActionType.SCROLL:
-        if _pag:
-            clicks = -action.amount if action.direction == 'down' else action.amount
-            x, y = action.x or 0, action.y or 0
-            _pag.scroll(clicks, x=x, y=y)
-            return f'Scrolled {action.direction} {action.amount}x at ({x},{y})'
-        return 'ERROR: pyautogui not available for scroll'
 
     if action.action_type == ActionType.SCREENSHOT:
         path, w, h, err = _take_screenshot()
@@ -221,6 +262,74 @@ def _execute_action(action: ScreenAction) -> str:
 
     if action.action_type == ActionType.FAIL:
         return f'FAILED: {action.reason}'
+
+    x, y = action.x or 0, action.y or 0
+
+    if action.action_type == ActionType.MOVE:
+        if _oa:
+            return _oa.mouse_move(x, y)
+        elif _pag:
+            _pag.moveTo(x, y, duration=0.2)
+            return f'Moved to ({x},{y})'
+        return f'Moved to ({x},{y}) [no backend]'
+
+    if action.action_type == ActionType.CLICK:
+        if _oa:
+            return _oa.mouse_click(x, y, 'left')
+        elif _pag:
+            _pag.click(x, y)
+            return f'Clicked ({x},{y})'
+        return f'Click at ({x},{y}) [no backend]'
+
+    if action.action_type == ActionType.DOUBLE_CLICK:
+        if _oa:
+            return _oa.mouse_click(x, y, double=True)
+        elif _pag:
+            _pag.doubleClick(x, y)
+            return f'Double-clicked ({x},{y})'
+        return f'Double-click at ({x},{y}) [no backend]'
+
+    if action.action_type == ActionType.RIGHT_CLICK:
+        if _oa:
+            return _oa.mouse_right_click(x, y)
+        elif _pag:
+            _pag.rightClick(x, y)
+            return f'Right-clicked ({x},{y})'
+        return f'Right-click at ({x},{y}) [no backend]'
+
+    if action.action_type == ActionType.TYPE:
+        if not action.text:
+            return 'ERROR: no text to type'
+        if _oa:
+            return _oa.keyboard_type(action.text, interval=0.02)
+        elif _pag:
+            _pag.typewrite(action.text, interval=0.02)
+            return f'Typed: {action.text[:60]}'
+        return 'ERROR: no keyboard backend'
+
+    if action.action_type == ActionType.KEY:
+        if not action.key:
+            return 'ERROR: no key specified'
+        if _oa:
+            if '+' in action.key:
+                return _oa.keyboard_hotkey(*action.key.split('+'))
+            return _oa.keyboard_press(action.key)
+        elif _pag:
+            if '+' in action.key:
+                _pag.hotkey(*action.key.split('+'))
+            else:
+                _pag.press(action.key)
+            return f'Pressed: {action.key}'
+        return 'ERROR: no keyboard backend'
+
+    if action.action_type == ActionType.SCROLL:
+        if _oa:
+            return _oa.mouse_scroll(x, y, action.direction, action.amount)
+        elif _pag:
+            clicks = -action.amount if action.direction == 'down' else action.amount
+            _pag.scroll(clicks, x=x, y=y)
+            return f'Scrolled {action.direction} {action.amount}x at ({x},{y})'
+        return 'ERROR: no scroll backend'
 
     return f'ERROR: unknown action type {action.action_type}'
 
@@ -488,11 +597,16 @@ def tool_screen_click_element(description: str) -> str:
 
     result = tool_screen_find_element(description, frame.screenshot_path)
     if result.startswith('Found:'):
-        # Extract first coordinate pair
         coord_match = re.search(r'\((\d+),(\d+)\)', result)
-        if coord_match and _pag:
+        if coord_match:
             x, y = int(coord_match.group(1)), int(coord_match.group(2))
-            _pag.click(x, y)
+            # Prefer os_automation, fall back to pyautogui
+            try:
+                from modules import os_automation as _oa
+                _oa.mouse_click(x, y, 'left')
+            except Exception:
+                if _pag:
+                    _pag.click(x, y)
             return f'Clicked "{description}" at ({x},{y})'
         return f'Found element but could not click: {result}'
     return result

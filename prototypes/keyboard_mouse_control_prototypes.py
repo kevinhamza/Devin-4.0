@@ -1,10 +1,11 @@
 # Devin/prototypes/keyboard_mouse_control_prototypes.py
 # Purpose: Prototype for direct mouse and keyboard input simulation.
 
+import random
 import logging
 import os
 import time
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Literal
 
 # --- Conceptual Import for PyAutoGUI ---
 # Requires 'pyautogui': pip install pyautogui

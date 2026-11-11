@@ -2,9 +2,11 @@
 # Purpose: Provides configurations and utilities for integrating with Grafana Tempo
 #          as a distributed tracing backend using OpenTelemetry.
 
+import time
+import json
 import logging
 import os
-from typing import Dict, Optional, Union
+from typing import Any, Dict, Optional, Union
 from urllib.parse import urlencode
 
 # Conceptual import from the previous OTel setup file, if needed to call its init function

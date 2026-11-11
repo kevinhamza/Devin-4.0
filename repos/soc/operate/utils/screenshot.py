@@ -1,30 +1,63 @@
 import os
 import platform
 import subprocess
-import pyautogui
-from PIL import Image, ImageDraw, ImageGrab
-import Xlib.display
-import Xlib.X
-import Xlib.Xutil  # not sure if Xutil is necessary
+import glob
+import time
+from PIL import Image
 
 
 def capture_screen_with_cursor(file_path):
     user_platform = platform.system()
 
     if user_platform == "Windows":
+        import pyautogui
         screenshot = pyautogui.screenshot()
         screenshot.save(file_path)
     elif user_platform == "Linux":
-        # Use xlib to prevent scrot dependency for Linux
-        screen = Xlib.display.Display().screen()
-        size = screen.width_in_pixels, screen.height_in_pixels
-        screenshot = ImageGrab.grab(bbox=(0, 0, size[0], size[1]))
-        screenshot.save(file_path)
+        session_type = os.environ.get("XDG_SESSION_TYPE", "").lower()
+        if "wayland" in session_type:
+            # GNOME Wayland: use gdbus XDG Portal screenshot
+            _capture_wayland_gdbus(file_path)
+        else:
+            # X11: use scrot
+            result = subprocess.run(["scrot", file_path], capture_output=True)
+            if result.returncode != 0:
+                subprocess.run(["import", "-window", "root", file_path])
     elif user_platform == "Darwin":  # (Mac OS)
-        # Use the screencapture utility to capture the screen with the cursor
         subprocess.run(["screencapture", "-C", file_path])
     else:
         print(f"The platform you're using ({user_platform}) is not currently supported")
+
+
+def _capture_wayland_gdbus(dest_path):
+    """Capture screenshot on GNOME Wayland via gdbus XDG Portal, then copy to dest_path."""
+    pictures_dir = os.path.expanduser("~/Pictures")
+    before = set(glob.glob(os.path.join(pictures_dir, "Screenshot*.png")))
+
+    subprocess.Popen([
+        "gdbus", "call", "--session",
+        "--dest", "org.gnome.Shell.Screenshot",
+        "--object-path", "/org/gnome/Shell/Screenshot",
+        "--method", "org.gnome.Shell.Screenshot.Screenshot",
+        "true", "false",
+        os.path.join(pictures_dir, "screenshot_tmp.png")
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # Wait up to 6s for new file
+    new_file = None
+    for _ in range(60):
+        time.sleep(0.1)
+        after = set(glob.glob(os.path.join(pictures_dir, "Screenshot*.png")))
+        diff = after - before
+        if diff:
+            new_file = max(diff, key=os.path.getmtime)
+            break
+
+    if new_file and os.path.exists(new_file):
+        import shutil
+        shutil.copy2(new_file, dest_path)
+    else:
+        raise RuntimeError("gdbus screenshot timed out — no new file appeared in ~/Pictures")
 
 
 def compress_screenshot(raw_screenshot_filename, screenshot_filename):

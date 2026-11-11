@@ -1,7 +1,10 @@
 # Devin/ai_ethics/consciousness_monitor/theory_of_mind_detector.py # Purpose: Attempts to detect signs indicative of Theory of Mind or emerging self-awareness in the AI (Highly Speculative - AGI awareness alerts).
 
+import json
+import random
 import re
 import time
+from collections import defaultdict
 from typing import Dict, Any, List, Optional, Tuple
 
 # Placeholder imports for accessing AI state, logs, or communication channels

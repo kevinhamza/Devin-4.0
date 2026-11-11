@@ -1,6 +1,7 @@
 # Devin/prototypes/code_execution_prototypes.py
 # Purpose: Prototype implementations for securely executing code snippets.
 
+from pathlib import Path
 import logging
 import os
 import sys

@@ -1,8 +1,10 @@
 # Devin/hmi/ar_vr/hololens_integration.py
 # Purpose: Conceptual integration with Microsoft HoloLens for AR/MR interactions.
 
+import random
 import logging
 import os
+import sys
 import json
 import time
 import asyncio # For conceptual WebSocket client

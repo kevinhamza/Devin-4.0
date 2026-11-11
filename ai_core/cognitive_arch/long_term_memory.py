@@ -1,5 +1,6 @@
 # Devin/ai_core/cognitive_arch/long_term_memory.py
 
+import random
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import uuid

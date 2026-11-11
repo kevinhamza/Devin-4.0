@@ -1,6 +1,7 @@
 # Devin/prototypes/multimedia_prototypes.py
 # Purpose: Prototype implementations for interacting with multimedia (image, audio, video).
 
+from pathlib import Path
 import logging
 import os
 import sys

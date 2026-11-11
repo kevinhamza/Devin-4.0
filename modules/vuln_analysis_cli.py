@@ -23,7 +23,7 @@ from morpheus.cli.utils import get_log_levels
 from morpheus.cli.utils import parse_log_level
 from morpheus.utils.logger import configure_logging
 
-from .cve import run as run_cve
+from .vuln_cve_pipeline.run import run as run_cve
 
 
 @click.group(name="morpheus_llm", chain=False, invoke_without_command=True, no_args_is_help=True)

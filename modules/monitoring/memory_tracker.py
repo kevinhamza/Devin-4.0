@@ -2,13 +2,21 @@
 # Purpose: A toolkit for monitoring system and process-level memory utilization,
 #          with background alerting and live visualization capabilities.
 
+from __future__ import annotations
+
 import logging
-import psutil
 import threading
 import time
 import os
 from typing import List, Dict, Optional, Callable, Any
 from collections import deque
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore
+    PSUTIL_AVAILABLE = False
 
 try:
     import matplotlib.pyplot as plt
@@ -42,7 +50,7 @@ class MemoryTracker:
     Provides a suite of tools for monitoring memory usage.
     """
     def __init__(self):
-        if not psutil:
+        if not PSUTIL_AVAILABLE:
             raise ImportError("psutil library is required. Please 'pip install psutil'.")
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -135,6 +143,16 @@ class MemoryTracker:
         ani = animation.FuncAnimation(fig, animate, interval=1000)
         plt.tight_layout()
         plt.show()
+
+
+# --- Module-level convenience function (used by system_monitor_module.py) ---
+
+def get_memory_info() -> Dict[str, Any]:
+    """Returns current virtual memory stats as a plain dict."""
+    if not PSUTIL_AVAILABLE:
+        return {}
+    vm = psutil.virtual_memory()
+    return {"total": vm.total, "available": vm.available, "used": vm.used, "percent": vm.percent}
 
 
 # --- Example Usage ---

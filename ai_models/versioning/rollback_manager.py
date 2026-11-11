@@ -2,7 +2,7 @@
 
 import datetime
 import logging
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, TypedDict
 
 # Conceptual import - assumes ModelVersionControl class is available
 try:

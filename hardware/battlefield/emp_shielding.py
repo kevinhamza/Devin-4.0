@@ -1,11 +1,13 @@
 # Devin/hardware/battlefield/emp_shielding.py
 # Purpose: Conceptual software interface for monitoring and reacting to EMP events.
 
+import datetime
+import random
 import logging
 import time
 import threading
 from enum import Enum
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional, TypedDict, Literal
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -36,14 +38,16 @@ class EMPShieldingPrototype:
     Relies on hypothetical external sensors and control systems.
     """
 
-    def __init__(self, system_controller: Optional[Any] = None):
+    def __init__(self, system_controller: Optional[Any] = None, config: Optional[Dict] = None):
         """
         Initializes the EMPShieldingPrototype.
 
         Args:
             system_controller (Optional[Any]): A conceptual object used to send commands
                                                to other system components for shutdown, power cycling, etc.
+            config (Optional[Dict]): Configuration overrides (e.g., emp_monitor_interval_sec).
         """
+        self.config: Dict = config or {}
         self.current_status: EMPShieldingStatus = {
             "current_threat_level": EMPThreatLevel.NONE,
             "last_detection_time_utc": None,
@@ -162,9 +166,6 @@ class EMPShieldingPrototype:
             return
         logger.info("Starting EMP monitoring background thread...")
         self._stop_monitoring_event.clear()
-        # Assume self.config is available (passed or default in __init__)
-        if not hasattr(self, 'config'): self.config = {}
-
         self._monitoring_thread = threading.Thread(target=self.monitor_emp_status, daemon=True)
         self._monitoring_thread.start()
 

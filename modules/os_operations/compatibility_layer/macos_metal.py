@@ -221,17 +221,28 @@
 # Purpose: A functional wrapper for Apple's Metal framework, enabling
 #          GPU-accelerated computations on macOS.
 
+from __future__ import annotations
+
+import time
 import logging
 import platform
 from typing import Optional, Any, List, Tuple
-import numpy as np
+
+try:
+    import numpy as np
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    np = None  # type: ignore
+    _NUMPY_AVAILABLE = False
 
 # --- Platform-specific imports ---
 IS_MACOS = platform.system() == "Darwin"
 if IS_MACOS:
     try:
         import metal
-        import numpy as np
+        if not _NUMPY_AVAILABLE:
+            import numpy as np  # type: ignore
+            _NUMPY_AVAILABLE = True
         METAL_AVAILABLE = True
     except ImportError:
         METAL_AVAILABLE = False

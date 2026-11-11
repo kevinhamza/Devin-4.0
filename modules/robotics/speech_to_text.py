@@ -214,6 +214,7 @@
 # Devin/modules/robotics/speech_to_text.py
 # Purpose: A dedicated, functional module for Speech-to-Text (STT) recognition.
 
+import time
 import logging
 from typing import Optional, Callable
 try:

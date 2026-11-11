@@ -216,6 +216,7 @@
 # Purpose: Provides a functional interface for other AI models like Anthropic's
 #          Claude and a generic handler for any OpenAI-compatible API endpoint.
 
+import uuid
 import logging
 import os
 import json

@@ -192,15 +192,82 @@ def tool_keyboard_hotkey(*keys: str) -> str:
 def tool_screenshot(save_path: str = '', analyze: bool = False) -> str:
     e = _require_display()
     if e: return e
-    e = _require_pag()
-    if e: return e
     try:
-        img = _pag.screenshot()
+        import tempfile, shutil, time
         if not save_path:
-            import tempfile
             fd, save_path = tempfile.mkstemp(suffix='.png', prefix='devin_shot_')
             os.close(fd)
-        img.save(save_path)
+
+        saved = False
+
+        # 1. gdbus / XDG Desktop Portal (GNOME Wayland — only method that captures real screen)
+        if _IS_LINUX and os.environ.get('WAYLAND_DISPLAY'):
+            try:
+                import re as _re
+                r = subprocess.run([
+                    'gdbus', 'call', '-e',
+                    '-d', 'org.freedesktop.portal.Desktop',
+                    '-o', '/org/freedesktop/portal/desktop',
+                    '-m', 'org.freedesktop.portal.Screenshot.Screenshot',
+                    '', "{'interactive': <false>}"
+                ], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    m = _re.search(r"'(file://[^']+)'", r.stdout)
+                    if m:
+                        src = m.group(1).replace('file://', '')
+                        time.sleep(0.5)
+                        if os.path.exists(src) and os.path.getsize(src) > 10000:
+                            shutil.copy2(src, save_path)
+                            saved = True
+            except Exception:
+                pass
+
+        # 2. pyautogui (X11 / fallback)
+        if not saved and _pag:
+            try:
+                img = _pag.screenshot()
+                img.save(save_path)
+                saved = True
+            except Exception:
+                pass
+
+        # 3. mss
+        if not saved:
+            try:
+                import mss
+                with mss.mss() as sct:
+                    sct.shot(output=save_path)
+                saved = True
+            except Exception:
+                pass
+
+        # 4. scrot / gnome-screenshot / import
+        if not saved and _IS_LINUX:
+            for cmd in [['scrot', save_path],
+                        ['gnome-screenshot', '-f', save_path],
+                        ['import', '-window', 'root', save_path]]:
+                try:
+                    r = subprocess.run(cmd, capture_output=True, timeout=10)
+                    if r.returncode == 0:
+                        saved = True
+                        break
+                except Exception:
+                    pass
+
+        # 5. macOS screencapture
+        if not saved and _IS_MAC:
+            try:
+                r = subprocess.run(['screencapture', '-x', save_path], capture_output=True, timeout=10)
+                if r.returncode == 0:
+                    saved = True
+            except Exception:
+                pass
+
+        if not saved:
+            return 'ERROR: All screenshot backends failed. Install scrot or run on a real display.'
+
+        from PIL import Image
+        img = Image.open(save_path)
         w, h = img.size
         result = f'Screenshot saved: {save_path}  ({w}×{h})'
         if analyze:

@@ -1,8 +1,9 @@
 # Devin/ai_integrations/api_rate_limiter.py # Purpose: Manages rate limits across different AI API integrations to prevent exceeding quotas.
 
+import random
 import time
 import threading
-from collections import deque
+from collections import deque, defaultdict
 from typing import Dict, Optional, Tuple
 
 # Note: This implements a conceptual Token Bucket algorithm for rate limiting.

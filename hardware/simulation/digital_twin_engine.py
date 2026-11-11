@@ -1,6 +1,8 @@
 # Devin/hardware/simulation/digital_twin_engine.py
 # Purpose: Core engine for managing and running digital twin simulations.
 
+import threading
+import json
 import logging
 import time
 import uuid

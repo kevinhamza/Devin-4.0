@@ -29,6 +29,7 @@ Model string formats:
   (e.g. "openrouter/deepseek/deepseek-v4-flash@gmicloud/fp8").
 """
 from __future__ import annotations
+import sys
 import json
 import os
 import threading

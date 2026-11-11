@@ -221,6 +221,7 @@
 # Purpose: A functional wrapper for Windows-specific APIs (Win32), handling
 #          tasks like registry, services, and window management.
 
+import random
 import logging
 import platform
 from typing import Optional, Any, Dict, List

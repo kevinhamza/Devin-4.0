@@ -241,11 +241,13 @@
 # Purpose: Provides a real-time facial recognition system that identifies
 #          faces in a live video stream against a known database.
 
+from __future__ import annotations
+
 import logging
 import os
 import pickle
 from dataclasses import dataclass
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Any
 from pathlib import Path
 
 try:
@@ -257,6 +259,10 @@ try:
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
+    cv2 = None  # type: ignore
+    np = None   # type: ignore
+    face_recognition = None  # type: ignore
+    Camera = None  # type: ignore
 
 # Configure basic logging
 logger = logging.getLogger("FacialRecognition")

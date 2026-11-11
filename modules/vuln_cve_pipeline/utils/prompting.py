@@ -15,6 +15,7 @@
 
 
 # Some examples to be optionally passed along in the agent prompt.
+from pathlib import Path
 from abc import ABC
 from abc import abstractmethod
 from textwrap import dedent

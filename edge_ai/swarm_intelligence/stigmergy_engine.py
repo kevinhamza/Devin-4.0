@@ -1,12 +1,17 @@
 # Devin/edge_ai/swarm_intelligence/stigmergy_engine.py
 # Purpose: Implements stigmergy concepts for swarm agent coordination.
 
+from pathlib import Path
+import os
+import json
 import time
 import math
 import logging
 import threading
+import dataclasses
+from dataclasses import dataclass, field, asdict
 from collections import defaultdict
-from typing import Dict, List, Optional, Any, Tuple, Union
+from typing import Dict, List, Optional, Any, Tuple, Union, Literal
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -18,7 +23,7 @@ logger = logging.getLogger("StigmergyEngine")
 Location = Tuple[int, ...] # Example: (x, y) or (x, y, z)
 TraceType = str # e.g., "food_found", "danger_signal", "path_intensity", "task_available"
 
-@dataclasses.dataclass # Using dataclass for TraceInfo
+@dataclass
 class TraceInfo:
     """Holds information about a trace left in the environment."""
     intensity: float = 1.0 # Strength of the trace/pheromone

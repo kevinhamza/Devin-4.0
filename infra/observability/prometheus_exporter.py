@@ -1,6 +1,7 @@
 # Devin/infra/observability/prometheus_exporter.py
 # Purpose: Exposes Devin's operational metrics for Prometheus scraping.
 
+import random
 import datetime
 import logging
 import sys

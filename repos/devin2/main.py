@@ -237,7 +237,7 @@ class DevinAGI:
             # 2. VERIFY & CONSENT: Check the plan against ethical and utility functions
             plan = Plan(steps=[tool_call])
             violations = self.ethical_constraints.check_plan(plan)
-            if any(v.severity == "VETO" for v in violations):
+            if any(v.constraint.severity.name == "VETO" for v in violations):
                 logger.error(f"Ethical VETO: Plan '{tool_call}' violates a core principle. Aborting.")
                 break
                 

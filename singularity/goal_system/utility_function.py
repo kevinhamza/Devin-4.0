@@ -2,6 +2,7 @@
 # Purpose: Defines the core decision-making engine for the AGI, providing a
 #          formal utility function to evaluate and select the best plan of action.
 
+import os
 import logging
 import json
 from abc import ABC, abstractmethod

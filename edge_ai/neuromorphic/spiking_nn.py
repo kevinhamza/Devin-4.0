@@ -1,9 +1,10 @@
 # Devin/edge_ai/neuromorphic/spiking_nn.py
 # Purpose: Conceptual implementation of Spiking Neural Network (SNN) structures and simulation.
 
+import json
 import time
 import logging
-from typing import Dict, List, Optional, Any, Tuple, Callable
+from typing import Dict, List, Optional, Any, Tuple, Callable, Literal
 from collections import deque, defaultdict
 from dataclasses import dataclass, field
 
@@ -15,6 +16,13 @@ from dataclasses import dataclass, field
 # from lava.magma.core.process.process import AbstractProcess
 # import brian2 as b2
 print("Placeholder: Import actual SNN library (snnTorch, Lava, Brian2, Nengo, etc.)")
+
+try:
+    import numpy as np
+    _NP_AVAILABLE = True
+except ImportError:
+    _NP_AVAILABLE = False
+    print("WARNING: numpy not found. SNN weight simulation will be limited.")
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -301,12 +309,9 @@ if __name__ == "__main__":
         ]
     }
 
-    if not TF_AVAILABLE and not PYVMOMI_AVAILABLE and not OPENSTACK_SDK_AVAILABLE: # Quick check if numpy might be missing
-        try:
-             import numpy as np
-        except ImportError:
-             print ("Numpy not found, cannot run example.")
-             exit()
+    if not _NP_AVAILABLE:
+        print("Numpy not found, cannot run example.")
+        exit()
 
 
     # Initialize the SNN

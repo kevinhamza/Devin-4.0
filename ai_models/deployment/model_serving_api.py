@@ -1,5 +1,6 @@
 # Devin/ai_models/deployment/model_serving_api.py # Purpose: Provides an API endpoint (e.g., using FastAPI) to serve loaded models for inference.
 
+import time
 import os
 import logging
 from typing import Dict, Any, List, Optional, Union
@@ -153,7 +154,7 @@ async def health_check():
           response_model=InferenceResponse,
           summary="Run Model Inference",
           tags=["Inference"])
-async def predict(request: InferenceRequest):
+async def predict(request: InferenceInput):
     """
     Receives input data, runs inference using the loaded model, and returns the prediction.
     """

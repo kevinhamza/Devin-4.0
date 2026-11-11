@@ -5,6 +5,7 @@ Adds each repo to sys.path then imports classes/functions directly.
 Every import is wrapped in try/except so missing deps never crash Devin.
 """
 
+import subprocess
 import sys
 import os
 

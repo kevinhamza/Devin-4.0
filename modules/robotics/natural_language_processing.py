@@ -1,3 +1,4 @@
+from __future__ import annotations
 # # Devin/modules/robotics/natural_language_processing.py
 # # Purpose: Provides Natural Language Processing (NLP) to understand user
 # #          commands by extracting intent and entities from raw text.
@@ -189,7 +190,7 @@
 # Purpose: Provides a hybrid NLU system to understand user commands, using
 #          a local ML model for speed and an LLM for complex queries.
 
-from __future__ import annotations
+import os
 
 import logging
 import json

@@ -4,6 +4,8 @@ Cross-platform: Linux (xdotool + XDG portal), macOS (screencapture + osascript),
 Runs as a subprocess server or called directly from tool executor.
 """
 
+from typing import cast
+import random
 import os
 import sys
 import time
@@ -74,6 +76,40 @@ def _xdotool(*args, capture=True):
                        capture_output=capture, text=True)
     return r.stdout.strip(), r.returncode
 
+
+# ── Wayland ydotool support ───────────────────────────────────────────────────
+
+def _get_ydotool_socket():
+    """Find ydotoold socket path; return None if not available."""
+    for sock in [
+        os.environ.get('YDOTOOL_SOCKET', ''),
+        '/tmp/.ydotool_socket',
+        f'/run/user/{os.getuid()}/.ydotool_socket',
+    ]:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            return sock
+    return None
+
+
+_YDOTOOL_SOCKET = None  # cached lazily
+
+def _ydotool(*args):
+    """Run ydotool with the detected socket. Returns (stdout, returncode)."""
+    global _YDOTOOL_SOCKET
+    if _YDOTOOL_SOCKET is None:
+        _YDOTOOL_SOCKET = _get_ydotool_socket() or ''
+    if not _YDOTOOL_SOCKET:
+        return '', 1
+    env = {**os.environ, 'YDOTOOL_SOCKET': _YDOTOOL_SOCKET}
+    r = subprocess.run(['ydotool'] + list(args), env=env,
+                       capture_output=True, text=True)
+    return r.stdout.strip(), r.returncode
+
+
+def _is_wayland():
+    """Return True when running on Wayland (native apps need ydotool for input)."""
+    return bool(os.environ.get('WAYLAND_DISPLAY')) and PLATFORM == 'Linux'
+
 def _run(cmd, timeout=30):
     r = subprocess.run(cmd, shell=True, capture_output=True,
                        text=True, timeout=timeout)
@@ -94,69 +130,44 @@ def _screen_size():
 
 # ── Screenshot ───────────────────────────────────────────────────────────────
 
-def _take_screenshot_portal(save_path):
-    """Take screenshot via XDG Screenshot portal (dbus-fast). No dialog, no xdotool needed."""
-    import asyncio, random, string, shutil as _shutil
-    try:
-        from dbus_fast.aio import MessageBus
-        from dbus_fast import BusType, Variant
-        from dbus_fast.message import Message
-    except ImportError:
+def _take_screenshot_portal(save_path, pre_delay=0.3, timeout=5.0):
+    """Take screenshot via XDG Desktop Portal (gdbus).
+    Works on GNOME Wayland. Saves to ~/Pictures then copies to save_path.
+    pre_delay: seconds to wait before calling gdbus (let screen settle).
+    timeout:   max seconds to wait for the PNG file to appear.
+    """
+    import glob as _glob, shutil as _shutil
+
+    if pre_delay > 0:
+        time.sleep(pre_delay)
+
+    pics_dir = os.path.expanduser('~/Pictures')
+    before = set(_glob.glob(os.path.join(pics_dir, 'Screenshot*.png')))
+
+    r = subprocess.run(
+        ['gdbus', 'call', '-e',
+         '-d', 'org.freedesktop.portal.Desktop',
+         '-o', '/org/freedesktop/portal/desktop',
+         '-m', 'org.freedesktop.portal.Screenshot.Screenshot',
+         '', '{"interactive": <false>}'],
+        capture_output=True, timeout=8,
+    )
+    if r.returncode != 0:
         return False
 
-    async def _do():
-        bus = await MessageBus(bus_type=BusType.SESSION).connect()
-        token = 'devin' + ''.join(random.choices(string.ascii_lowercase, k=6))
-        sender = bus.unique_name.replace('.', '_').lstrip(':')
-        request_path = f'/org/freedesktop/portal/desktop/request/{sender}/{token}'
-
-        done = asyncio.Event()
-        result = {}
-
-        def on_msg(msg):
-            if getattr(msg, 'member', None) == 'Response' and getattr(msg, 'path', None) == request_path:
-                result['code'] = msg.body[0] if msg.body else -1
-                raw_uri = (msg.body[1] or {}).get('uri', '')
-                # dbus_fast wraps values in Variant — extract the string
-                result['uri'] = raw_uri.value if hasattr(raw_uri, 'value') else str(raw_uri)
-                done.set()
-
-        bus.add_message_handler(on_msg)
-        await bus.call(Message(
-            destination='org.freedesktop.DBus', path='/org/freedesktop/DBus',
-            interface='org.freedesktop.DBus', member='AddMatch',
-            signature='s',
-            body=[f"type='signal',interface='org.freedesktop.portal.Request',path='{request_path}'"]
-        ))
-
-        introspect = await bus.introspect('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop')
-        proxy = bus.get_proxy_object('org.freedesktop.portal.Desktop', '/org/freedesktop/portal/desktop', introspect)
-        iface = proxy.get_interface('org.freedesktop.portal.Screenshot')
-        await iface.call_screenshot('', {'interactive': Variant('b', False), 'handle_token': Variant('s', token)})
-
-        try:
-            await asyncio.wait_for(done.wait(), timeout=8.0)
-        except asyncio.TimeoutError:
-            bus.disconnect()
-            return False
-
-        bus.disconnect()
-        uri = result.get('uri', '')
-        if result.get('code') == 0 and uri.startswith('file://'):
-            src = uri[7:]
-            if os.path.exists(src) and os.path.getsize(src) > 1000:
-                _shutil.copy2(src, save_path)
-                try:
-                    os.remove(src)  # delete GNOME's copy to save disk space
-                except Exception:
-                    pass
+    # Poll until GNOME Shell writes the PNG (usually < 1s, up to timeout)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        time.sleep(0.2)
+        after = set(_glob.glob(os.path.join(pics_dir, 'Screenshot*.png')))
+        new_files = after - before
+        if new_files:
+            newest = max(new_files, key=os.path.getmtime)
+            sz = os.path.getsize(newest)
+            if sz > 10_000:
+                _shutil.copy2(newest, save_path)
                 return True
-        return False
-
-    try:
-        return asyncio.run(_do())
-    except Exception:
-        return False
+    return False
 
 
 def take_screenshot(save_path=None, region=None, as_base64=False):
@@ -178,7 +189,7 @@ def take_screenshot(save_path=None, region=None, as_base64=False):
         # Secondary: mss
         if not _file_ok(save_path) and HAS_MSS:
             try:
-                with mss.MSS() as sct:
+                with mss.mss() as sct:
                     mon = {'left': int(region[0]), 'top': int(region[1]),
                            'width': int(region[2]), 'height': int(region[3])} if region else (
                         sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
@@ -254,7 +265,7 @@ def take_screenshot(save_path=None, region=None, as_base64=False):
 
         if not _file_ok(save_path) and HAS_MSS:
             try:
-                with mss.MSS() as sct:
+                with mss.mss() as sct:
                     mon = {'left': int(region[0]), 'top': int(region[1]),
                            'width': int(region[2]), 'height': int(region[3])} if region else (
                         sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0])
@@ -361,17 +372,24 @@ def _type_via_clipboard(text):
             pass
 
 def keyboard_type(text, interval=0.03, human_like=True):
-    """Type text. Uses write() for ASCII, clipboard paste for unicode."""
+    """Type text. On Wayland: ydotool (uinput). On X11: pyautogui/xdotool."""
     if not text:
         return "Typed 0 chars"
 
-    # Split into ASCII-safe and non-ASCII chunks
-    ascii_safe = all(ord(c) < 128 for c in text)
+    # Wayland native: ydotool injects via kernel uinput — works for all apps
+    if _is_wayland():
+        sock = _get_ydotool_socket()
+        if sock:
+            delay_ms = max(1, int(interval * 1000)) if interval else 50
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            subprocess.run(['ydotool', 'type', '--next-delay', str(delay_ms), '--', text],
+                           env=env, capture_output=True)
+            return f"Typed {len(text)} chars (ydotool)"
 
+    # X11 fallback: pyautogui / xdotool
+    ascii_safe = all(ord(c) < 128 for c in text)
     if HAS_PYAUTOGUI and ascii_safe:
         if human_like:
-            import random
-            # pyautogui.write() handles regular printable chars correctly
             for ch in text:
                 try:
                     pyautogui.write(ch, interval=0)
@@ -381,7 +399,6 @@ def keyboard_type(text, interval=0.03, human_like=True):
         else:
             pyautogui.write(text, interval=interval)
     elif HAS_PYAUTOGUI:
-        # Non-ASCII: use clipboard paste for reliability on all platforms
         _type_via_clipboard(text)
     else:
         _xdotool('type', '--clearmodifiers', '--delay', str(int(interval * 1000)), text)
@@ -390,6 +407,14 @@ def keyboard_type(text, interval=0.03, human_like=True):
 def keyboard_hotkey(*keys):
     """Press key combo e.g. ctrl+c, alt+tab, super+d."""
     key_list = list(keys)
+    if _is_wayland():
+        sock = _get_ydotool_socket()
+        if sock:
+            combo = '+'.join(key_list)
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            subprocess.run(['ydotool', 'key', '--key-delay', '50', combo],
+                           env=env, capture_output=True)
+            return f"Pressed: {'+'.join(key_list)} (ydotool)"
     if HAS_PYAUTOGUI:
         pyautogui.hotkey(*key_list)
     else:
@@ -398,7 +423,26 @@ def keyboard_hotkey(*keys):
     return f"Pressed: {'+'.join(key_list)}"
 
 def keyboard_press(key):
-    """Press a single key."""
+    """Press a single key (press + release)."""
+    if _is_wayland():
+        sock = _get_ydotool_socket()
+        if sock:
+            # Map common names to ydotool names
+            _map = {'enter': 'enter', 'return': 'enter', 'esc': 'esc',
+                    'escape': 'esc', 'tab': 'tab', 'space': 'space',
+                    'backspace': 'backspace', 'delete': 'delete',
+                    'up': 'up', 'down': 'down', 'left': 'left', 'right': 'right',
+                    'home': 'home', 'end': 'end', 'pageup': 'pageup',
+                    'pagedown': 'pagedown', 'ctrl': 'ctrl', 'alt': 'alt',
+                    'shift': 'shift', 'super': 'super', 'f1': 'f1',
+                    'f2': 'f2', 'f3': 'f3', 'f4': 'f4', 'f5': 'f5',
+                    'f6': 'f6', 'f7': 'f7', 'f8': 'f8', 'f9': 'f9',
+                    'f10': 'f10', 'f11': 'f11', 'f12': 'f12'}
+            yk = _map.get(key.lower(), key.lower())
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            subprocess.run(['ydotool', 'key', '--key-delay', '50', yk],
+                           env=env, capture_output=True)
+            return f"Pressed key: {key} (ydotool)"
     if HAS_PYAUTOGUI:
         pyautogui.press(key)
     else:
@@ -672,6 +716,9 @@ def find_on_screen(image_path, confidence=0.8):
     # Manual cv2 template matching
     if HAS_CV2:
         screenshot = take_screenshot()
+        # take_screenshot returns "path.png (NKB)" — extract path only
+        if isinstance(screenshot, str) and ' ' in screenshot:
+            screenshot = screenshot.split(' ')[0]
         screen = cv2.imread(screenshot)
         template = cv2.imread(image_path)
         if screen is None or template is None:
@@ -906,7 +953,7 @@ def screenshot_all_monitors():
     paths = []
     if HAS_MSS:
         try:
-            with mss.MSS() as sct:
+            with mss.mss() as sct:
                 for i, mon in enumerate(sct.monitors[1:], 1):  # skip monitors[0] (all-in-one)
                     p = os.path.join(tempfile.gettempdir(), f'devin_mon{i}_{int(time.time())}.png')
                     shot = sct.grab(mon)

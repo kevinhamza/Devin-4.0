@@ -564,6 +564,10 @@
 # Purpose: A facade that provides a unified, high-level interface for managing
 #          resources across multiple cloud providers (AWS, GCP, Azure).
 
+from pathlib import Path
+import json
+import uuid
+import random
 import logging
 from typing import List, Optional, Dict, Any
 

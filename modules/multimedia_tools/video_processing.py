@@ -2,6 +2,7 @@
 # Purpose: A toolkit for video processing, including frame/audio extraction,
 #          metadata analysis, and AI-powered transcription.
 
+import json
 import logging
 import os
 import sys
@@ -47,7 +48,7 @@ class VideoProcessor:
             self._load_video()
         
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        if self.openai_api_key:
+        if OPENAI_AVAILABLE and self.openai_api_key:
             self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
         else:
             self.openai_client = None
@@ -81,10 +82,11 @@ class VideoProcessor:
         output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
+            from PIL import Image as _PILImage
             for i, frame in enumerate(self.clip.iter_frames(fps=1/interval_sec)):
                 frame_path = output_dir / f"frame_{i:04d}.png"
-                # moviepy frames are numpy arrays, need to convert to Image
-                img = mp.Image.fromarray(frame)
+                # moviepy frames are numpy arrays; convert via PIL
+                img = _PILImage.fromarray(frame)
                 img.save(frame_path)
             logger.info("Frame extraction complete.")
             return True

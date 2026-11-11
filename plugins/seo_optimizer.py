@@ -3,10 +3,12 @@
 #          using web scraping and AI-powered recommendations.
 
 import logging
-import requests
-from urllib.parse import urljoin, urlparse
-from collections import Counter
+import os
 import re
+import requests
+from collections import Counter
+from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 try:
     from bs4 import BeautifulSoup

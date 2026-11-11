@@ -2,6 +2,7 @@
 # Purpose: An AI-powered tool to analyze text for signs of sophisticated,
 #          AI-generated phishing and social engineering from a defensive perspective.
 
+import os
 import logging
 import json
 from dataclasses import dataclass, field

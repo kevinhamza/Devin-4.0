@@ -4,6 +4,7 @@ TTS via pyttsx3, STT via SpeechRecognition, wake-word detection.
 Gracefully degrades if audio hardware is unavailable.
 """
 
+import subprocess
 import threading
 import time
 import os
@@ -106,12 +107,15 @@ def listen(timeout: int = 8, phrase_limit: int = 15, language: str = 'en-US') ->
         if HAS_WHISPER:
             try:
                 import tempfile
-                tmp = tempfile.mktemp(suffix='.wav')
-                with open(tmp, 'wb') as f:
-                    f.write(audio.get_wav_data())
+                with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as _tf:
+                    tmp = _tf.name
+                    _tf.write(audio.get_wav_data())
                 model = _whisper.load_model('tiny')
                 result = model.transcribe(tmp)
-                os.remove(tmp)
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
                 return result.get('text', '').strip()
             except Exception:
                 pass

@@ -478,6 +478,7 @@
 # Purpose: An integrated module for controlling a robot by sending commands
 #          to the ROS 2 robotics_control_server.
 
+import random
 import logging
 import uuid
 import time
@@ -588,10 +589,11 @@ class ROS2_RobotInterface(RobotInterface):
 
         # Construct the ros2 service call command
         request_str = f"{{command: '{ros_command}', value: {ros_value}}}"
-        cli_command = ["ros2", "service", "call", self.service_name, self.service_type, request_str]
-        
-        logger.info(f"Executing ROS 2 command: {' '.join(cli_command)}")
-        success, stdout, stderr = self._run_ros_command(cli_command)
+        # _run_ros_command already prepends ["ros2"] — pass only the sub-args
+        ros_args = ["service", "call", self.service_name, self.service_type, request_str]
+
+        logger.info(f"Executing ROS 2 command: ros2 {' '.join(ros_args)}")
+        success, stdout, stderr = self._run_ros_command(ros_args)
 
         if not success:
             return False, f"ROS 2 command failed: {stderr}"

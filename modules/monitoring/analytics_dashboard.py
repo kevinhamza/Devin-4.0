@@ -9,8 +9,8 @@ import sys
 from datetime import datetime
 
 # --- Import other Devin modules ---
-from monitoring.cpu_usage import CPU_Monitor, format_bytes
-from monitoring.memory_tracker import MemoryTracker
+from .cpu_usage import CPU_Monitor
+from .memory_tracker import MemoryTracker
 
 # Configure basic logging to a file to not interfere with curses
 # logging.basicConfig(filename='dashboard.log', level=logging.INFO)

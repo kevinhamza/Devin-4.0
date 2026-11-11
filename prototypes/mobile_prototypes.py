@@ -1,6 +1,7 @@
 # Devin/prototypes/mobile_prototypes.py
 # Purpose: Prototype implementations for interacting with mobile devices (Android via ADB, conceptual Appium).
 
+from pathlib import Path
 import logging
 import os
 import subprocess

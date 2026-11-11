@@ -189,6 +189,7 @@
 # Purpose: A functional, high-level wrapper for the ROS 2 communication
 #          system, providing a robust Publish/Subscribe message bus.
 
+import time
 import logging
 import threading
 from typing import Any, Callable, Dict, Optional, Type

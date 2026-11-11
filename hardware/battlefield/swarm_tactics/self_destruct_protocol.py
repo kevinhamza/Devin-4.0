@@ -1,6 +1,7 @@
 # Devin/hardware/battlefield/swarm_tactics/self_destruct_protocol.py
 # Purpose: Conceptual framework for secure hardware data sanitization protocols.
 
+import random
 import logging
 import os
 import subprocess # For conceptual calls to sanitization tools
@@ -8,7 +9,7 @@ import shlex
 import time
 import uuid
 from enum import Enum
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, TypedDict
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')

@@ -51,11 +51,13 @@ API keys (.env or environment variables):
   HF_TOKEN           https://huggingface.co/settings/tokens  (free)
   (Ollama: no key required — install ollama.ai, run 'ollama serve')
 """
-
 from __future__ import annotations
+
+import math
+import uuid
 import os, sys, json, time, re, subprocess, html as _html_lib, sqlite3
 import urllib.request, urllib.parse, urllib.error, textwrap, shutil, base64
-import platform, signal, threading, itertools
+import platform, signal, threading, itertools, random
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -1612,28 +1614,111 @@ def tool_git_command(args: str, cwd: str = '') -> str:
 # ── Screenshot + Vision ───────────────────────────────────────────────────────
 
 def tool_screenshot(save_path: str = '') -> str:
-    """Take a screenshot. Requires display (X11/macOS/Windows)."""
+    """Take a screenshot. Uses gdbus portal on GNOME Wayland, pyautogui/scrot as fallback."""
     if not _HAS_DISPLAY:
         return "ERROR: No display available (headless environment). Cannot take screenshot."
     ts = int(time.time())
     out = save_path or f"/tmp/devin_shot_{ts}.png"
     try:
+        # Delegate to os_automation which has the full gdbus portal pipeline
+        if _os_auto_mod and hasattr(_os_auto_mod, 'take_screenshot'):
+            result = _os_auto_mod.take_screenshot(out)
+            if result and not str(result).startswith('ERROR'):
+                sz = Path(out).stat().st_size if Path(out).exists() else 0
+                return f"Screenshot saved: {out}  ({sz//1024}KB)"
+
+        # 1. scrot — fast, reliable X11/XWayland compositor screenshot
+        if _IS_LINUX and _cmd_exists('scrot'):
+            try:
+                r = subprocess.run(['scrot', '--quality', '90', out],
+                                   capture_output=True, timeout=8)
+                if r.returncode == 0 and Path(out).exists() and Path(out).stat().st_size > 500:
+                    sz = Path(out).stat().st_size
+                    return f"Screenshot saved: {out}  ({sz//1024}KB)"
+            except Exception:
+                pass
+
+        # 2. GNOME Shell Screenshot service (native Wayland, correct path)
+        if _IS_LINUX and os.environ.get('WAYLAND_DISPLAY') and _cmd_exists('gdbus'):
+            try:
+                r = subprocess.run([
+                    'gdbus', 'call', '--session',
+                    '-d', 'org.gnome.Shell',
+                    '-o', '/org/gnome/Shell/Screenshot',
+                    '-m', 'org.gnome.Shell.Screenshot.Screenshot',
+                    'false', 'false', out
+                ], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    deadline = time.time() + 4.0
+                    while time.time() < deadline:
+                        if Path(out).exists() and Path(out).stat().st_size > 500:
+                            sz = Path(out).stat().st_size
+                            return f"Screenshot saved: {out}  ({sz//1024}KB)"
+                        time.sleep(0.2)
+            except Exception:
+                pass
+
+        # 3. XDG Desktop Portal (GNOME Wayland — writes to ~/Pictures/Screenshot-N.png)
+        if _IS_LINUX and os.environ.get('WAYLAND_DISPLAY') and _cmd_exists('gdbus'):
+            try:
+                import glob as _glob
+                _pic_dir = Path.home() / 'Pictures'
+                _t_before = time.time()
+                r = subprocess.run([
+                    'gdbus', 'call', '-e',
+                    '-d', 'org.freedesktop.portal.Desktop',
+                    '-o', '/org/freedesktop/portal/desktop',
+                    '-m', 'org.freedesktop.portal.Screenshot.Screenshot',
+                    '', "{'interactive': <false>}"
+                ], capture_output=True, text=True, timeout=15)
+                if r.returncode == 0:
+                    # Portal writes asynchronously to ~/Pictures/Screenshot-N.png
+                    # Also check the URI from stdout if available
+                    import re as _re
+                    _m = _re.search(r"'(file://[^']+)'", r.stdout)
+                    _uri_path = _m.group(1).replace('file://', '') if _m else None
+
+                    deadline = time.time() + 6.0
+                    while time.time() < deadline:
+                        # Check explicit URI from portal response
+                        if _uri_path and Path(_uri_path).exists() and Path(_uri_path).stat().st_size > 500:
+                            shutil.copy2(_uri_path, out)
+                            sz = Path(out).stat().st_size
+                            return f"Screenshot saved: {out}  ({sz//1024}KB)"
+                        # Check ~/Pictures for new screenshots created after our call
+                        for f in sorted(_glob.glob(str(_pic_dir / 'Screenshot*.png')), key=lambda x: Path(x).stat().st_mtime, reverse=True):
+                            if Path(f).stat().st_mtime >= _t_before and Path(f).stat().st_size > 500:
+                                shutil.copy2(f, out)
+                                sz = Path(out).stat().st_size
+                                return f"Screenshot saved: {out}  ({sz//1024}KB)"
+                        time.sleep(0.25)
+            except Exception:
+                pass
+
+        # 4. pyautogui
         if _HAS_PAG:
             img = _pag.screenshot()
             img.save(out)
             sz = Path(out).stat().st_size
             return f"Screenshot saved: {out}  ({img.size[0]}x{img.size[1]}, {sz//1024}KB)"
-        if _cmd_exists('scrot'):
-            subprocess.run(['scrot', out], check=True, timeout=10)
-            sz = Path(out).stat().st_size
-            return f"Screenshot saved: {out}  ({sz//1024}KB)"
-        if _cmd_exists('import'):
-            subprocess.run(['import', '-window', 'root', out], check=True, timeout=10)
-            return f"Screenshot saved: {out}"
+
+        # 5. gnome-screenshot / import (ImageMagick)
+        for cmd in [['gnome-screenshot', '-f', out],
+                    ['import', '-window', 'root', out]]:
+            if _cmd_exists(cmd[0]):
+                try:
+                    subprocess.run(cmd, check=True, timeout=10)
+                    sz = Path(out).stat().st_size
+                    return f"Screenshot saved: {out}  ({sz//1024}KB)"
+                except Exception:
+                    pass
+
+        # 4. macOS
         if _IS_MAC and _cmd_exists('screencapture'):
             subprocess.run(['screencapture', '-x', out], check=True, timeout=10)
             return f"Screenshot saved: {out}"
-        return "ERROR: No screenshot tool found (install scrot or pyautogui)"
+
+        return "ERROR: No screenshot tool found. On Wayland, ensure gdbus and XDG portal are available."
     except Exception as e:
         return f"ERROR taking screenshot: {e}"
 
@@ -1729,13 +1814,21 @@ def tool_mouse_move(x: int, y: int) -> str:
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool via uinput — works for ALL applications universally
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _ydotool_mousemove(x, y):
+                return f"Mouse moved to ({x}, {y}) (ydotool)"
+        # pynput — works on X11 and sometimes Wayland cursor
+        if _kbm_ctrl:
+            _kbm_ctrl.move_to(x, y)
+            return f"Mouse moved to ({x}, {y})"
         if _HAS_PAG:
             _pag.moveTo(x, y, duration=0.15)
             return f"Mouse moved to ({x}, {y})"
         if _cmd_exists('xdotool'):
             subprocess.run(['xdotool', 'mousemove', str(x), str(y)], timeout=5)
             return f"Mouse moved to ({x}, {y})"
-        return "ERROR: No mouse control tool (install pyautogui or xdotool)"
+        return "ERROR: No mouse control tool (install ydotool or pyautogui)"
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -1743,6 +1836,18 @@ def tool_mouse_click(x: int, y: int, button: str = 'left') -> str:
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool via uinput — works for ALL applications universally
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _ydotool_mousemove(x, y):
+                time.sleep(0.08)   # allow cursor to settle before click
+                if _ydotool_click(button):
+                    return f"Clicked {button} at ({x}, {y}) (ydotool)"
+        # pynput — X11 or Wayland fallback
+        if _kbm_ctrl:
+            _kbm_ctrl.move_to(x, y)
+            time.sleep(0.05)
+            _kbm_ctrl.click(button=button)
+            return f"Clicked {button} at ({x}, {y})"
         if _HAS_PAG:
             btn_map = {'left': 'left', 'right': 'right', 'middle': 'middle'}
             _pag.click(x, y, button=btn_map.get(button, 'left'))
@@ -1760,6 +1865,20 @@ def tool_mouse_double_click(x: int, y: int) -> str:
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool — two clicks with short interval
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _ydotool_mousemove(x, y):
+                time.sleep(0.08)
+                ok1 = _ydotool_click('left')
+                time.sleep(0.08)
+                ok2 = _ydotool_click('left')
+                if ok1 and ok2:
+                    return f"Double-clicked at ({x}, {y}) (ydotool)"
+        if _kbm_ctrl:
+            _kbm_ctrl.move_to(x, y)
+            time.sleep(0.05)
+            _kbm_ctrl.click(count=2)
+            return f"Double-clicked at ({x}, {y})"
         if _HAS_PAG:
             _pag.doubleClick(x, y)
             return f"Double-clicked at ({x}, {y})"
@@ -1778,6 +1897,20 @@ def tool_mouse_drag(x1: int, y1: int, x2: int, y2: int) -> str:
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool press + move + release via uinput
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            ok = (_ydotool_mousemove(x1, y1)
+                  and time.sleep(0.08) is None
+                  and _ydotool_run(['click', '0x40'])  # press left button
+                  and time.sleep(0.05) is None
+                  and _ydotool_mousemove(x2, y2)
+                  and time.sleep(0.08) is None
+                  and _ydotool_run(['click', '0x80']))  # release left button
+            if ok:
+                return f"Dragged from ({x1},{y1}) to ({x2},{y2}) (ydotool)"
+        if _kbm_ctrl:
+            _kbm_ctrl.drag(x1, y1, x2, y2)
+            return f"Dragged from ({x1},{y1}) to ({x2},{y2})"
         if _HAS_PAG:
             _pag.moveTo(x1, y1, duration=0.1)
             _pag.dragTo(x2, y2, duration=0.3, button='left')
@@ -1796,6 +1929,11 @@ def tool_mouse_scroll(x: int, y: int, direction: str = 'down', amount: int = 3) 
     err = _require_display()
     if err: return err
     try:
+        if _kbm_ctrl:
+            _kbm_ctrl.move_to(x, y)
+            dy = -amount if direction == 'down' else amount
+            _kbm_ctrl.scroll(0, dy)
+            return f"Scrolled {direction} at ({x},{y})"
         if _HAS_PAG:
             dy = -amount if direction == 'down' else amount
             _pag.moveTo(x, y)
@@ -1815,6 +1953,9 @@ def tool_get_mouse_position() -> str:
     err = _require_display()
     if err: return err
     try:
+        if _kbm_ctrl:
+            x, y = _kbm_ctrl.get_mouse_position()
+            return f"Mouse at ({x}, {y})"
         if _HAS_PAG:
             pos = _pag.position()
             return f"Mouse at ({pos.x}, {pos.y})"
@@ -1828,10 +1969,118 @@ def tool_get_mouse_position() -> str:
 
 # ── Keyboard control ──────────────────────────────────────────────────────────
 
+def _ensure_ydotool() -> bool:
+    """Ensure ydotoold daemon is running and ydotool is installed. Auto-installs on Debian/Ubuntu."""
+    if not _cmd_exists('ydotool'):
+        # Auto-install ydotool
+        try:
+            subprocess.run(['sudo', 'apt-get', 'install', '-y', 'ydotool'],
+                           capture_output=True, timeout=60)
+        except Exception:
+            pass
+    if not _cmd_exists('ydotool'):
+        return False
+    # Check if daemon is running
+    for sock in [os.environ.get('YDOTOOL_SOCKET', ''), '/tmp/.ydotool_socket',
+                 f'/run/user/{os.getuid()}/.ydotool_socket']:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            return True
+    # Try to start ydotoold, then poll for socket to appear (up to 5 seconds)
+    try:
+        subprocess.Popen(['sudo', 'ydotoold'], stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL)
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            time.sleep(0.3)
+            for sock in ['/tmp/.ydotool_socket',
+                         f'/run/user/{os.getuid()}/.ydotool_socket']:
+                if os.path.exists(sock):
+                    try:
+                        subprocess.run(['sudo', 'chmod', '666', sock],
+                                       capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+                    if os.access(sock, os.W_OK):
+                        return True
+    except Exception:
+        pass
+    return False
+
+
+def _ydotool_type(text: str, interval_ms: int = 50) -> bool:
+    """Type text via ydotool. Returns True if successful."""
+    for sock in [os.environ.get('YDOTOOL_SOCKET', ''), '/tmp/.ydotool_socket',
+                 f'/run/user/{os.getuid()}/.ydotool_socket']:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            r = subprocess.run(['ydotool', 'type', '--next-delay', str(interval_ms), '--', text],
+                               env=env, capture_output=True, timeout=30)
+            return r.returncode == 0
+    return False
+
+
+def _ydotool_key(key: str) -> bool:
+    """Press a key via ydotool. Returns True if successful."""
+    _KEY_MAP_YD = {
+        'enter': 'enter', 'return': 'enter', 'esc': 'esc', 'escape': 'esc',
+        'tab': 'tab', 'space': 'space', 'backspace': 'backspace',
+        'delete': 'delete', 'up': 'up', 'down': 'down', 'left': 'left',
+        'right': 'right', 'home': 'home', 'end': 'end',
+        'pageup': 'pageup', 'pagedown': 'pagedown', 'page_up': 'pageup', 'page_down': 'pagedown',
+        'f1': 'f1', 'f2': 'f2', 'f3': 'f3', 'f4': 'f4', 'f5': 'f5', 'f6': 'f6',
+        'f7': 'f7', 'f8': 'f8', 'f9': 'f9', 'f10': 'f10', 'f11': 'f11', 'f12': 'f12',
+    }
+    yk = _KEY_MAP_YD.get(key.lower(), key.lower())
+    for sock in [os.environ.get('YDOTOOL_SOCKET', ''), '/tmp/.ydotool_socket',
+                 f'/run/user/{os.getuid()}/.ydotool_socket']:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            r = subprocess.run(['ydotool', 'key', '--key-delay', '50', yk],
+                               env=env, capture_output=True, timeout=5)
+            return r.returncode == 0
+    return False
+
+
+def _ydotool_run(args: List[str]) -> bool:
+    """Run any ydotool subcommand with automatic socket discovery. Returns True if successful."""
+    for sock in [os.environ.get('YDOTOOL_SOCKET', ''), '/tmp/.ydotool_socket',
+                 f'/run/user/{os.getuid()}/.ydotool_socket']:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+            r = subprocess.run(['ydotool'] + args, env=env, capture_output=True, timeout=10)
+            return r.returncode == 0
+    return False
+
+
+def _ydotool_mousemove(x: int, y: int) -> bool:
+    """Move mouse to absolute pixel coordinates via ydotool (works for ALL Wayland apps)."""
+    return _ydotool_run(['mousemove', '--absolute', '-x', str(x), '-y', str(y)])
+
+
+def _ydotool_click(button: str = 'left') -> bool:
+    """Click a mouse button via ydotool (works for ALL Wayland apps).
+    button codes: left=0xC0, right=0xC1, middle=0xC2 (press+release combined).
+    """
+    btn_code = {'left': '0xC0', 'right': '0xC1', 'middle': '0xC2'}.get(button, '0xC0')
+    return _ydotool_run(['click', btn_code])
+
+
 def tool_keyboard_type(text: str) -> str:
+    """Type text. Uses ydotool on Wayland (works for ALL apps), pynput on X11."""
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool via uinput works for ALL apps (native Wayland + XWayland)
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _kbm_ctrl and _kbm_ctrl._use_ydotool:
+                _kbm_ctrl.type_text(text, interval=0.05)
+                return f"Typed: {text[:100]} (ydotool/Wayland)"
+            if _ydotool_type(text):
+                return f"Typed: {text[:100]} (ydotool)"
+        # X11 / macOS / Windows: use pynput via kbm_ctrl
+        if _kbm_ctrl:
+            _kbm_ctrl.type_text(text, interval=0.03)
+            return f"Typed: {text[:100]} (pynput)"
         if _HAS_PAG:
             _pag.typewrite(text, interval=0.03)
             return f"Typed: {text[:100]}"
@@ -1844,9 +2093,21 @@ def tool_keyboard_type(text: str) -> str:
         return f"ERROR: {e}"
 
 def tool_keyboard_press(key: str) -> str:
+    """Press a single key. Uses ydotool on Wayland (works for ALL apps), pynput on X11."""
     err = _require_display()
     if err: return err
     try:
+        # Wayland: ydotool via uinput — works for ALL applications
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _kbm_ctrl and _kbm_ctrl._use_ydotool:
+                _kbm_ctrl.tap(key)
+                return f"Pressed key: {key} (ydotool/Wayland)"
+            if _ydotool_key(key):
+                return f"Pressed key: {key} (ydotool)"
+        # X11 / macOS / Windows: pynput
+        if _kbm_ctrl:
+            _kbm_ctrl.tap(key)
+            return f"Pressed key: {key} (pynput)"
         if _HAS_PAG:
             _pag.press(key.lower())
             return f"Pressed key: {key}"
@@ -1868,11 +2129,35 @@ def tool_keyboard_press(key: str) -> str:
         return f"ERROR: {e}"
 
 def tool_keyboard_hotkey(keys: List[str]) -> str:
-    """Press a key combination. keys = ['ctrl', 'c'] for Ctrl+C."""
+    """Press a key combination. keys = ['ctrl', 'c'] for Ctrl+C.
+    Uses ydotool on Wayland (works for ALL apps), pynput on X11."""
     err = _require_display()
     if err: return err
     try:
         combo = '+'.join(keys)
+        # Wayland: ydotool key combo
+        if _IS_LINUX and bool(os.environ.get('WAYLAND_DISPLAY')):
+            if _kbm_ctrl and _kbm_ctrl._use_ydotool:
+                _kbm_ctrl.hotkey(*keys)
+                return f"Hotkey: {combo} (ydotool/Wayland)"
+            # Manual ydotool combo
+            _YD_NORM = {'ctrl': 'ctrl', 'alt': 'alt', 'shift': 'shift',
+                        'super': 'super', 'win': 'super', 'enter': 'enter',
+                        'return': 'enter', 'tab': 'tab', 'esc': 'esc',
+                        'escape': 'esc', 'backspace': 'backspace', 'delete': 'delete'}
+            yd_keys = '+'.join(_YD_NORM.get(k.lower(), k.lower()) for k in keys)
+            for sock in [os.environ.get('YDOTOOL_SOCKET', ''), '/tmp/.ydotool_socket',
+                         f'/run/user/{os.getuid()}/.ydotool_socket']:
+                if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+                    env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+                    r = subprocess.run(['ydotool', 'key', '--key-delay', '50', yd_keys],
+                                       env=env, capture_output=True, timeout=5)
+                    if r.returncode == 0:
+                        return f"Hotkey: {combo} (ydotool)"
+        # X11 / macOS / Windows: pynput
+        if _kbm_ctrl:
+            _kbm_ctrl.hotkey(*keys)
+            return f"Hotkey: {combo} (pynput)"
         if _HAS_PAG:
             _pag.hotkey(*[k.lower() for k in keys])
             return f"Hotkey: {combo}"
@@ -3632,14 +3917,9 @@ find_and_focus('{app_name}')
 
 
 def tool_type_text_xplat(text: str, speed: float = 0.0) -> str:
-    """Type text using the best available method on this platform."""
-    # Try xdotool on Linux first (most reliable)
-    if _IS_LINUX and _cmd_exists('xdotool') and _HAS_DISPLAY:
-        r = subprocess.run(['xdotool', 'type', '--clearmodifiers', '--', text],
-                           capture_output=True, text=True, timeout=30)
-        if r.returncode == 0:
-            return f"Typed {len(text)} chars via xdotool"
-    # Fall back to pyautogui/pynput
+    """Type text using the best available method on this platform.
+    On Wayland: ydotool (kernel uinput — works for ALL apps).
+    On X11: pynput/xdotool."""
     return tool_keyboard_type(text)
 
 
@@ -9593,26 +9873,91 @@ class OpenAIProvider:
 
 # ─── Ollama (local) ───────────────────────────────────────────────────────────
 
+def _ollama_is_running(base_url: str = 'http://localhost:11434') -> bool:
+    """Return True if the Ollama server is reachable and has at least one model."""
+    try:
+        req = urllib.request.Request(f"{base_url}/api/tags")
+        with urllib.request.urlopen(req, timeout=3) as r:
+            data = json.loads(r.read())
+        return bool(data.get('models'))
+    except Exception:
+        return False
+
 class OllamaProvider:
     """Local LLM via Ollama (https://ollama.com). No API key required."""
 
-    def __init__(self, base_url: str = '', model: str = 'llama3.2'):
+    # Preference order for auto-selection (larger/smarter first)
+    _PREFERRED_MODELS = [
+        'llama3.3', 'llama3.2', 'llama3.1', 'llama3',
+        'qwen2.5:72b', 'qwen2.5:32b', 'qwen2.5:14b', 'qwen2.5:7b', 'qwen2.5:3b',
+        'mistral', 'mixtral', 'phi4', 'phi3', 'gemma2', 'gemma',
+        'deepseek-r1', 'deepseek-coder',
+        'codellama', 'vicuna', 'orca-mini',
+        'qwen2.5:1.5b', 'qwen2.5:0.5b',  # small fallbacks last
+    ]
+
+    # Compact system prompt for small models (< ~3B params) to avoid context overflow
+    _COMPACT_SYSTEM = (
+        "You are Devin, an autonomous AI that controls a Linux desktop with mouse, keyboard, and vision.\n"
+        "RULES: "
+        "1) The screen state is given at the start of the user message — read it. "
+        "2) For YouTube: use youtube_search(query='...') — NEVER navigate_browser with /watch?v= URLs. "
+        "3) For Google: use browser_search(query='...'). "
+        "4) For shell: use shell_run(cmd='...'). "
+        "5) Click with click(x,y), type with type_text(text='...'). "
+        "6) After each action, call screenshot() to verify. "
+        "7) NEVER fabricate video IDs or URLs.\n"
+        "Tool format: <tool_call>{\"name\": \"tool_name\", \"args\": {...}}</tool_call>"
+    )
+
+    def __init__(self, base_url: str = '', model: str = ''):
         self.base_url = (base_url or os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')).rstrip('/')
-        self.model    = model
-        self.name     = f"ollama/{model}"
+        self.model    = model or os.environ.get('OLLAMA_MODEL', '') or self._pick_best_model()
+        self.name     = f"ollama/{self.model}"
+        # Detect small models by param count hint in name
+        name_lower = self.model.lower()
+        self._is_small = any(tag in name_lower for tag in [':0.5b', ':1b', ':1.5b', ':2b', '0.5b', '1b-'])
+
+    def _pick_best_model(self) -> str:
+        """Auto-select the best available Ollama model."""
+        try:
+            req = urllib.request.Request(f"{self.base_url}/api/tags")
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.loads(r.read())
+            available = {m['name'].split(':')[0].lower(): m['name']
+                         for m in data.get('models', [])}
+            for pref in self._PREFERRED_MODELS:
+                key = pref.split(':')[0].lower()
+                if key in available:
+                    return available[key]
+                # exact match
+                for aname in data.get('models', []):
+                    if aname['name'] == pref:
+                        return pref
+            # Fall back to first available model
+            models = data.get('models', [])
+            if models:
+                return models[0]['name']
+        except Exception:
+            pass
+        return 'llama3.2'
 
     def call(self, messages: list, system: str = '') -> Tuple[str, List[dict]]:
+        # Use compact system prompt for tiny models to avoid context overflow/refusals
+        effective_system = self._COMPACT_SYSTEM if self._is_small else system
         msgs: List[dict] = []
-        if system:
-            msgs.append({"role": "system", "content": system})
+        if effective_system:
+            msgs.append({"role": "system", "content": effective_system})
         for m in messages:
             content = m.get("content", "")
             if isinstance(content, list):
                 content = " ".join(str(b.get("text") or b.get("content") or "") for b in content)
             msgs.append({"role": m["role"], "content": content})
 
+        # Limit num_predict for tiny models
+        num_predict = 512 if self._is_small else 4096
         body = {"model": self.model, "messages": msgs, "stream": False,
-                "options": {"num_predict": 4096}}
+                "options": {"num_predict": num_predict}}
         hdrs = {"Content-Type": "application/json"}
         url  = f"{self.base_url}/api/chat"
 
@@ -10034,7 +10379,7 @@ def _pick_provider(name: str = '', model: str = ''):
         if not hfk: raise ValueError("HF_TOKEN not set (get free one at huggingface.co/settings/tokens)")
         return HuggingFaceProvider(hfk, model or '')
     if name in ('ollama', 'local'):
-        return OllamaProvider(model=model or 'llama3.2')
+        return OllamaProvider(model=model)
     if name in ('fcc', 'free', 'freeclaude', 'free-claude', 'free_claude'):
         if not FreeClaude.is_running() and not FreeClaudeProvider.is_available():
             raise ValueError("FCC server not running. Start it: pip install free-claude-code && fcc-server")
@@ -10050,13 +10395,17 @@ def _pick_provider(name: str = '', model: str = ''):
         return FreeClaude(model=model)
     if FreeClaudeProvider.is_available():
         return FreeClaudeProvider(model=model or '')
+    # Fallback: local Ollama if running
+    ollama_probe = OllamaProvider()
+    if ollama_probe.model != 'llama3.2' or _ollama_is_running(ollama_probe.base_url):
+        return ollama_probe
     raise ValueError(
         "No AI provider available.\n"
         "  Option 1 (free): Set HF_TOKEN in .env  →  huggingface.co/settings/tokens\n"
         "  Option 2 (free): Set GEMINI_API_KEY in .env  →  aistudio.google.com\n"
         "  Option 3 (free, no key): Install & run FCC proxy  →  pip install free-claude-code && fcc-server\n"
         "  Option 4: Set ANTHROPIC_API_KEY or OPENAI_API_KEY in .env\n"
-        "  Option 5 (local): Install Ollama  →  ollama.ai, then: ./devin --provider ollama"
+        "  Option 5 (local): Install Ollama  →  ollama.ai, then: ollama pull llama3.2 && ./devin"
     )
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -10126,8 +10475,8 @@ LINUX:
   Open apps:    execute_shell("firefox &") or open_application("firefox")
   Open URLs:    open_url(url) or execute_shell("xdg-open URL")
   File manager: execute_shell("nautilus /path &") or "thunar /path &"
-  Screenshots:  screenshot() → always works; scrot/gnome-screenshot for CLI
-  Keyboard:     keyboard_type / keyboard_hotkey / xdotool type --
+  Screenshots:  screenshot() → uses gdbus XDG portal on Wayland (always works)
+  Keyboard:     keyboard_type / keyboard_hotkey → ydotool on Wayland (uinput, ALL apps)
   Window focus: focus_app("firefox") or execute_shell("wmctrl -a firefox")
   Package mgr:  execute_shell("apt install pkg -y") or "pip install pkg"
   Pentest:      nmap, burpsuite, metasploit, sqlmap — all via execute_shell()
@@ -11523,7 +11872,7 @@ def repl(provider_name: str = '', model: str = ''):
 
             elif cmd == '/checkpoint':
                 # Manage task checkpoints
-                sub = args.strip().split(None, 2)
+                sub = arg.strip().split(None, 2)
                 subcmd = sub[0] if sub else 'list'
                 if subcmd == 'list' or not sub:
                     print(tool_checkpoint_list())
@@ -11634,8 +11983,9 @@ def _cli_doctor() -> int:
         ('firefox', 'browser (Linux/Win)'),
         ('chromium', 'browser'),
         ('google-chrome', 'browser'),
-        ('xdotool', 'X11 mouse/keyboard/window (Linux)'),
-        ('scrot', 'screenshot (Linux)'),
+        ('ydotool', 'Wayland keyboard/mouse injection (uinput, all apps)'),
+        ('xdotool', 'X11 mouse/keyboard/window (Linux, X11 only)'),
+        ('scrot', 'screenshot (Linux, X11)'),
         ('wmctrl', 'window management (Linux)'),
         ('xclip', 'clipboard (Linux)'),
         ('nmap', 'network scanning (authorized only)'),

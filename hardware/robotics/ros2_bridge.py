@@ -1,12 +1,14 @@
 # Devin/hardware/robotics/ros2_bridge.py
 # Purpose: Conceptual bridge for interacting with a ROS 2 system using rclpy.
 
+import uuid
 import logging
 import os
 import sys
 import time
 import threading
-from typing import Dict, Any, List, Optional, Callable, Type
+import functools
+from typing import Dict, Any, List, Optional, Callable, Type, Union
 from enum import Enum
 
 # --- Conceptual Imports for ROS 2 (rclpy) ---
@@ -273,76 +275,6 @@ class ROS2Bridge:
         except Exception as e:
             logger.error(f"Failed to create subscriber for '{topic_name}': {e}")
             return False
-
-# Ensure logger, rclpy, Node, QoS, ActionClient, and placeholder messages are available
-import logging
-logger = logging.getLogger("ROS2Bridge") # Ensure logger is accessible
-
-import os
-import sys
-import time
-import threading
-import functools # For partial in callbacks
-from typing import Dict, Any, List, Optional, Callable, Type
-from enum import Enum
-
-# --- Conceptual Imports / Placeholders (from Part 1) ---
-try:
-    import rclpy
-    from rclpy.node import Node
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-    from rclpy.action import ActionClient
-    from rclpy.task import Future # For service/action futures
-    RCLPY_AVAILABLE = True
-except ImportError:
-    rclpy = None; Node = object; QoSProfile = None; ReliabilityPolicy = None; HistoryPolicy = None; ActionClient = None; Future = None # type: ignore
-    RCLPY_AVAILABLE = False
-
-if not RCLPY_AVAILABLE:
-    class MsgPlaceholder: pass
-    class Twist(MsgPlaceholder): linear: Any={}; angular: Any={} # type: ignore
-    class PoseStamped(MsgPlaceholder): header: Any; pose: Any # type: ignore
-    class LaserScan(MsgPlaceholder): ranges: List[float]=[] # type: ignore
-    class SrvPlaceholder: pass
-    class Trigger(SrvPlaceholder): # type: ignore
-        Request = type('TriggerRequest', (object,), {})
-        Response = type('TriggerResponse', (object,), {'success': False, 'message': ''})
-    class ActionPlaceholder: # type: ignore
-        Goal = type('ActionGoal', (object,), {})
-        Result = type('ActionResult', (object,), {})
-        Feedback = type('ActionFeedback', (object,), {})
-
-    CONCEPTUAL_MSG_TYPE_MAP = { # Simplified mapping
-        "geometry_msgs/msg/Twist": Twist,
-        "geometry_msgs/msg/PoseStamped": PoseStamped,
-        "sensor_msgs/msg/LaserScan": LaserScan,
-        "std_srvs/srv/Trigger": Trigger,
-    }
-else:
-    CONCEPTUAL_MSG_TYPE_MAP = {}
-    try: from geometry_msgs.msg import Twist as ActualTwist; CONCEPTUAL_MSG_TYPE_MAP["geometry_msgs/msg/Twist"] = ActualTwist; Twist = ActualTwist
-    except ImportError:
-        if not RCLPY_AVAILABLE:
-            Twist = Twist # Keep placeholder
-    try: from geometry_msgs.msg import PoseStamped as ActualPoseStamped; CONCEPTUAL_MSG_TYPE_MAP["geometry_msgs/msg/PoseStamped"] = ActualPoseStamped; PoseStamped = ActualPoseStamped
-    except ImportError:
-        if not RCLPY_AVAILABLE:
-            PoseStamped = PoseStamped
-    try: from sensor_msgs.msg import LaserScan as ActualLaserScan; CONCEPTUAL_MSG_TYPE_MAP["sensor_msgs/msg/LaserScan"] = ActualLaserScan; LaserScan = ActualLaserScan
-    except ImportError:
-        if not RCLPY_AVAILABLE:
-            LaserScan = LaserScan
-    try: from std_srvs.srv import Trigger as ActualTrigger; CONCEPTUAL_MSG_TYPE_MAP["std_srvs/srv/Trigger"] = ActualTrigger; Trigger = ActualTrigger
-    except ImportError:
-        if not RCLPY_AVAILABLE:
-            Trigger = Trigger
-    # Add more mappings for actions etc. as needed by examples
-
-
-# --- Continue ROS2Bridge Class ---
-class ROS2Bridge:
-    # (Assume __init__, _get_msg_type_from_string, create_publisher,
-    #  _generic_subscriber_callback, create_subscriber from Part 1 are here)
 
     def create_service_client(self, service_name: str, srv_type_str: str) -> bool:
         """

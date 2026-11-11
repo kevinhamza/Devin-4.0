@@ -1,6 +1,7 @@
 # Devin/enterprise/license_manager.py
 # Purpose: Validates user licenses or subscription tiers for premium features/limits.
 
+from pathlib import Path
 import os
 import json
 import logging

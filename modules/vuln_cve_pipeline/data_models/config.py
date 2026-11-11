@@ -14,6 +14,8 @@
 # limitations under the License.
 
 
+from typing import Literal
+import json
 import os
 import tempfile
 import typing

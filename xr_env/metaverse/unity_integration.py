@@ -2,6 +2,7 @@
 # Purpose: Provides a real-time bridge to the Unity 3D engine, enabling
 #          programmatic control over a 3D world via WebSockets.
 
+import time
 import logging
 import asyncio
 import websockets

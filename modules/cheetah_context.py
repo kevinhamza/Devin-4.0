@@ -20,6 +20,7 @@ The helper functions (``get_git_info``, ``get_claude_md``,
 that want to show individual context blocks (e.g. ``/doctor``).
 """
 from __future__ import annotations
+import sys
 
 import os
 import re

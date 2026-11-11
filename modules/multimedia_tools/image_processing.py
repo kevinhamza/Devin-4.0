@@ -2,6 +2,9 @@
 # Purpose: A comprehensive toolkit for image processing, including EXIF data
 #          analysis, OCR, and steganography.
 
+from __future__ import annotations
+
+import json
 import logging
 import os
 import sys

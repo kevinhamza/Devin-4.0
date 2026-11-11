@@ -1,6 +1,8 @@
 # Devin/legal/gdpr_compliance/dsar_handler.py
 # Purpose: Manages Data Subject Access Requests (DSARs) as per GDPR Article 15.
 
+import time
+import random
 import logging
 import uuid
 import json
@@ -63,9 +65,9 @@ class DSARRequestType(Enum):
 @dataclass
 class DSARCase:
     """Represents a single Data Subject Access Request case."""
-    case_id: str = field(default_factory=lambda: f"DSAR-{uuid.uuid4().hex[:8].upper()}")
     subject_identifier: str # e.g., email address, user ID
     request_type: DSARRequestType
+    case_id: str = field(default_factory=lambda: f"DSAR-{uuid.uuid4().hex[:8].upper()}")
     request_details: Optional[str] = None
     date_received: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     due_date: str = field(default_factory=lambda: (datetime.utcnow() + timedelta(days=30)).isoformat()) # GDPR: 1 month

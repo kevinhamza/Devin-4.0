@@ -290,9 +290,13 @@
 # Purpose: A facade that provides a unified, high-level interface for
 #          controlling mobile devices via the MobileIntegrationServer.
 
+import subprocess
+import time
+import uuid
+import random
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 try:
     import requests

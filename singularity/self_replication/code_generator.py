@@ -2,6 +2,7 @@
 # Purpose: Provides a system for the AGI to analyze its own source code,
 #          generate improved versions, and verify their utility.
 
+import os
 import logging
 import json
 from pathlib import Path

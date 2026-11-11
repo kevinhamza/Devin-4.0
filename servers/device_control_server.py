@@ -2,6 +2,7 @@
 # Purpose: A microservice to control hardware and connected peripherals like
 #          webcams and serial port devices.
 
+from pathlib import Path
 import logging
 import threading
 import time

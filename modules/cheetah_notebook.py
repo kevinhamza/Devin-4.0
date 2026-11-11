@@ -1,5 +1,6 @@
 """tools_notebook.py — NotebookEdit tool implementation."""
 from __future__ import annotations
+import random
 
 import json
 import re

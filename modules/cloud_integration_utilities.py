@@ -255,6 +255,8 @@
 # Purpose: Provides shared, stateless utility functions and data models
 #          for normalizing and managing multi-cloud resources.
 
+import os
+import json
 import logging
 from enum import Enum
 from dataclasses import dataclass, field

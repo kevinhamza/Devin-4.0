@@ -7,8 +7,9 @@ import psutil
 
 class DeviceControl:
 
-    def __init__(self, config):
-        self.config = config
+    def __init__(self, config=None):
+        self.config = config or {}
+        self.os_name = platform.system()  # 'Windows', 'Linux', or 'Darwin'
 
     def move_mouse(self, x, y):
         """Move the mouse to a specific position"""

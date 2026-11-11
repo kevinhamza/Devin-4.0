@@ -84,6 +84,73 @@ for _base_name in _FIRST_PARTY:
 
 import importlib as _il
 import importlib.util as _ilu
+import logging as _logging
+import warnings as _warnings
+
+# ── Suppress noisy startup output during module loading ───────────────────────
+# Many optional-dependency warnings and "Conceptual/Placeholder" messages are
+# printed at import time. Suppress them unless --verbose is requested.
+_QUIET_STARTUP = '--verbose' not in sys.argv and '--debug' not in sys.argv
+
+class _StartupFilter(_logging.Filter):
+    """Drop known-noisy startup log records during initial module load."""
+    _NOISE = ('Conceptual', 'Placeholder', 'prototype', 'non-functional',
+              'not found', 'not available', 'not installed', 'not reachable',
+              'library not found', 'SDK not found', 'module not found',
+              'Using placeholder', 'Using placeholders', 'will be skipped',
+              'DeprecationWarning')
+    def filter(self, record: _logging.LogRecord) -> bool:
+        if record.levelno >= _logging.ERROR:
+            return True  # always show errors
+        msg = record.getMessage()
+        return not any(n.lower() in msg.lower() for n in self._NOISE)
+
+_startup_filter = _StartupFilter()
+
+class _StartupStdoutSuppress:
+    """Context manager that silences print()/warning output from module imports."""
+    def __enter__(self):
+        if _QUIET_STARTUP:
+            self._old_out = sys.stdout
+            self._old_err = sys.stderr
+            self._devnull = open(os.devnull, 'w')
+            sys.stdout = self._devnull
+            sys.stderr = self._devnull
+        return self
+    def __exit__(self, *_):
+        if _QUIET_STARTUP:
+            sys.stdout = self.__dict__.get('_old_out', sys.__stdout__)
+            sys.stderr = self.__dict__.get('_old_err', sys.__stderr__)
+            try:
+                self._devnull.close()
+            except Exception:
+                pass
+
+def _quiet_load_start():
+    """Suppress noisy print/log output before bulk module loading."""
+    if not _QUIET_STARTUP:
+        return
+    _warnings.filterwarnings('ignore')  # suppress all Python warnings
+    _logging.root.addFilter(_startup_filter)
+    _logging.root.setLevel(_logging.ERROR)  # only errors bubble through root
+    # Suppress known noisy third-party and project loggers
+    for _noisy in (
+        'scapy', 'cryptography', 'urllib3', 'paramiko', 'asyncio',
+        'ToolExecutor', 'RealityEngineFacade', 'XRFacade', 'QuantumFacade',
+        'PrivacyFacade', 'ResilienceFacade', 'PlatformOps', 'PostQuantumCrypto',
+        'modules', 'ai_core', 'ai_ethics', 'experimental',
+    ):
+        _logging.getLogger(_noisy).setLevel(_logging.CRITICAL)
+
+def _quiet_load_end():
+    """Re-enable normal logging after module loading is complete."""
+    if not _QUIET_STARTUP:
+        return
+    try:
+        _logging.root.removeFilter(_startup_filter)
+        _logging.root.setLevel(_logging.WARNING)  # restore normal level
+    except Exception:
+        pass
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Universal dynamic module loader
@@ -309,15 +376,18 @@ class DevinAGI:
 
     def __init__(self):
         self.modules: Dict[str, Optional[Any]] = {}
-        self._load_all()
-        _bootstrap_capabilities()
+        self._load_all()  # _bootstrap_capabilities() is called inside _load_all
 
     def _load_all(self) -> None:
-        for dir_name in self.SCAN_DIRS:
-            directory = ROOT / dir_name
-            if not directory.is_dir():
-                continue
-            self.modules.update(_discover_dir(directory))
+        _quiet_load_start()
+        with _StartupStdoutSuppress():
+            for dir_name in self.SCAN_DIRS:
+                directory = ROOT / dir_name
+                if not directory.is_dir():
+                    continue
+                self.modules.update(_discover_dir(directory))
+            _bootstrap_capabilities()
+        _quiet_load_end()
 
     @property
     def os_agent(self):        return CAPS.os_agent
@@ -505,7 +575,9 @@ def main():
     # Set DEVIN_USE_CLASSIC_REPL=1 to use agent.py's built-in REPL instead.
     if not args.test and not args.prompt and not os.environ.get('DEVIN_USE_CLASSIC_REPL'):
         try:
-            from modules.devin_repl import start_repl
+            # Suppress any import-time noise from devin_repl and its imports
+            with _StartupStdoutSuppress():
+                from modules.devin_repl import start_repl
             start_repl(devin)
             sys.exit(0)
         except BaseException:

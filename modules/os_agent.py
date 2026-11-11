@@ -15,6 +15,7 @@ detection first; coordinates only as a last resort after vision.
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import platform
@@ -25,7 +26,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 log = logging.getLogger("OSAgent")
 if not log.handlers:
@@ -65,65 +66,157 @@ _HAS_DISPLAY = _has_display()  # cache for startup check
 # Screenshot backend
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _is_screenshot_black(path: str) -> bool:
+    """Return True if the screenshot is entirely or mostly black (empty / failed capture)."""
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("RGB").resize((32, 32))
+        pixels = list(img.getdata())
+        avg = sum(sum(p) for p in pixels) // (len(pixels) * 3)
+        return avg < 8  # all-black or near-black
+    except Exception:
+        return False
+
+
+def _screenshot_hash(path: str) -> int:
+    """Return a simple hash of a screenshot for change detection."""
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("RGB").resize((16, 16))
+        return hash(img.tobytes())
+    except Exception:
+        try:
+            return hash(open(path, 'rb').read(4096))
+        except Exception:
+            return 0
+
+
+def _wait_for_stable_screen(max_wait: float = 12.0, stable_duration: float = 1.5,
+                             check_interval: float = 0.6) -> Optional[str]:
+    """Wait until the screen stops changing (page load complete, animation done).
+    Returns path of the stable screenshot, or the last screenshot on timeout.
+    """
+    deadline = time.time() + max_wait
+    last_hash = 0
+    stable_since: Optional[float] = None
+    last_path: Optional[str] = None
+
+    while time.time() < deadline:
+        path = _take_screenshot()
+        if path:
+            h = _screenshot_hash(path)
+            last_path = path
+            if h == last_hash:
+                if stable_since is None:
+                    stable_since = time.time()
+                elif time.time() - stable_since >= stable_duration:
+                    return path  # screen stable for stable_duration seconds
+            else:
+                last_hash = h
+                stable_since = None
+        time.sleep(check_interval)
+
+    return last_path  # timeout — return whatever we have
+
+
 def _take_screenshot(path: Optional[str] = None) -> Optional[str]:
-    """Capture the screen and return the file path. Returns None on failure."""
+    """Capture the full screen and return the saved file path, or None on failure.
+
+    Backend order (most reliable for GNOME Wayland first):
+      1. XDG Desktop Portal via gdbus subprocess  — works on GNOME Wayland
+      2. mss (Python X11 screen capture)          — works on pure X11 sessions
+      3. PIL ImageGrab                             — X11 / macOS / Windows
+      4. scrot                                     — X11 fallback
+      5. gnome-screenshot / import                — last resort
+    """
     if path is None:
         fd, path = tempfile.mkstemp(suffix=".png", prefix="devin_shot_")
         os.close(fd)
 
+    def _ok(p: str) -> bool:
+        return bool(p and os.path.exists(p) and os.path.getsize(p) > 10_000
+                    and not _is_screenshot_black(p))
+
     try:
-        # mss — most reliable on Linux X11 (try first)
+        # ── 1. XDG Desktop Portal (GNOME Wayland) ────────────────────────────
+        if _IS_LINUX:
+            try:
+                from modules.os_automation import _take_screenshot_portal
+                if _take_screenshot_portal(path) and _ok(path):
+                    return path
+            except Exception:
+                pass
+
+        # ── 2. mss ────────────────────────────────────────────────────────────
         try:
             import mss  # type: ignore
             with mss.mss() as sct:
-                monitor = sct.monitors[0]
-                sct_img = sct.grab(monitor)
+                mon = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
+                img = sct.grab(mon)
                 from mss.tools import to_png  # type: ignore
-                to_png(sct_img.rgb, sct_img.size, output=path)
-            if os.path.exists(path) and os.path.getsize(path) > 100:
+                to_png(img.rgb, img.size, output=path)
+            if _ok(path):
                 return path
         except Exception:
             pass
 
-        # PIL/Pillow (cross-platform fallback)
+        # ── 3. PIL ImageGrab ──────────────────────────────────────────────────
         try:
             from PIL import ImageGrab  # type: ignore
             img = ImageGrab.grab()
             img.save(path)
-            return path
+            if _ok(path):
+                return path
         except Exception:
             pass
 
         if _IS_LINUX:
-            # scrot / gnome-screenshot / import (ImageMagick)
-            for cmd in [
-                ["scrot", "-z", path],
-                ["gnome-screenshot", "-f", path],
-                ["import", "-window", "root", path],
-                ["xwd", "-root", "-silent", "-out", path + ".xwd"],
-            ]:
-                try:
-                    env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
-                    if subprocess.run(cmd, timeout=5, capture_output=True, env=env).returncode == 0:
-                        if os.path.exists(path) and os.path.getsize(path) > 100:
-                            return path
-                except Exception:
-                    continue
+            env = {**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")}
+            # ── 4. scrot ──────────────────────────────────────────────────────
+            try:
+                r = subprocess.run(["scrot", "-z", path], timeout=5,
+                                   capture_output=True, env=env)
+                if r.returncode == 0 and _ok(path):
+                    return path
+            except Exception:
+                pass
+            # ── 5. gnome-screenshot ───────────────────────────────────────────
+            try:
+                r = subprocess.run(["gnome-screenshot", "-f", path], timeout=5,
+                                   capture_output=True, env=env)
+                if r.returncode == 0 and _ok(path):
+                    return path
+            except Exception:
+                pass
+            # ── 6. ImageMagick import ─────────────────────────────────────────
+            try:
+                r = subprocess.run(["import", "-window", "root", path], timeout=5,
+                                   capture_output=True, env=env)
+                if r.returncode == 0 and _ok(path):
+                    return path
+            except Exception:
+                pass
         elif _IS_MAC:
-            if subprocess.run(["screencapture", "-x", path], timeout=5).returncode == 0:
-                return path
+            try:
+                if subprocess.run(["screencapture", "-x", path], timeout=5).returncode == 0:
+                    return path
+            except Exception:
+                pass
         elif _IS_WIN:
-            ps_cmd = (
-                f"Add-Type -AssemblyName System.Drawing; "
-                f"$b=[System.Drawing.Bitmap]::new([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width,"
+            ps = (
+                f"Add-Type -AssemblyName System.Drawing;"
+                f"$b=New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width,"
                 f"[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height);"
                 f"$g=[System.Drawing.Graphics]::FromImage($b);"
                 f"$g.CopyFromScreen(0,0,0,0,$b.Size);"
                 f"$b.Save('{path}');"
             )
-            subprocess.run(["powershell", "-Command", ps_cmd], timeout=10)
-            if os.path.exists(path):
-                return path
+            try:
+                subprocess.run(["powershell", "-Command", ps], timeout=10)
+                if os.path.exists(path):
+                    return path
+            except Exception:
+                pass
     except Exception as e:
         log.debug("Screenshot failed: %s", e)
     return None
@@ -272,7 +365,88 @@ def _get_kb():
     return _PYNPUT_KB
 
 
-def _keyboard_type(text: str, interval: float = 0.03):
+def _get_ydotool_socket() -> Optional[str]:
+    """Find ydotoold socket; return path if accessible, else None."""
+    for sock in [
+        os.environ.get('YDOTOOL_SOCKET', ''),
+        '/tmp/.ydotool_socket',
+        f'/run/user/{os.getuid()}/.ydotool_socket',
+    ]:
+        if sock and os.path.exists(sock) and os.access(sock, os.W_OK):
+            return sock
+    return None
+
+
+def _is_wayland() -> bool:
+    return bool(os.environ.get('WAYLAND_DISPLAY')) and _IS_LINUX
+
+
+def _ydotool_run(*args) -> bool:
+    """Run a ydotool command. Returns True on success."""
+    sock = _get_ydotool_socket()
+    if not sock:
+        return False
+    env = {**os.environ, 'YDOTOOL_SOCKET': sock}
+    r = subprocess.run(['ydotool'] + list(args), env=env,
+                       capture_output=True, timeout=5)
+    return r.returncode == 0
+
+
+_YDOTOOL_KEY_MAP = {
+    'enter': 'enter', 'return': 'enter', 'esc': 'esc', 'escape': 'esc',
+    'tab': 'tab', 'space': 'space', 'backspace': 'backspace',
+    'delete': 'delete', 'up': 'up', 'down': 'down', 'left': 'left',
+    'right': 'right', 'home': 'home', 'end': 'end',
+    'page_up': 'pageup', 'page_down': 'pagedown',
+    'ctrl': 'ctrl', 'alt': 'alt', 'shift': 'shift', 'super': 'super',
+    'f1': 'f1', 'f2': 'f2', 'f3': 'f3', 'f4': 'f4', 'f5': 'f5',
+    'f6': 'f6', 'f7': 'f7', 'f8': 'f8', 'f9': 'f9',
+    'f10': 'f10', 'f11': 'f11', 'f12': 'f12',
+}
+
+
+def _keyboard_type(text: str, interval: float = 0.08):
+    """Type text using best available backend.
+    Uses clipboard paste for Wayland (most reliable — avoids ydotool key-encoding issues
+    with special characters). Falls back to ydotool type, pynput, then xdotool.
+    """
+    if not text:
+        return
+
+    if _is_wayland():
+        # PRIMARY: Use xdotool clipboard paste (xclip/xsel) which is the most reliable
+        # approach on Wayland for typing arbitrary text including special characters.
+        # This avoids ydotool's key encoding issues with !, @, #, etc.
+        try:
+            # Set clipboard via xclip
+            proc = subprocess.run(['xclip', '-selection', 'clipboard'],
+                                  input=text.encode('utf-8'),
+                                  capture_output=True, timeout=3)
+            if proc.returncode == 0:
+                time.sleep(0.1)
+                # Paste via Ctrl+V using ydotool
+                _ydotool_run('key', '--key-delay', '50', 'ctrl+v')
+                time.sleep(0.1)
+                return
+        except Exception:
+            pass
+        # FALLBACK: ydotool type (slower but doesn't require xclip)
+        # Use longer delay to avoid dropped characters on Wayland
+        delay_ms = max(30, int(interval * 1000))
+        if _ydotool_run('type', '--next-delay', str(delay_ms), '--', text):
+            return
+        # FALLBACK: type char by char with ydotool key (handles special chars better)
+        for ch in text:
+            if ch == '\n':
+                _ydotool_run('key', '--key-delay', '50', 'Return')
+            elif ch == '\t':
+                _ydotool_run('key', '--key-delay', '50', 'Tab')
+            else:
+                _ydotool_run('type', '--next-delay', str(delay_ms), '--', ch)
+            time.sleep(interval)
+        return
+
+    # X11 fallback: pynput keyboard controller
     kb = _get_kb()
     if kb:
         for ch in text:
@@ -293,6 +467,12 @@ def _keyboard_type(text: str, interval: float = 0.03):
 
 
 def _keyboard_press(key: str):
+    # Wayland: use ydotool
+    if _is_wayland():
+        yk = _YDOTOOL_KEY_MAP.get(key.lower(), key.lower())
+        if _ydotool_run('key', '--key-delay', '50', yk):
+            return
+    # X11 fallback: pynput
     kb = _get_kb()
     k = _KEY_MAP.get(key.lower(), key)
     if kb:
@@ -309,6 +489,12 @@ def _keyboard_press(key: str):
 
 
 def _keyboard_hotkey(*keys: str):
+    # Wayland: ydotool key combo (e.g. ctrl+c)
+    if _is_wayland():
+        combo = '+'.join(_YDOTOOL_KEY_MAP.get(k.lower(), k.lower()) for k in keys)
+        if _ydotool_run('key', '--key-delay', '50', combo):
+            return
+    # X11 fallback: pynput
     kb = _get_kb()
     if kb:
         resolved = [_KEY_MAP.get(k.lower(), k) for k in keys]
@@ -853,10 +1039,44 @@ class OSAgent:
 
     # ── Application / Window management ───────────────────────────────────────
 
+    def dismiss_dialog(self, cancel_x: int = 398, cancel_y: int = 170) -> bool:
+        """Dismiss a blocking dialog (e.g. GNOME Remote Desktop prompt).
+        Presses Escape first; falls back to clicking the Cancel/Close button.
+        Returns True if a dialog was detected and dismissed.
+        """
+        snap = self._snap()
+        if not snap:
+            return False
+        # Use vision to detect if a dialog is blocking the screen
+        v = self._vision(snap, "Is there a dialog, popup, or modal blocking the screen?")
+        dialog_present = v and any(w in str(v).lower() for w in
+                                   ['yes', 'dialog', 'popup', 'modal', 'remote', 'share', 'restore'])
+        if dialog_present:
+            _keyboard_press('escape')
+            time.sleep(0.3)
+            _mouse_move(cancel_x, cancel_y)
+            _mouse_click(cancel_x, cancel_y)
+            time.sleep(0.5)
+            return True
+        # Also dismiss without vision check if on GNOME Wayland (defensive)
+        _keyboard_press('escape')
+        time.sleep(0.3)
+        return False
+
     def open_application(self, name: str) -> ActionResult:
         before = self._snap()
         pid = _launch_app(name)
-        time.sleep(2.0)
+        time.sleep(4.0)  # extra wait for Chrome to fully initialize
+        # Auto-dismiss any blocking dialog (e.g. Chrome's Remote Desktop dialog)
+        if name.lower() in ('chrome', 'google-chrome', 'chromium', 'browser'):
+            # Dismiss Remote Desktop / permission dialogs (Cancel at top-left area)
+            _mouse_move(398, 170)
+            _mouse_click(398, 170)
+            time.sleep(0.5)
+            # Click neutral area to close any Google account popup panels (top-right)
+            _mouse_move(683, 450)
+            _mouse_click(683, 450)
+            time.sleep(0.5)
         after = self._snap() if self._verify else None
         if after and self._verify:
             v = self._vision(after, f"Did the application '{name}' open successfully? Is it visible?")
@@ -960,16 +1180,35 @@ class OSAgent:
     # ── High-level browser tasks ───────────────────────────────────────────────
 
     def navigate_browser(self, url: str) -> ActionResult:
-        """Open URL in the default browser."""
+        """Open URL in Chrome using ydotool mouse+keyboard (Wayland-native).
+        Waits for the page to actually load (adaptive — no hardcoded sleep).
+        """
+        before = self._snap()
         try:
-            import webbrowser
-            webbrowser.open(url)
-            time.sleep(2.0)
-            r = ActionResult(True, f"Opened URL in browser: {url}")
+            subprocess.run(['pkill', '-f', 'google-chrome'], capture_output=True)
+            time.sleep(1.0)
+            subprocess.Popen(
+                ['google-chrome', '--new-window', url],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            # Wait for Chrome to open and page to stabilize (up to 15s)
+            after = _wait_for_stable_screen(max_wait=15.0, stable_duration=1.5)
+
+            # Dismiss Remote Desktop / account dialogs that may appear
+            _mouse_click(398, 170)
+            time.sleep(0.3)
+            _mouse_click(683, 450)
+            time.sleep(0.3)
+
+            # Take one more screenshot after dismissing dialogs
+            after = self._snap() or after
+            v = self._vision(after, f"Did the browser open and show the page for {url}?") if after else None
+            r = ActionResult(True, f"Opened URL in browser: {url}", before, after, v)
             self._record("navigate_browser", {"url": url}, r)
             return r
         except Exception as e:
-            r = ActionResult(False, f"Browser open failed: {e}")
+            after = self._snap()
+            r = ActionResult(False, f"Browser open failed: {e}", before, after)
             self._record("navigate_browser", {"url": url}, r)
             return r
 
@@ -981,14 +1220,131 @@ class OSAgent:
         time.sleep(0.1)
         return self.press_key("enter")
 
-    def browser_search(self, query: str) -> ActionResult:
-        """Open browser and search for a query."""
-        self.navigate_browser(f"https://www.google.com/search?q={query.replace(' ', '+')}") 
-        time.sleep(3.0)
-        after = self._snap()
+    def browser_search(self, query: str, images: bool = False) -> ActionResult:
+        """Search Google using real mouse+keyboard (ydotool on Wayland).
+
+        Opens Chrome fresh at google.com, dismisses any dialogs,
+        types the query via clipboard paste (reliable), waits for page to stabilize.
+        If `images` is True, clicks the Images tab after the search.
+        """
+        before = self._snap()
+        subprocess.run(['pkill', '-f', 'google-chrome'], capture_output=True)
+        time.sleep(1.0)
+        subprocess.Popen(
+            ['google-chrome', '--new-window', 'https://www.google.com'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        # Wait adaptively for Chrome+Google to load (up to 15s)
+        _wait_for_stable_screen(max_wait=15.0, stable_duration=1.2)
+
+        # Dismiss Remote Desktop dialog (Cancel button ~398,170)
+        _mouse_click(398, 170)
+        time.sleep(0.4)
+        # Click neutral area to close any account popup
+        _mouse_click(683, 450)
+        time.sleep(0.4)
+
+        # Click Google search box at center of page (~683, 320)
+        _mouse_click(683, 320)
+        time.sleep(0.5)
+
+        # Type the search query (clipboard paste for reliability)
+        _keyboard_type(query, interval=0.08)
+        time.sleep(1.2)  # wait for autocomplete to appear
+
+        # Mouse click first autocomplete entry (~y=374 for a typical 768px screen)
+        _mouse_click(683, 374)
+
+        # Wait for search results to load adaptively
+        after = _wait_for_stable_screen(max_wait=12.0, stable_duration=1.0)
+
+        if images and after:
+            # Click Images tab (~270, 175)
+            _mouse_click(270, 175)
+            after = _wait_for_stable_screen(max_wait=8.0, stable_duration=1.0) or after
+
+        after = after or self._snap()
         v = self._vision(after, f"Did the browser show search results for '{query}'?") if after else None
-        r = ActionResult(True, f"Searched for: {query}", screenshot_after=after, vision_result=v)
-        self._record("browser_search", {"query": query}, r)
+        r = ActionResult(True, f"Searched for: {query}", before, after, v)
+        self._record("browser_search", {"query": query, "images": images}, r)
+        return r
+
+    def youtube_search(self, query: str) -> ActionResult:
+        """Search YouTube for a query using real mouse+keyboard (Wayland-native).
+        Opens Chrome, navigates to youtube.com, types query via clipboard paste,
+        waits adaptively for results, returns screenshot + vision analysis.
+        """
+        before = self._snap()
+        subprocess.run(['pkill', '-f', 'google-chrome'], capture_output=True)
+        time.sleep(1.0)
+        subprocess.Popen(
+            ['google-chrome', '--new-window', 'https://www.youtube.com'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        # Wait for YouTube to fully load (adaptive)
+        _wait_for_stable_screen(max_wait=15.0, stable_duration=1.5)
+
+        # Dismiss Remote Desktop / account dialogs
+        _mouse_click(398, 170)
+        time.sleep(0.3)
+        _mouse_click(683, 450)
+        time.sleep(0.3)
+
+        # Click YouTube search box (search icon bar at top ~683,55)
+        _mouse_click(683, 55)
+        time.sleep(0.6)
+
+        # Type query via clipboard paste (most reliable — avoids key encoding issues)
+        _keyboard_type(query, interval=0.08)
+        time.sleep(0.8)
+
+        # Press Enter to search
+        _keyboard_press('enter')
+        # Wait for search results to stabilize
+        after = _wait_for_stable_screen(max_wait=12.0, stable_duration=1.0)
+
+        after = after or self._snap()
+        v = self._vision(after, f"Did YouTube show search results for '{query}'? List the visible video titles and thumbnails.") if after else None
+        r = ActionResult(True, f"Searched YouTube for: {query}", before, after, v)
+        self._record("youtube_search", {"query": query}, r)
+        return r
+
+    def open_app_by_name(self, app_name: str) -> ActionResult:
+        """Open any application by name using the system application launcher.
+        Uses ydotool to open the app via keyboard shortcut (Super key → type name → Enter).
+        Works for any installed application: Chrome, Firefox, Terminal, Files, etc.
+        """
+        before = self._snap()
+        try:
+            # Try direct launch first
+            app_map = {
+                'chrome': 'google-chrome', 'browser': 'google-chrome',
+                'firefox': 'firefox', 'terminal': 'x-terminal-emulator',
+                'files': 'nautilus', 'file manager': 'nautilus',
+                'text editor': 'gedit', 'calculator': 'gnome-calculator',
+                'settings': 'gnome-control-center',
+            }
+            cmd = app_map.get(app_name.lower().strip())
+            if not cmd:
+                cmd = app_name.lower().replace(' ', '-')
+
+            subprocess.Popen([cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            after = _wait_for_stable_screen(max_wait=6.0, stable_duration=0.8)
+            after = after or self._snap()
+            v = self._vision(after, f"Did the application '{app_name}' open?") if after else None
+            r = ActionResult(True, f"Opened: {app_name}", before, after, v)
+        except Exception:
+            # Fallback: use Super key to open GNOME app launcher, type name, press Enter
+            _keyboard_press('super')
+            time.sleep(1.2)
+            _keyboard_type(app_name, interval=0.08)
+            time.sleep(0.8)
+            _keyboard_press('enter')
+            after = _wait_for_stable_screen(max_wait=5.0, stable_duration=0.8)
+            after = after or self._snap()
+            v = self._vision(after, f"Did the application '{app_name}' open?") if after else None
+            r = ActionResult(True, f"Opened via launcher: {app_name}", before, after, v)
+        self._record("open_app_by_name", {"app_name": app_name}, r)
         return r
 
     # ── Action history ─────────────────────────────────────────────────────────

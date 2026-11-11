@@ -17,12 +17,8 @@ from utils.logger import setup_logger
 # Load environment variables
 load_dotenv()
 
-# Print the values for debugging
 aws_access_key = os.getenv('AWS_ACCESS_KEY')
 aws_secret_key = os.getenv('AWS_SECRET_KEY')
-
-print(f"AWS Access Key: {aws_access_key}")
-print(f"AWS Secret Key: {aws_secret_key}")
 
 if not aws_access_key or not aws_secret_key:
     raise EnvironmentError("AWS_ACCESS_KEY and AWS_SECRET_KEY must be set in .env file.")

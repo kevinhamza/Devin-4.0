@@ -36,18 +36,22 @@ if not logger.handlers: # Prevent duplicate handlers
 @dataclass
 class HypotheticalRequirement:
     """A completely made-up, illustrative regulatory requirement."""
-    req_id: str = field(default_factory=lambda: f"HREQ-{uuid.uuid4().hex[:4]}")
+    # Required fields first
     framework_name: str # e.g., "GENERIC_SECURITY_FRAMEWORK_V1"
     requirement_description: str # e.g., "Systems must implement strong access controls."
+    # Optional / auto-generated fields with defaults
+    req_id: str = field(default_factory=lambda: f"HREQ-{uuid.uuid4().hex[:4]}")
     # Keywords for extremely naive matching - DO NOT USE FOR REAL ANALYSIS
     conceptual_keywords: Set[str] = field(default_factory=set)
 
 @dataclass
 class ConceptualInternalControl:
     """A completely made-up, illustrative internal control."""
-    ctrl_id: str = field(default_factory=lambda: f"CTRL-{uuid.uuid4().hex[:4]}")
+    # Required fields first
     control_description: str # e.g., "Multi-Factor Authentication (MFA) is deployed for all admin accounts."
     implementation_status: Literal["Fully Implemented", "Partially Implemented", "Not Implemented", "N/A"]
+    # Optional / auto-generated fields with defaults
+    ctrl_id: str = field(default_factory=lambda: f"CTRL-{uuid.uuid4().hex[:4]}")
     # Keywords for extremely naive matching - DO NOT USE FOR REAL ANALYSIS
     conceptual_keywords: Set[str] = field(default_factory=set)
     conceptual_effectiveness_notes: Optional[str] = None # e.g., "MFA covers 90% of admins"

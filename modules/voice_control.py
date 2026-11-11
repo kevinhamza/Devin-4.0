@@ -6,6 +6,8 @@ Auto-detects the best available backend.
 """
 from __future__ import annotations
 
+import subprocess
+import re
 import os
 import sys
 import threading

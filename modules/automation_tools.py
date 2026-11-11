@@ -2,6 +2,7 @@
 # Purpose: A comprehensive suite of tools for high-level automation of
 #          desktop GUI applications and web browsers.
 
+import subprocess
 import logging
 import os
 import time
@@ -183,13 +184,54 @@ class DesktopAutomator:
             pyautogui.write(text, interval=interval_chars_sec)
 
     def take_screenshot(self, output_path: str = "screenshot.png", region: Optional[Tuple[int, int, int, int]] = None) -> str:
-        """Takes a screenshot of the entire screen or a specific region."""
-        if not DEPS_AVAILABLE: return "Error: Screenshot unavailable."
+        """Takes a screenshot. Uses gdbus portal on GNOME Wayland, pyautogui/scrot as fallback."""
         filepath = Path(output_path)
         filepath.parent.mkdir(parents=True, exist_ok=True)
-        pyautogui.screenshot(str(filepath), region=region)
-        logger.info(f"Screenshot saved to {filepath.resolve()}")
-        return str(filepath.resolve())
+        import subprocess, shutil, time as _time
+
+        # 1. gdbus / XDG Desktop Portal (GNOME Wayland)
+        if os.environ.get('WAYLAND_DISPLAY'):
+            try:
+                import re as _re
+                r = subprocess.run([
+                    'gdbus', 'call', '-e',
+                    '-d', 'org.freedesktop.portal.Desktop',
+                    '-o', '/org/freedesktop/portal/desktop',
+                    '-m', 'org.freedesktop.portal.Screenshot.Screenshot',
+                    '', "{'interactive': <false>}"
+                ], capture_output=True, text=True, timeout=10)
+                if r.returncode == 0:
+                    m = _re.search(r"'(file://[^']+)'", r.stdout)
+                    if m:
+                        src = m.group(1).replace('file://', '')
+                        _time.sleep(0.5)
+                        if Path(src).exists() and Path(src).stat().st_size > 10000:
+                            shutil.copy2(src, str(filepath))
+                            logger.info(f"Screenshot (gdbus portal) saved to {filepath.resolve()}")
+                            return str(filepath.resolve())
+            except Exception as e:
+                logger.debug(f"gdbus portal screenshot failed: {e}")
+
+        # 2. pyautogui fallback (X11)
+        if DEPS_AVAILABLE:
+            try:
+                pyautogui.screenshot(str(filepath), region=region)
+                logger.info(f"Screenshot saved to {filepath.resolve()}")
+                return str(filepath.resolve())
+            except Exception:
+                pass
+
+        # 3. scrot fallback
+        for cmd in [['scrot', str(filepath)], ['gnome-screenshot', '-f', str(filepath)]]:
+            try:
+                r = subprocess.run(cmd, capture_output=True, timeout=10)
+                if r.returncode == 0:
+                    logger.info(f"Screenshot ({cmd[0]}) saved to {filepath.resolve()}")
+                    return str(filepath.resolve())
+            except Exception:
+                pass
+
+        return "Error: Screenshot unavailable on this display."
 
     def find_and_click_image(self, image_path: str, confidence: float = 0.9) -> bool:
         """Finds an image on the screen and clicks on its center."""

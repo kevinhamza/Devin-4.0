@@ -1,12 +1,13 @@
 # Devin/cyber_range/network_simulator.py
 # Purpose: Simulates network conditions and topologies for cyber range scenarios.
 
+import time
 import os
 import json
 import uuid
 import logging
 import subprocess # For conceptual command execution
-from typing import Dict, Any, List, Optional, Literal, TypedDict
+from typing import Dict, Any, List, Optional, Literal, TypedDict, Tuple
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

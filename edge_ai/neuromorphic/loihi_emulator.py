@@ -2,9 +2,11 @@
 # Purpose: Conceptual interface layer for running SNNs on Intel's Loihi
 #          neuromorphic platform (hardware or emulator) via the Lava framework.
 
+import json
+import random
 import time
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List, Union, Literal
 
 # --- Conceptual Imports for Lava Framework ---
 # Real implementation requires installing and importing from lava libraries
@@ -158,7 +160,7 @@ class LoihiEmulatorInterface:
         #     logger.error(f"  - Error during conceptual Loihi run initiation for '{network_id}': {e}")
         #     return False
         # Simulate run initiation
-        self._last_run_handle = {"id": network_id, "status": "running_simulated"}
+        self._last_run_handle = {"id": network_id, "status": "running_simulated", "num_steps": num_steps}
         logger.info("  - Conceptual run command initiated successfully.")
         # Simulate some execution time
         simulated_duration = num_steps * 0.01 # Guess 10ms per step simulation

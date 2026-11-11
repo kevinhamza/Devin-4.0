@@ -1,5 +1,6 @@
 # Devin/ai_ethics/bias_mitigation/impact_assessment.py # Purpose: Assesses the potential societal risks and downstream impacts of AI deployment, particularly concerning fairness and ethics. Societal Risk Analysis.
 
+import random
 import datetime
 from typing import Dict, Any, List, Optional, TypedDict, Literal
 

@@ -3,6 +3,7 @@
 #          data from a webpage based on a user-defined schema.
 
 import logging
+import os
 import requests
 import json
 from typing import Dict, Any, Optional

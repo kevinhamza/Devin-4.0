@@ -2,6 +2,7 @@
 # Purpose: A tool to detect potential data poisoning attacks in machine
 #          learning datasets using anomaly detection algorithms.
 
+import random
 import logging
 from typing import Optional
 

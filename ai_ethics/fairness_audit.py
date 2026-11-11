@@ -1,5 +1,6 @@
 # Devin/ai_ethics/fairness_audit.py
 
+import random
 import statistics
 from typing import Dict, Any, List, Optional, Union, Callable
 from collections import defaultdict
