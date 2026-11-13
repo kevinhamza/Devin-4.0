@@ -4,11 +4,12 @@ import os
 import time
 import logging
 from fastapi import Request, Response, HTTPException
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import JSONResponse
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from starlette.types import ASGIApp
-from typing import Dict, Any, List, Optional, Tuple, Sequence, Union
+from typing import Dict, Any, List, Optional, Tuple, Sequence, Union, Literal
 
 # --- Conceptual JWT Handling ---
 # Requires `pip install python-jose[cryptography]`

@@ -381,13 +381,21 @@
 # Devin/modules/os_operations/universal_operations.py
 # Purpose: A universal, cross-platform interface for common OS operations.
 
+import subprocess
+import time
+import random
 import logging
 import platform
 import os
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-import numpy as np
+try:
+    import numpy as np
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    np = None  # type: ignore
+    _NUMPY_AVAILABLE = False
 
 # --- Platform-Specific Compatibility Layers ---
 # These are the real, functional low-level wrappers for each OS.
@@ -489,6 +497,9 @@ class UniversalOSOperator:
                 logger.error(f"Metal execution failed, falling back to CPU. Error: {e}")
 
         logger.info("GPU acceleration not available. Performing vector addition on CPU with NumPy.")
+        if not _NUMPY_AVAILABLE:
+            logger.error("NumPy not available; cannot perform vector addition.")
+            return None
         return np.add(vec_a, vec_b)
 
     # --- NEW METHOD TO FIX THE CRASH ---

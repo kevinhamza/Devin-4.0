@@ -7,12 +7,12 @@ import os
 client = OpenAI(default_headers={"OpenAI-Beta": "assistants=v2"})
 mixer.init()
 
-assistant_id = ""
-thread_id = ""
+assistant_id = os.getenv("OPENAI_ASSISTANT_ID", "")
+thread_id = os.getenv("OPENAI_THREAD_ID", "")
 
 # Retrieve the assistant and thread
-assistant = client.beta.assistants.retrieve(assistant_id)
-thread = client.beta.threads.retrieve(thread_id)
+assistant = client.beta.assistants.retrieve(assistant_id) if assistant_id else None
+thread = client.beta.threads.retrieve(thread_id) if thread_id else None
 
 def ask_question_memory(question):
     global thread

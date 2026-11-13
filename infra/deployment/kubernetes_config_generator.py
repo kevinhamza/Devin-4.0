@@ -1,10 +1,11 @@
 # Devin/infra/deployment/kubernetes_config_generator.py
 # Purpose: Generates Kubernetes deployment configurations (YAML) for Devin components.
 
+import json
 import logging
 import os
 import sys
-from typing import Dict, Any, List, Optional, Literal
+from typing import Dict, Any, List, Optional, Literal, Tuple, Union
 
 # --- YAML Library Import ---
 # Requires: pip install pyyaml
@@ -222,33 +223,6 @@ class K8sConfigGenerator:
         # Add other spec fields like serviceAccountName, affinity, tolerations etc. as needed
 
         return deployment_dict
-
-import logging
-import os
-import sys
-from typing import Dict, Any, List, Optional, Literal, Union # Ensure Union is imported
-
-# --- YAML Library Import (from Part 1) ---
-try:
-    import yaml
-    PYYAML_AVAILABLE = True
-except ImportError:
-    yaml = None # type: ignore
-    PYYAML_AVAILABLE = False
-
-# Logger (from Part 1)
-logger = logging.getLogger("K8sConfigGenerator")
-
-# Default API Versions (from Part 1)
-DEFAULT_K8S_API_VERSION_DEPLOYMENT = "apps/v1"
-DEFAULT_K8S_API_VERSION_SERVICE = "v1"
-DEFAULT_K8S_API_VERSION_CONFIGMAP = "v1"
-DEFAULT_K8S_API_VERSION_PVC = "v1"
-
-
-class K8sConfigGenerator:
-    # (Assume __init__, _generate_metadata, _generate_selector, _generate_probe,
-    #  _generate_container_spec, and generate_deployment_dict from Part 1 are here)
 
     # --- Service Generator ---
     def generate_service_dict(self,

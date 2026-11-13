@@ -1,6 +1,9 @@
 # Devin/prototypes/email_prototypes.py
 # Purpose: Prototype implementations for sending and reading emails.
 
+import time
+import datetime
+import random
 import os
 import smtplib # For sending email via SMTP
 import ssl # For secure connections

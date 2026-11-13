@@ -313,6 +313,8 @@
 # Purpose: Defines and executes user-defined or system-learned workflows.
 #          Integrates with the TaskOrchestrator to run real tools.
 
+import sys
+import shutil
 import logging
 import uuid
 import time
@@ -420,7 +422,7 @@ class AutomationEngine:
         current_context = initial_context.copy() if initial_context else {}
 
         for step in workflow.steps:
-            step_result_log = {"step_id": step.step_id, "action": step.action_type}
+            step_result_log = {"step_id": step.step_id, "action": step.action_type, "description": step.description or step.action_type}
             logger.info(f"Executing step '{step.description or step.action_type}'...")
 
             try:

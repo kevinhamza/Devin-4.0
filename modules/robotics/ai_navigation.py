@@ -231,6 +231,7 @@
 # Purpose: A functional, high-level AI navigation system that orchestrates path
 #          planning and motion control for autonomous movement.
 
+from pathlib import Path
 import logging
 import threading
 import time

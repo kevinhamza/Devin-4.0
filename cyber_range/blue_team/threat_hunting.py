@@ -1,6 +1,7 @@
 # Devin/cyber_range/blue_team/threat_hunting.py
 # Purpose: Defines or executes threat hunting queries and methodologies.
 
+from pathlib import Path
 import os
 import json
 import uuid

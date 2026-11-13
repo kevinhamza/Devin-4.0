@@ -359,7 +359,10 @@ class AutonomousRunner:
         Run the agentic loop for a goal.
         Returns (final_result, updated_messages).
         """
-        from . import cc_interface as ui  # type: ignore
+        try:
+            from . import cc_interface as ui  # type: ignore
+        except ImportError:
+            ui = None
 
         messages = list(messages)
         messages.append({'role': 'user', 'content': goal})

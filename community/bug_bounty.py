@@ -1,5 +1,7 @@
 # Devin/community/bug_bounty.py # Manages vulnerability reporting
 
+from pathlib import Path
+import random
 import uuid
 import datetime
 import json

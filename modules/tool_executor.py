@@ -2,6 +2,7 @@
 # Purpose: The central dispatcher for executing tool calls from the AI agent.
 #          It maps tool names to Python functions and handles execution.
 
+import json
 import inspect
 import logging
 from typing import Dict, Any, List, Callable, Optional
@@ -42,7 +43,7 @@ if not logger.handlers:
     h = logging.StreamHandler()
     h.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
     logger.addHandler(h)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.WARNING)
 logger.propagate = False
 
 # --- Extended-capability facades ---
@@ -54,7 +55,7 @@ def _optional_import(module_path: str, class_name: str):
         module = __import__(module_path, fromlist=[class_name])
         return getattr(module, class_name)
     except Exception as e:
-        logger.warning(f"Extended capability '{class_name}' unavailable ({module_path}): {e}")
+        logger.debug(f"Extended capability '{class_name}' unavailable ({module_path}): {e}")
         return None
 
 PluginsFacade = _optional_import("modules.plugins_tools", "PluginsFacade")
@@ -85,9 +86,9 @@ class ToolExecutor:
         self.security_dashboard: SecurityDashboard = managers.get("security_dashboard")
         self.cloud_manager: CloudServicesManager = managers.get("cloud_services_manager")
         self.pentesting_facade: PentestingFacade = managers.get("pentesting_facade")
-        self.hexstrike_client: HexStrikeClient = managers.get("hexstrike_client", HexStrikeClient())
-        self.external_agent_tools: ExternalAgentTools = managers.get("external_agent_tools", ExternalAgentTools())
-        self.wifi_audit_tools: WifiAuditTools = managers.get("wifi_audit_tools", WifiAuditTools())
+        self.hexstrike_client: HexStrikeClient = managers.get("hexstrike_client") or (HexStrikeClient() if HexStrikeClient else None)
+        self.external_agent_tools: ExternalAgentTools = managers.get("external_agent_tools") or (ExternalAgentTools() if ExternalAgentTools else None)
+        self.wifi_audit_tools: WifiAuditTools = managers.get("wifi_audit_tools") or (WifiAuditTools() if WifiAuditTools else None)
         self.desktop_automator: DesktopAutomator = managers.get("desktop_automator")
         self.web_automator: WebAutomator = managers.get("web_automator")
         self.system_monitor: SystemMonitorFacade = managers.get("system_monitor_facade")
@@ -95,7 +96,7 @@ class ToolExecutor:
         self.os_operator: UniversalOSOperator = managers.get("os_operator")
         self.code_retriever: CodeRetriever = managers.get("code_retriever")
         self.data_logger: DataLogger = managers.get("data_logger")
-        self.code_executor: CodeExecutor = managers.get("code_executor", CodeExecutor())
+        self.code_executor: CodeExecutor = managers.get("code_executor") or (CodeExecutor() if CodeExecutor else None)
         # --- Ported OpenClaw Managers ---
         self.messaging_gateway = managers.get("messaging_gateway")
         self.canvas_server = managers.get("canvas_server")
@@ -172,8 +173,9 @@ class ToolExecutor:
     def _register_all_tools(self):
         """Registers all public methods from the facades and managers as tools."""
         # --- Code Execution ---
-        self._register_tool("execute_shell", lambda command: self.code_executor.execute_code("shell", command), "Executes a shell command.", is_dangerous=True)
-        self._register_tool("execute_python", lambda code: self.code_executor.execute_code("python", code), "Executes a block of Python code.", is_dangerous=True)
+        if self.code_executor:
+            self._register_tool("execute_shell", lambda command: self.code_executor.execute_code("shell", command), "Executes a shell command.", is_dangerous=True)
+            self._register_tool("execute_python", lambda code: self.code_executor.execute_code("python", code), "Executes a block of Python code.", is_dangerous=True)
         
         # --- Cloud Services ---
         if self.cloud_manager:
@@ -207,22 +209,19 @@ class ToolExecutor:
         # hexstrike-ai (~150 security tools) runs as its own server process;
         # this dispatches to it over HTTP if one is running, and reports
         # clearly if it isn't rather than silently failing.
-        self._register_tool("run_hexstrike_command", self.hexstrike_client.run_security_tool_command, "Runs a security-tool command (e.g. 'nmap -sV target.com') via the hexstrike-ai server's 150+ tool arsenal.", is_dangerous=True)
+        if self.hexstrike_client:
+            self._register_tool("run_hexstrike_command", self.hexstrike_client.run_security_tool_command, "Runs a security-tool command (e.g. 'nmap -sV target.com') via the hexstrike-ai server's 150+ tool arsenal.", is_dangerous=True)
 
         # --- External Agent CLIs (claude-code, gemini-cli, openclaw) ---
-        # These are Node/TypeScript CLIs, not Python libraries -- there's no
-        # module to import. Devin shells out to them if installed, same as
-        # run_hexstrike_command dispatches to a running server instead of
-        # reimplementing its tools.
-        self._register_tool("delegate_to_claude_code", self.external_agent_tools.delegate_to_claude_code, "Delegates a coding/agentic task to a local Claude Code CLI installation (headless one-shot mode) for complex multi-file codebase work.", is_dangerous=True)
-        self._register_tool("delegate_to_gemini_cli", self.external_agent_tools.delegate_to_gemini_cli, "Delegates a task to a local Gemini CLI installation (headless one-shot mode).", is_dangerous=True)
-        self._register_tool("run_openclaw_command", self.external_agent_tools.run_openclaw_command, "Runs a raw command against a local OpenClaw installation (plugin/channel management, messaging, gateway status).", is_dangerous=True)
-        self._register_tool("run_shannon_pentest", self.external_agent_tools.run_shannon_pentest, "Runs a full AI-driven source-aware pentest against an authorized target using Shannon (Keygraph), via a local Docker + npx installation.", is_dangerous=True)
+        if self.external_agent_tools:
+            self._register_tool("delegate_to_claude_code", self.external_agent_tools.delegate_to_claude_code, "Delegates a coding/agentic task to a local Claude Code CLI installation (headless one-shot mode) for complex multi-file codebase work.", is_dangerous=True)
+            self._register_tool("delegate_to_gemini_cli", self.external_agent_tools.delegate_to_gemini_cli, "Delegates a task to a local Gemini CLI installation (headless one-shot mode).", is_dangerous=True)
+            self._register_tool("run_openclaw_command", self.external_agent_tools.run_openclaw_command, "Runs a raw command against a local OpenClaw installation (plugin/channel management, messaging, gateway status).", is_dangerous=True)
+            self._register_tool("run_shannon_pentest", self.external_agent_tools.run_shannon_pentest, "Runs a full AI-driven source-aware pentest against an authorized target using Shannon (Keygraph), via a local Docker + npx installation.", is_dangerous=True)
 
         # --- WiFi Security Auditing (aircrack-ng suite / airgorah) ---
-        # airgorah itself is a Rust/GTK4 GUI that can't be driven headlessly;
-        # this wraps the same underlying aircrack-ng CLI tools it uses.
-        self._register_tool("run_aircrack_suite_command", self.wifi_audit_tools.run_aircrack_suite_command, "Runs an aircrack-ng suite command (airmon-ng, airodump-ng, aireplay-ng, or aircrack-ng) for WiFi security auditing on a network you own or are authorized to test.", is_dangerous=True)
+        if self.wifi_audit_tools:
+            self._register_tool("run_aircrack_suite_command", self.wifi_audit_tools.run_aircrack_suite_command, "Runs an aircrack-ng suite command (airmon-ng, airodump-ng, aireplay-ng, or aircrack-ng) for WiFi security auditing on a network you own or are authorized to test.", is_dangerous=True)
 
         # --- Vision-Based Computer Operation (self-operating-computer) ---
         # Unlike move_mouse/click_mouse above (which need exact coordinates the

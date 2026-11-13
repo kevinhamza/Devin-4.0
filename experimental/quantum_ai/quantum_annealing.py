@@ -1,9 +1,11 @@
 # Devin/experimental/quantum_ai/quantum_annealing.py
 # Purpose: Implements or interfaces with quantum annealing algorithms/solvers (Conceptual).
 
+import random
 import logging
 import os
 import time
+import numpy as np
 from typing import Dict, Any, List, Optional, Tuple, Union
 from collections import Counter
 

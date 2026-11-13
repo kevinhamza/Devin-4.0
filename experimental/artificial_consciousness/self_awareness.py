@@ -1,11 +1,13 @@
 # Devin/experimental/artificial_consciousness/self_awareness.py
 # Purpose: Conceptual module exploring potential behavioral correlates or metrics sometimes discussed in relation to AI self-awareness.
 
+import random
 import logging
 import datetime
 import json
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass, field
+import uuid
+from typing import Dict, Any, List, Literal, Optional, Tuple
+from dataclasses import dataclass, field, asdict
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -31,11 +33,13 @@ class SelfAwarenessMetrics:
 @dataclass
 class SelfAwarenessAssessment:
     """Represents the output of a self-awareness monitoring check."""
-    assessment_id: str = field(default_factory=lambda: f"SAA-{uuid.uuid4().hex[:8].upper()}")
-    timestamp_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    # Required fields first
     target_agent_id: str # Which AI instance/version was assessed
     metrics: SelfAwarenessMetrics
     summary: str
+    # Auto-generated / defaulted fields
+    assessment_id: str = field(default_factory=lambda: f"SAA-{uuid.uuid4().hex[:8].upper()}")
+    timestamp_utc: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 
 # --- Self-Awareness Monitor Class (Conceptual) ---
@@ -207,7 +211,7 @@ if __name__ == "__main__":
     # Convert dataclasses for printing if needed, or access fields directly
     report_dict = asdict(assessment_result)
     # Convert enum to string for printing
-    report_dict["metrics"]["assessment_status"] = assessment_result.metrics.assessment_status.value
+    report_dict["metrics"]["assessment_status"] = assessment_result.metrics.assessment_status
     print(json.dumps(report_dict, indent=2))
 
     print("\n--- End Example ---")

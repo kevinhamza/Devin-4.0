@@ -1,5 +1,7 @@
 # Devin/community/plugin_marketplace.py # Manages discovery, installation, and potentially sharing of user-contributed plugins.
 
+from pathlib import Path
+import time
 import os
 import json
 import subprocess
@@ -7,7 +9,7 @@ import sys
 import shutil
 import uuid
 import logging
-from typing import Dict, Any, List, Optional, TypedDict
+from typing import Dict, Any, List, Literal, Optional, TypedDict
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -204,7 +206,7 @@ class PluginMarketplaceManager:
             logger.info("Step 3: Security Scan (Placeholder - CRITICAL)...")
             # In reality: Run SAST tools (Semgrep, Bandit), check dependencies, manual review?
             scan_passed = True # Simulate passing scan
-            if not scan_passed: raise SecurityException("Plugin failed security scan.")
+            if not scan_passed: raise RuntimeError("Plugin failed security scan.")
             logger.info("  - Simulated security scan passed.")
 
             logger.info("Step 4: Install Dependencies (Placeholder - CRITICAL)...")

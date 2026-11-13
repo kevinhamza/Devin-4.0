@@ -1,5 +1,7 @@
 # Devin/ai_ethics/consciousness_monitor/ethical_containment_v2.py # Purpose: Defines protocols and triggers for containing the AI if certain high-risk thresholds or behavioral indicators are met (e.g., Faraday cage protocol triggers). Highly Speculative.
 
+from pathlib import Path
+import os
 import time
 from typing import Dict, Any, Optional, List
 

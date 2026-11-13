@@ -171,6 +171,7 @@
 # Purpose: Provides concrete implementations of a generic AI connector for
 #          various AI providers, ensuring they are interchangeable.
 
+import os
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

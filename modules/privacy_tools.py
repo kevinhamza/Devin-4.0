@@ -3,6 +3,8 @@
 #          differential privacy, PII detection/anonymization, and GDPR-style
 #          data portability exports -- into a single, agent-friendly interface.
 
+import sys
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional

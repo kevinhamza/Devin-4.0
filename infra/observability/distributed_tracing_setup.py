@@ -1,6 +1,7 @@
 # Devin/infra/observability/distributed_tracing_setup.py
 # Purpose: Setup for distributed tracing using OpenTelemetry.
 
+import random
 import logging
 import os
 import sys

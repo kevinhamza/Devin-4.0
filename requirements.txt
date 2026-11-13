@@ -1,4 +1,25 @@
 # Devin AGI - Python Dependencies
+#
+# --- Linux system packages (not installable with pip) -------------------------
+# Devin controls the desktop with a real pointer and keyboard. On Linux that needs:
+#
+#   sudo apt install -y ydotool tesseract-ocr xclip python3-gi gir1.2-atspi-2.0 \
+#                       gir1.2-gstreamer-1.0 gstreamer1.0-pipewire
+#
+#   ydotool             kernel-level mouse/keyboard input on any Wayland desktop
+#   tesseract-ocr       reads on-screen text so text-only models can find things
+#   python3-gi + gir*   GNOME: pointer, keyboard and screen frames through Mutter
+#   xclip               clipboard (pasting characters that are not on the keyboard)
+#
+# ydotool's daemon needs access to /dev/uinput. One-time setup:
+#
+#   sudo usermod -aG input "$USER"             # permanent, applies from next login
+#   sudo setfacl -m "u:$USER:rw" /dev/uinput   # works immediately
+#   systemctl --user reset-failed ydotool
+#   systemctl --user enable --now ydotool
+#
+# `./devin --setup` checks all of this, and `./devin --doctor` tests it.
+# ------------------------------------------------------------------------------
 
 # --- Build Tools ---
 setuptools>=83.0.0  # PYSEC-2026-3447: fix requires >=83.0.0
@@ -60,6 +81,7 @@ slack-bolt
 psutil
 watchdog
 pynput
+evdev                    # Linux: exact absolute pointer for the ydotool backend
 selenium
 playwright
 pyautogui

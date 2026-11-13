@@ -298,10 +298,12 @@
 # Purpose: A facade that provides a unified interface for querying the
 #          AnalyticsServer to generate reports and visualizations.
 
+import uuid
+import random
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import timedelta
 
 try:

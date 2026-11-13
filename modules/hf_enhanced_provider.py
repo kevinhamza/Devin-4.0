@@ -234,11 +234,9 @@ def chat(
             continue
         if status >= 400:
             body_text = resp.text[:300]
-            if "model not found" in body_text.lower() or "not_found" in body_text.lower():
-                last_error = f"{m_id}: {body_text[:100]}"
-                continue
             last_error = f"{m_id}: HTTP {status} {body_text}"
-            break
+            # Always continue to next model — don't break on 402/403/400
+            continue
 
         try:
             data = resp.json()
@@ -279,15 +277,16 @@ def stream_chat(
     model: Optional[str] = None,
     max_tokens: int = 4096,
 ) -> Generator[str, None, None]:
-    """Streaming chat — yields text chunks as they arrive."""
+    """Streaming chat — tries HF router, falls back to Ollama if unavailable."""
     if not has_token():
-        yield "[Error: HF_TOKEN not set]"
+        # Fall back to Ollama if no HF token
+        yield from _ollama_fallback(messages, system_prompt, max_tokens)
         return
 
     try:
         import requests  # type: ignore
     except ImportError:
-        yield "[Error: requests not installed]"
+        yield from _ollama_fallback(messages, system_prompt, max_tokens)
         return
 
     payload_messages: List[Dict[str, Any]] = []
@@ -297,39 +296,75 @@ def stream_chat(
         if m.get("role") != "system":
             payload_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
 
-    model_id = model or FREE_MODELS[0]
-    body: Dict[str, Any] = {
-        "model": model_id,
-        "messages": payload_messages,
-        "max_tokens": max_tokens,
-        "temperature": 0.7,
-        "stream": True,
-    }
-
-    try:
-        resp = requests.post(HF_ROUTER_URL, headers=_headers(), json=body, stream=True, timeout=120)
-        if resp.status_code != 200:
-            yield f"[Error: HTTP {resp.status_code}]"
-            return
-
-        for line in resp.iter_lines():
-            if not line:
+    # Try each model in the free chain
+    models_to_try = [model] if model else list(FREE_MODELS)
+    for model_id in models_to_try:
+        body: Dict[str, Any] = {
+            "model": model_id,
+            "messages": payload_messages,
+            "max_tokens": max_tokens,
+            "temperature": 0.7,
+            "stream": True,
+        }
+        try:
+            resp = requests.post(HF_ROUTER_URL, headers=_headers(), json=body, stream=True, timeout=120)
+            if resp.status_code == 401:
+                log.warning("HF token invalid (401) — falling back to Ollama")
+                yield from _ollama_fallback(messages, system_prompt, max_tokens)
+                return
+            if resp.status_code in (402, 403):
+                log.warning("HF model %s requires paid plan — trying next", model_id)
                 continue
-            line_str = line.decode("utf-8") if isinstance(line, bytes) else line
-            if line_str.startswith("data: "):
-                data_str = line_str[6:].strip()
-                if data_str == "[DONE]":
-                    return
-                try:
-                    chunk = json.loads(data_str)
-                    delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
-                    content = delta.get("content") or ""
-                    if content:
-                        yield content
-                except Exception:
+            if resp.status_code == 400:
+                log.warning("HF model %s not supported — trying next", model_id)
+                continue
+            if resp.status_code != 200:
+                log.warning("HF HTTP %s for %s — trying next", resp.status_code, model_id)
+                continue
+
+            got_any = False
+            for line in resp.iter_lines():
+                if not line:
                     continue
+                line_str = line.decode("utf-8") if isinstance(line, bytes) else line
+                if line_str.startswith("data: "):
+                    data_str = line_str[6:].strip()
+                    if data_str == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(data_str)
+                        delta = (chunk.get("choices") or [{}])[0].get("delta") or {}
+                        content = delta.get("content") or ""
+                        if content:
+                            got_any = True
+                            yield content
+                    except Exception:
+                        continue
+            if got_any:
+                return  # success
+        except Exception as e:
+            log.warning("HF stream error for %s: %s", model_id, e)
+            continue
+
+    # All HF models failed — use Ollama
+    log.info("All HF models failed, falling back to Ollama")
+    yield from _ollama_fallback(messages, system_prompt, max_tokens)
+
+
+def _ollama_fallback(
+    messages: List[Dict[str, str]],
+    system_prompt: Optional[str],
+    max_tokens: int,
+) -> Generator[str, None, None]:
+    """Stream from local Ollama as fallback."""
+    try:
+        from modules.ollama_provider import stream_chat as ollama_stream, is_available
+        if is_available():
+            yield from ollama_stream(messages, system_prompt=system_prompt, max_tokens=max_tokens)
+        else:
+            yield "[No AI provider available. HF token invalid and Ollama not running. Run: ollama serve]"
     except Exception as e:
-        yield f"[Stream error: {e}]"
+        yield f"[Fallback error: {e}]"
 
 
 def list_free_models() -> List[str]:

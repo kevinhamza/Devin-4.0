@@ -1,6 +1,7 @@
 # Devin/prototypes/neural_networks.py
 # Purpose: Prototype implementations of various classical neural network architectures.
 
+import random
 import logging
 import os
 import time

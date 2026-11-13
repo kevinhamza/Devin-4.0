@@ -1,6 +1,7 @@
 # Devin/infra/observability/loki_integration.py
 # Purpose: Configure Python logging to send logs to Grafana Loki for aggregation.
 
+import uuid
 import logging
 import os
 import sys
@@ -10,6 +11,14 @@ from typing import Dict, Optional, Tuple, Any
 
 # --- Loki Logging Handler Import ---
 # Requires: pip install python-logging-loki
+
+# Always define a placeholder so isinstance checks work regardless of library availability
+class LokiHandlerPlaceholder: # type: ignore
+    def __init__(self, url=None, tags=None, auth=None, version=None, verify_ssl=True, **kwargs):
+        pass
+    def handleError(self, record):
+        pass
+
 try:
     from python_logging_loki import LokiHandler, LokiQueueHandler
     # LokiQueueHandler uses a background thread for sending logs, which is generally better for performance.
@@ -18,12 +27,6 @@ try:
 except ImportError:
     PYTHON_LOGGING_LOKI_AVAILABLE = False
     print("WARNING: 'python-logging-loki' library not found. Loki integration will be non-functional.")
-    # Define placeholders if library not found
-    class LokiHandlerPlaceholder: # type: ignore
-        def __init__(self, url, tags, auth, version, verify_ssl, **kwargs):
-            logger.info(f"Loki Placeholder Handler Initialized: url={url}, tags={tags}")
-        def handleError(self, record):
-            logger.error("Loki Placeholder: Error in handling log record.")
     LokiHandler = LokiHandlerPlaceholder # type: ignore
     LokiQueueHandler = LokiHandlerPlaceholder # type: ignore
 

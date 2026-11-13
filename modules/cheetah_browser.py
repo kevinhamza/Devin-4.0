@@ -5,6 +5,7 @@ Falls back gracefully when not installed.
 """
 from __future__ import annotations
 
+import re
 from cheetahclaws.tool_registry import ToolDef, register_tool
 
 _INSTALL_HINT = (

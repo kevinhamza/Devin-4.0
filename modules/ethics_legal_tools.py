@@ -31,8 +31,9 @@
 #     feature instead of crashing the whole facade. Every such landmine is
 #     called out inline below and summarized in the report.
 
+import random
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union, Literal
 
 try:
     import pandas as pd

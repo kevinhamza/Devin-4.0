@@ -4,6 +4,8 @@ Imports and exposes functionality from ALL 24 integrated external repos.
 Repos are loaded from external/ directory via sys.path injection (no file copying).
 """
 
+import base64
+import datetime
 import os
 import sys
 import importlib

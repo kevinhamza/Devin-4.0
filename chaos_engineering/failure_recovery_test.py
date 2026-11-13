@@ -3,7 +3,7 @@
 import pytest # Test framework
 import time
 import random
-from typing import Dict, Any, List, Generator
+from typing import Callable, Dict, Any, List, Optional, Generator, Tuple
 
 # --- Conceptual Imports ---
 # Import the chaos tools and potentially a client to interact with Devin's API or health checks

@@ -26,7 +26,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict, Literal
 
 logger = logging.getLogger("PluginsFacade")
 if not logger.handlers:

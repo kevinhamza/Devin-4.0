@@ -1,13 +1,14 @@
 # Devin/enterprise/audit_compliance/soc2_checklist.py
 # Purpose: Framework for defining SOC 2 controls and running conceptual checks.
 
+from pathlib import Path
 import logging
 import datetime
 import json
 import os
 from enum import Enum
-from typing import Dict, Any, List, Optional, Tuple
-from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional, Tuple, Union, Literal
+from dataclasses import dataclass, field, asdict
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')

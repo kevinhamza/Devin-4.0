@@ -1,13 +1,15 @@
 # Devin/cyber_range/scenario_manager.py
 # Purpose: Manages the overall state and progression of cyber range scenarios.
 
+from pathlib import Path
 import os
 import json
 import uuid
 import datetime
 import logging
 from enum import Enum
-from typing import Dict, List, Optional, Any, TypedDict
+from typing import Dict, List, Optional, Any, TypedDict, Literal
+import shutil
 from dataclasses import dataclass, field, asdict
 
 # Conceptual imports for dependencies
@@ -339,7 +341,7 @@ if __name__ == "__main__":
         def provision(self, instance_id, resource_identifiers, setup_script, context): print(f"DummyRM: Provisioning {resource_identifiers} for {instance_id}"); return {"status": "success", "outputs": {"vm_ip": "10.0.0.10", "url": "http://10.0.0.10"}}
         def deprovision(self, instance_id): print(f"DummyRM: Deprovisioning {instance_id}"); return True
     class DummyCTFManager:
-        def check_challenge_status(self, chal_id): return ChallengeStatus.RUNNING # Dummy
+        def check_challenge_status(self, chal_id): return "RUNNING"  # Dummy
 
     print("\n--- Scenario Manager Example ---")
     # Use temporary files

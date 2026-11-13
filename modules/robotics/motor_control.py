@@ -231,6 +231,8 @@
 # Purpose: A functional, low-level interface for controlling and reading
 #          feedback from robot motors using the Dynamixel Protocol 1.0.
 
+import subprocess
+import random
 import logging
 import time
 import threading

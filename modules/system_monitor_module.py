@@ -272,6 +272,8 @@
 # Purpose: A facade that provides a unified interface to all of Devin's
 #          system and hardware monitoring capabilities.
 
+from pathlib import Path
+import random
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, NamedTuple, List, TYPE_CHECKING
@@ -284,7 +286,9 @@ if TYPE_CHECKING:
 
 try:
     # --- Import the REAL, integrated monitoring and robotics modules ---
-    from modules.robotics_control_module import RoboticsControlModule, RobotFeedback
+    # RobotFeedback only exists in the commented-out conceptual section of
+    # robotics_control_module.py; the active class is RoboticsControlModule only.
+    from modules.robotics_control_module import RoboticsControlModule
     from modules.monitoring.cpu_usage import get_cpu_usage, get_process_info
     from modules.monitoring.memory_tracker import get_memory_info
     from modules.monitoring.disk_scanner import get_disk_usage
@@ -348,21 +352,32 @@ class SystemMonitorFacade:
             return None
         
         logger.info("Getting live diagnostics from robot controller...")
-        feedback: Optional[RobotFeedback] = self.robot_controller.get_current_status()
-        
-        if feedback:
-            diagnostics = {
-                "robot_id": feedback.robot_id,
-                "status": feedback.status.name,
-                "battery_percent": feedback.battery_level_percent,
-                "current_position": feedback.current_position,
-                "error_messages": feedback.error_messages,
-            }
-            logger.info(f"Received live robot diagnostics: {diagnostics}")
-            return diagnostics
+        # RoboticsControlModule exposes startup_robot_system / shutdown_robot_system;
+        # a full get_current_status() does not exist in the active implementation.
+        # Return available meta-info instead of calling a non-existent method.
+        get_status = getattr(self.robot_controller, "get_current_status", None)
+        if callable(get_status):
+            feedback = get_status()
+            if feedback:
+                diagnostics = {
+                    "robot_id": getattr(feedback, "robot_id", "unknown"),
+                    "status": getattr(getattr(feedback, "status", None), "name", "unknown"),
+                    "battery_percent": getattr(feedback, "battery_level_percent", None),
+                    "current_position": getattr(feedback, "current_position", None),
+                    "error_messages": getattr(feedback, "error_messages", []),
+                }
+                logger.info(f"Received live robot diagnostics: {diagnostics}")
+                return diagnostics
+            else:
+                logger.warning("get_current_status() returned nothing.")
+                return {"status": "NOT_AVAILABLE"}
         else:
-            logger.warning("Could not retrieve live diagnostics from robot (is it connected and server running?).")
-            return {"status": "NOT_AVAILABLE"}
+            # Active RoboticsControlModule has no get_current_status(); report basic info.
+            logger.warning("robot_controller has no get_current_status() — returning partial info.")
+            return {
+                "status": "CONNECTED",
+                "controller_type": type(self.robot_controller).__name__,
+            }
 
     def generate_health_report(self) -> SystemHealthReport:
         """

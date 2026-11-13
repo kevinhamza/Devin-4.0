@@ -200,6 +200,7 @@
 # Purpose: A functional, high-level toolbox for performing iOS-specific
 #          testing and management tasks by wrapping macOS command-line tools.
 
+import random
 import logging
 import subprocess
 import shlex

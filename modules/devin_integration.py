@@ -14,6 +14,7 @@ All failures are silent — if any step fails the rest of agent.py
 continues normally with its original 136 tools.
 """
 from __future__ import annotations
+import json
 import sys
 from typing import Any, Dict, Optional
 

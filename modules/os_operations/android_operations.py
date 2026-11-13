@@ -206,11 +206,14 @@
 # Purpose: A functional, high-level toolbox for performing Android-specific
 #          administrative and development tasks by orchestrating the MobileFacade.
 
+from __future__ import annotations
+
+import random
 import logging
 import subprocess
 import shlex
 import time
-from typing import Optional, Any, Dict, List, Literal
+from typing import Optional, Any, Dict, List, Literal, TYPE_CHECKING
 
 try:
     from modules.mobile_integration_module import MobileFacade
@@ -218,6 +221,7 @@ try:
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
+    MobileFacade = None  # type: ignore
 
 # Configure basic logging
 logger = logging.getLogger("AndroidOperations")

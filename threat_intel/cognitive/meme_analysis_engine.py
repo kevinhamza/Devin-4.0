@@ -2,6 +2,7 @@
 # Purpose: An AI-powered engine to analyze viral media (memes) for the use
 #          of psychological operations and propaganda techniques.
 
+import os
 import logging
 import json
 import base64

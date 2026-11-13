@@ -23,7 +23,7 @@ try:
     OQS_AVAILABLE = True
 except BaseException as e:
     OQS_AVAILABLE = False
-    logging.getLogger("PostQuantumCrypto").warning(f"liboqs-python unavailable ({e}); post-quantum crypto disabled.")
+    logging.getLogger("PostQuantumCrypto").debug(f"liboqs-python unavailable ({e}); post-quantum crypto disabled.")
 
 # Configure basic logging
 logger = logging.getLogger("PostQuantumCrypto")

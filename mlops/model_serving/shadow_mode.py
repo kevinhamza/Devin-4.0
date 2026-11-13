@@ -3,12 +3,13 @@
 #          Allows testing a new model with live traffic without impacting users.
 # Safe Rollouts 🛡️➡️🚀
 
+import random
 import logging
 import uuid
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from typing import Dict, List, Any, Optional, Callable, Tuple
+from typing import Dict, List, Any, Optional, Callable, Tuple, Literal
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, mean_squared_error
 
 # Configure basic logging
@@ -214,8 +215,8 @@ class ShadowDeploymentManager:
         logger.info(f"  Avg Shadow Latency: {results['avg_shadow_latency_ms']:.2f} ms")
 
         # 4. Error Rate Comparison
-        results["champion_error_count"] = df['champion_error'].notna().sum()
-        results["shadow_error_count"] = df['shadow_error'].notna().sum()
+        results["champion_error_count"] = df['champion_error'].notna().sum() if 'champion_error' in df.columns else 0
+        results["shadow_error_count"] = df['shadow_error'].notna().sum() if 'shadow_error' in df.columns else 0
         logger.info(f"  Champion Prediction Error Count: {results['champion_error_count']}")
         logger.info(f"  Shadow Prediction Error Count: {results['shadow_error_count']}")
 

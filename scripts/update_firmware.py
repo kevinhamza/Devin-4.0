@@ -1,4 +1,5 @@
 # scripts/update_firmware.py
+from pathlib import Path
 import serial
 import time
 import argparse

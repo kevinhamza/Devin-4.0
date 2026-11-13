@@ -9,8 +9,10 @@
 # reads closer to Claude Code's CLI rather than a wall of [INFO]/[SUCCESS]
 # log-style lines.
 
+import subprocess
 import contextlib
 import logging
+import re
 import sys
 import os
 from typing import Optional
@@ -28,6 +30,31 @@ except ImportError:
     Panel = None  # type: ignore
     Prompt = None  # type: ignore
 
+def _strip_markup(text) -> str:
+    """Remove rich markup tags (e.g. [bold], [/dim]) for plain-text fallback."""
+    return re.sub(r'\[/?[^\]]*\]', '', str(text))
+
+class _FallbackConsole:
+    """Minimal plain-text console used when rich is not installed."""
+    @staticmethod
+    def print(msg='', end='\n', **_kwargs):
+        print(_strip_markup(msg), end=end)
+
+    @staticmethod
+    @contextlib.contextmanager
+    def status(msg='', **_kwargs):
+        print(_strip_markup(msg))
+        yield
+
+class _FallbackPrompt:
+    """Minimal plain-text prompt used when rich is not installed."""
+    @staticmethod
+    def ask(prompt='', **_kwargs) -> str:
+        try:
+            return input(f"{_strip_markup(prompt)}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
 # Try to import speech recognition
 try:
     from modules.multimedia_tools.speech_recognition import LiveSpeechRecognizer
@@ -44,7 +71,8 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 logger.propagate = False
 
-console = Console() if _HAS_RICH and Console else None
+console = Console() if _HAS_RICH else _FallbackConsole()
+_Prompt = Prompt if _HAS_RICH else _FallbackPrompt
 
 # --- ANSI Color Codes for Formatted Output ---
 # Kept for any code that still references Colors directly; display_message
@@ -122,14 +150,17 @@ class UserInteractionManager:
         """
         try:
             if is_dangerous:
-                console.print(Panel(
-                    prompt,
-                    title="[bold red]⚠ Dangerous action requires confirmation[/bold red]",
-                    border_style="red",
-                ))
-                response = Prompt.ask("[bold red]Are you absolutely sure you want to proceed?[/bold red] (yes/no)").lower().strip()
+                if _HAS_RICH and Panel:
+                    console.print(Panel(
+                        prompt,
+                        title="[bold red]⚠ Dangerous action requires confirmation[/bold red]",
+                        border_style="red",
+                    ))
+                else:
+                    console.print(f"[WARNING] {prompt}")
+                response = _Prompt.ask("[bold red]Are you absolutely sure you want to proceed?[/bold red] (yes/no)").lower().strip()
             else:
-                response = Prompt.ask(f"[yellow]{prompt}[/yellow] (y/n)").lower().strip()
+                response = _Prompt.ask(f"[yellow]{prompt}[/yellow] (y/n)").lower().strip()
             return response in ("y", "yes")
         except KeyboardInterrupt:
             logger.warning("\nUser interrupted confirmation. Defaulting to NO.")
@@ -156,14 +187,12 @@ class UserInteractionManager:
         elif level == 'thinking':
             console.print(f"[dim italic]∴ {message}[/dim italic]")
         elif level == 'assistant':
-            # Render as markdown -- bold, code spans, lists in a reply
-            # actually render instead of showing literal ** and backticks,
-            # the same as Claude Code rendering its own responses.
-            # Markdown(None) raises TypeError -- caught live when a
-            # failed provider call propagated a None reply all the way
-            # here, so guard against it rather than crashing the session.
+            # Markdown(None) raises TypeError; guard it.
             console.print("[bold]Devin:[/bold]", end=" ")
-            console.print(Markdown(message) if message else "[dim](no response)[/dim]")
+            if message:
+                console.print(Markdown(message) if (_HAS_RICH and Markdown) else message)
+            else:
+                console.print("[dim](no response)[/dim]")
         else:
             console.print(message)
 
@@ -321,14 +350,39 @@ class UserInteractionManager:
             return True
 
         elif cmd == "/screenshot":
-            import os as _os, tempfile
-            outpath = _os.path.join(tempfile.gettempdir(), f"devin_ss_{int(__import__('time').time())}.png")
-            import subprocess
+            import os as _os, tempfile, time as _time
+            outpath = _os.path.join(tempfile.gettempdir(), f"devin_ss_{int(_time.time())}.png")
+            taken = False
+            # Prefer gdbus XDG Portal (GNOME Wayland)
             try:
-                subprocess.run(["python3", "-c", f"import pyautogui; pyautogui.screenshot('{outpath}')"], timeout=10)
+                result = subprocess.run([
+                    "gdbus", "call", "--session",
+                    "--dest", "org.freedesktop.portal.Desktop",
+                    "--object-path", "/org/freedesktop/portal/desktop",
+                    "--method", "org.freedesktop.portal.Screenshot.Screenshot",
+                    "", "{}",
+                ], capture_output=True, text=True, timeout=15)
+                if result.returncode == 0 and "file://" in result.stdout:
+                    import urllib.parse
+                    uri = result.stdout.strip().strip("(),'\" ").replace("'", "")
+                    src = urllib.parse.unquote(uri.replace("file://", ""))
+                    if _os.path.exists(src):
+                        import shutil
+                        shutil.copy2(src, outpath)
+                        taken = True
+            except Exception:
+                pass
+            # Fallback: scrot
+            if not taken:
+                try:
+                    subprocess.run(["scrot", outpath], timeout=10, check=True)
+                    taken = True
+                except Exception:
+                    pass
+            if taken:
                 console.print(f"[green]✓ Screenshot: {outpath}[/green]")
-            except Exception as e:
-                console.print(f"[red]✗ Screenshot failed: {e}[/red]")
+            else:
+                console.print("[red]✗ Screenshot failed: no capture method succeeded[/red]")
             return True
 
         elif cmd == "/voice":

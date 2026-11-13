@@ -1,12 +1,13 @@
 # Devin/enterprise/audit_compliance/hipaa_validator.py
 # Purpose: Framework for defining HIPAA Security Rule technical controls and running conceptual checks.
 
+from pathlib import Path
 import logging
 import datetime
 import json
 import os
 from enum import Enum
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Union, Literal
 from dataclasses import dataclass, field, asdict
 
 # Configure basic logging

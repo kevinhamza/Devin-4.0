@@ -1,6 +1,8 @@
 # Devin/edge/iot_security.py
 # Purpose: Implements security measures specific to IoT device interactions.
 
+from pathlib import Path
+import os
 import ssl
 import json
 import logging

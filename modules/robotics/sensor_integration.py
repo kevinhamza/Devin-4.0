@@ -216,6 +216,8 @@
 # Purpose: A functional framework for integrating with and reading data from
 #          various robot sensors like cameras, IMUs, and LiDAR.
 
+import os
+import random
 import logging
 import time
 import platform

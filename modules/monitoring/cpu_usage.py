@@ -3,12 +3,18 @@
 #          with background alerting and live visualization capabilities.
 
 import logging
-import psutil
 import threading
 import time
 import os
 from typing import List, Dict, Optional, Callable, Any
 from collections import deque
+
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    psutil = None  # type: ignore
+    PSUTIL_AVAILABLE = False
 
 try:
     import matplotlib.pyplot as plt
@@ -31,7 +37,7 @@ class CPU_Monitor:
     Provides a suite of tools for monitoring CPU usage.
     """
     def __init__(self):
-        if not psutil:
+        if not PSUTIL_AVAILABLE:
             raise ImportError("psutil library is required. Please 'pip install psutil'.")
         self._monitoring_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -135,6 +141,24 @@ class CPU_Monitor:
         ani = animation.FuncAnimation(fig, animate, interval=1000)
         plt.tight_layout()
         plt.show()
+
+# --- Module-level convenience functions (used by system_monitor_module.py) ---
+
+def get_cpu_usage() -> float:
+    """Returns current system-wide CPU utilization percent (0.0-100.0)."""
+    if not PSUTIL_AVAILABLE:
+        return 0.0
+    return psutil.cpu_percent(interval=0.1)
+
+def get_process_info(limit: int = 10) -> List[Dict[str, Any]]:
+    """Returns top N processes by CPU usage as a list of dicts."""
+    if not PSUTIL_AVAILABLE:
+        return []
+    try:
+        return CPU_Monitor().get_top_processes(count=limit)
+    except Exception:
+        return []
+
 
 # --- Example Usage ---
 if __name__ == "__main__":

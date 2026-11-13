@@ -1,11 +1,13 @@
 # Devin/cyber_range/red_team/adversary_emulation/mitre_attck.py
 # Purpose: Provides access to and querying of MITRE ATT&CK framework data (Tactics, Techniques, etc.).
 
+from pathlib import Path
 import json
 import os
 import logging
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Any, Literal
+from dataclasses import dataclass, field, asdict
+from collections import defaultdict
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -49,9 +51,9 @@ class AttackSoftware:
     name: str # e.g., Mimikatz
     description: str
     url: str
+    type: str # e.g., malware, tool
     platforms: List[str] = field(default_factory=list)
     associated_techniques: List[str] = field(default_factory=list) # List of Technique/Sub-technique IDs
-    type: str # e.g., malware, tool
 
 
 # --- ATT&CK Knowledge Base Class ---

@@ -323,6 +323,11 @@
 # Purpose: A persistent, feature-rich scheduler for managing and executing
 #          tasks by integrating with the TaskOrchestrator.
 
+import json
+import threading
+import time
+import sys
+import uuid
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List

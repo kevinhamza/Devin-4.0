@@ -276,7 +276,7 @@ if __name__ == "__main__":
         print(f"Running conceptual simulation loop for approx {max_sim_seconds} seconds...")
 
         # The core loop: robot.step(time_step) must be called repeatedly.
-        while webots_iface.step() != -1: # -1 means simulation quit
+        while webots_iface.step_simulation(): # False means simulation quit
             loop_count += 1
             current_sim_time = webots_iface.get_simulation_time()
 

@@ -241,6 +241,9 @@
 # Purpose: Provides Speaker Recognition (identifying who is speaking) by
 #          training a model for each speaker's voiceprint.
 
+from __future__ import annotations
+
+from pathlib import Path
 import logging
 import os
 import pickle
@@ -256,6 +259,10 @@ try:
 except ImportError as e:
     DEPS_AVAILABLE = False
     _import_error = e
+    np = None           # type: ignore
+    librosa = None      # type: ignore
+    GaussianMixture = None  # type: ignore
+    sr = None           # type: ignore
 
 # Configure basic logging
 logger = logging.getLogger("SpeakerRecognition")

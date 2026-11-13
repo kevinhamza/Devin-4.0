@@ -1,3 +1,4 @@
+from pathlib import Path
 import cv2
 import face_recognition
 import numpy as np
@@ -97,7 +98,7 @@ class FaceDetection:
         try:
             return self.social_search.search_by_face(face_encoding)  # Use SocialMediaSearch to find info
         except Exception as e:
-            self.error_handler.handle_exception(e, "Error in social media search.")
+            self.error_handler.log_error(f"Error in social media search: {e}")
             return {}
 
     def display_info_on_frame(self, frame, face_location, name):

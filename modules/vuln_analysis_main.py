@@ -17,16 +17,20 @@
 
 # The purpose of this function is to allow loading the current directory as a module. This allows relative imports and
 # more specifically `..common` to function correctly
+import os
+import sys
 def run_cli():
     import os
     import sys
 
     main_parent_dir = os.path.dirname(os.path.dirname(__file__))
 
-    if (main_parent_dir not in sys.path):
+    if main_parent_dir not in sys.path:
         sys.path.append(main_parent_dir)
 
-    from src.cli import cli
+    # src/cli.py does not exist (src/ contains TypeScript). Use the Python CLI
+    # defined in the sibling vuln_analysis_cli module.
+    from modules.vuln_analysis_cli import cli
 
     cli(obj={}, auto_envvar_prefix='MORPHEUS_LLM', show_default=True, prog_name="morpheus_llm")
 

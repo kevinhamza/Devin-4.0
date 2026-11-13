@@ -1,6 +1,8 @@
 # Devin/cyber_range/capture_the_flag/ctf_scoreboard.py
 # Purpose: Tracks player scores, rankings, and potentially solved challenges in the CTF.
 
+from pathlib import Path
+import time
 import os
 import json
 import datetime

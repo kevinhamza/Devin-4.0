@@ -237,6 +237,7 @@
 # Purpose: A functional, production-ready suite of cryptographic utilities for
 #          hashing, encryption, decryption, and digital signatures.
 
+import uuid
 import logging
 import os
 import base64

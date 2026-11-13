@@ -381,6 +381,8 @@
 # Purpose: A fully functional, native client for interacting with the Perplexity AI API,
 #          focusing on conversational search, sourced answers, and streaming.
 
+import uuid
+import random
 import logging
 import os
 import json

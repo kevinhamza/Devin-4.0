@@ -14,6 +14,7 @@
 # limitations under the License.
 
 
+import os
 def url_join(*parts):
     """
     Functionally similar to `os.path.join` but for URLs. This function will join the parts of a URL together, ensuring

@@ -2,6 +2,7 @@
 # Purpose: A toolkit for audio processing, including manipulation, format
 #          conversion, and multi-engine speech-to-text/text-to-speech.
 
+import json
 import logging
 import os
 import sys
@@ -58,7 +59,7 @@ class AudioProcessor:
             self._load_audio()
 
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        if self.openai_api_key:
+        if OPENAI_AVAILABLE and self.openai_api_key:
             self.openai_client = openai.OpenAI(api_key=self.openai_api_key)
         else:
             self.openai_client = None

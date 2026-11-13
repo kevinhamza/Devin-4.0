@@ -2,6 +2,8 @@
 # Purpose: Provides spatial reasoning for 3D environments, including scene
 #          analysis, spatial querying, and 3D pathfinding on a navmesh.
 
+from pathlib import Path
+import time
 import logging
 import json
 import math

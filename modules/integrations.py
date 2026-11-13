@@ -3,6 +3,8 @@ modules/integrations.py — Unified API for all 24 integrated repos.
 Every import is wrapped in try/except; missing dependencies disable only that feature.
 """
 from __future__ import annotations
+import hashlib
+import base64
 import os, sys, json, time, subprocess, platform, tempfile, types, shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -875,11 +877,6 @@ def listen(timeout: int = 5) -> str:
 
 def clipboard_get() -> str:
     """Get clipboard content."""
-    if HAS["pyautogui"] and pyautogui:
-        try:
-            return pyautogui.hotkey("ctrl", "a") or ""
-        except Exception:
-            pass
     if PLATFORM == "Linux":
         try:
             return subprocess.check_output(["xclip", "-selection", "clipboard", "-o"],
@@ -1307,7 +1304,7 @@ def grep_files(directory: str = ".", pattern: str = "", file_pattern: str = "*.p
     directory = _norm_path(directory)
     results = []
     try:
-        import re
+        import re, fnmatch
         regex = re.compile(pattern, re.IGNORECASE)
         for root, dirs, files in os.walk(directory):
             dirs[:] = [d for d in dirs if not d.startswith('.')]
@@ -1447,21 +1444,20 @@ def extract_emails(text: str) -> List[str]:
 
 def port_scan(host: str, ports: str = "22,80,443,3306,5432,8080") -> Dict[str, Any]:
     """Scan common ports on a host."""
+    import socket
     result = {"host": host, "ports_checked": ports.split(','), "open_ports": []}
 
-    if HAS["requests"] and requests:
-        for port_str in ports.split(','):
-            try:
-                port = int(port_str.strip())
-                import socket
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(1)
-                result_code = s.connect_ex((host, port))
-                if result_code == 0:
-                    result["open_ports"].append(port)
-                s.close()
-            except Exception:
-                pass
+    for port_str in ports.split(','):
+        try:
+            port = int(port_str.strip())
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(1)
+            result_code = s.connect_ex((host, port))
+            if result_code == 0:
+                result["open_ports"].append(port)
+            s.close()
+        except Exception:
+            pass
 
     return result
 

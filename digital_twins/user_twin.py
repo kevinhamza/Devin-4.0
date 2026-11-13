@@ -1,6 +1,7 @@
 # Devin/digital_twins/user_twin.py
 # Purpose: Represents a digital twin of a user, modeling preferences, behavior, and potentially predicting actions.
 
+from pathlib import Path
 import os
 import json
 import logging

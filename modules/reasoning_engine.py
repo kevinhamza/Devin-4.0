@@ -183,21 +183,123 @@ def _call_huggingface(messages: List[Dict], system: str, tools: Optional[List] =
         raise RuntimeError(f"HuggingFace call failed: {e}") from e
 
 
+def _call_fcc(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List]:
+    """Call free-claude-code server (Anthropic Messages API at FCC_BASE_URL/v1/messages).
+    FCC exposes /v1/messages (Anthropic format) not /v1/chat/completions.
+    Returns (text, tool_calls).
+    """
+    base = (os.environ.get("FCC_BASE_URL") or "").rstrip("/")
+    if not base:
+        raise RuntimeError("FCC_BASE_URL not set")
+
+    import json as _json
+    try:
+        import requests  # type: ignore
+    except ImportError:
+        raise RuntimeError("pip install requests")
+
+    # Pick a free OpenRouter model by default (available via FCC openrouter provider)
+    model = os.environ.get("FCC_MODEL", "anthropic/open_router/qwen/qwen3-235b-a22b")
+
+    # Build Anthropic-format messages (no system role in messages array)
+    anth_messages = []
+    for m in messages:
+        if m.get("role") != "system":
+            anth_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+    if not anth_messages:
+        anth_messages = [{"role": "user", "content": "Hello"}]
+
+    body: Dict = {
+        "model": model,
+        "messages": anth_messages,
+        "max_tokens": 4096,
+    }
+    if system:
+        body["system"] = system
+    if tools:
+        # Convert OpenAI tool format to Anthropic tool format
+        anth_tools = []
+        for t in tools:
+            fn = t.get("function") or t
+            anth_tools.append({
+                "name": fn.get("name", ""),
+                "description": fn.get("description", ""),
+                "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+            })
+        body["tools"] = anth_tools
+
+    headers = {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+    }
+
+    resp = requests.post(f"{base}/v1/messages", headers=headers, json=body, timeout=120)
+    if resp.status_code != 200:
+        raise RuntimeError(f"FCC server HTTP {resp.status_code}: {resp.text[:300]}")
+
+    data = resp.json()
+
+    # Parse Anthropic response format
+    raw_text = ""
+    tool_calls: List[Dict] = []
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            raw_text += block.get("text", "")
+        elif block.get("type") == "tool_use":
+            tool_calls.append({"name": block.get("name", ""), "input": block.get("input") or {}})
+
+    return raw_text, tool_calls
+
+
+def _call_ollama(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List]:
+    """Call local Ollama server. Returns (text, tool_calls)."""
+    try:
+        from modules.ollama_provider import OllamaProvider  # type: ignore
+        prov = OllamaProvider()
+        if not prov.is_available():
+            raise RuntimeError("Ollama not running at localhost:11434")
+        text, calls = prov.chat_with_tools(messages, system=system, tools=tools or [])
+        return text, calls
+    except ImportError:
+        pass
+    # Direct HTTP fallback
+    import urllib.request, json as _json
+    base = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    model = os.environ.get("OLLAMA_MODEL", "qwen2.5:0.5b")
+    all_msgs: List[Dict] = []
+    if system:
+        all_msgs.append({"role": "system", "content": system})
+    all_msgs.extend(messages)
+    body = _json.dumps({"model": model, "messages": all_msgs, "stream": False}).encode()
+    req = urllib.request.Request(f"{base}/api/chat", data=body,
+                                  headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = _json.loads(resp.read())
+    text = data.get("message", {}).get("content", "")
+    return text, []
+
+
 def _call_best_available(messages: List[Dict], system: str, tools: Optional[List] = None) -> Tuple[str, List, str]:
     """Try providers in priority order. Returns (text, tool_calls, model_name)."""
     preferred = os.environ.get("DEVIN_PROVIDER", "").lower()
 
     order = []
-    if preferred == "claude":
-        order = ["claude", "gemini", "openai", "huggingface"]
+    if preferred == "ollama":
+        order = ["ollama", "claude", "gemini", "openai", "huggingface", "fcc"]
+    elif preferred == "claude":
+        order = ["claude", "gemini", "openai", "huggingface", "ollama", "fcc"]
     elif preferred == "gemini":
-        order = ["gemini", "claude", "openai", "huggingface"]
+        order = ["gemini", "claude", "openai", "huggingface", "ollama", "fcc"]
     elif preferred == "openai":
-        order = ["openai", "claude", "gemini", "huggingface"]
+        order = ["openai", "claude", "gemini", "huggingface", "ollama", "fcc"]
     elif preferred in ("huggingface", "hf"):
-        order = ["huggingface", "gemini", "claude", "openai"]
+        order = ["huggingface", "gemini", "claude", "openai", "ollama", "fcc"]
+    elif preferred in ("free_claude", "fcc"):
+        order = ["fcc", "claude", "gemini", "openai", "huggingface", "ollama"]
     else:
         order = []
+        if os.environ.get("FCC_BASE_URL"):
+            order.append("fcc")
         if os.environ.get("ANTHROPIC_API_KEY"):
             order.append("claude")
         if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
@@ -206,13 +308,19 @@ def _call_best_available(messages: List[Dict], system: str, tools: Optional[List
             order.append("openai")
         if os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_API_KEY"):
             order.append("huggingface")
+        # Ollama is always worth trying last — no key required
+        order.append("ollama")
         if not order:
-            order = ["gemini", "claude", "openai", "huggingface"]
+            order = ["ollama", "fcc", "gemini", "claude", "openai", "huggingface"]
 
     last_error = "No provider available"
     for provider in order:
         try:
-            if provider == "claude":
+            if provider == "ollama":
+                text, calls = _call_ollama(messages, system, tools)
+                model = os.environ.get("OLLAMA_MODEL", "qwen2.5:0.5b")
+                return text, calls, f"ollama/{model}"
+            elif provider == "claude":
                 text, calls = _call_claude(messages, system, tools)
                 return text, calls, f"claude/{os.environ.get('CLAUDE_MODEL','claude-opus-4-5')}"
             elif provider == "gemini":
@@ -224,6 +332,10 @@ def _call_best_available(messages: List[Dict], system: str, tools: Optional[List
             elif provider == "huggingface":
                 text, calls = _call_huggingface(messages, system, tools)
                 return text, calls, "huggingface/qwen-72b"
+            elif provider == "fcc":
+                text, calls = _call_fcc(messages, system, tools)
+                model = os.environ.get("FCC_MODEL", "claude-opus-4-5")
+                return text, calls, f"fcc/{model}"
         except Exception as e:
             last_error = f"{provider}: {e}"
             log.debug("Provider %s failed: %s", provider, e)

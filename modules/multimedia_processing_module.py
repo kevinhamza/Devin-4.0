@@ -294,6 +294,8 @@
 # Purpose: A facade that provides a unified interface to all of Devin's
 #          multimedia processing capabilities, both local and server-based.
 
+import uuid
+import random
 import logging
 import time
 from pathlib import Path

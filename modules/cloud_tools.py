@@ -447,6 +447,9 @@
 # Purpose: Provides a functional, low-level, provider-specific toolkit for
 #          direct interaction with cloud resources (AWS, GCP, Azure).
 
+import json
+import uuid
+import random
 import logging
 import os
 from typing import List, Dict, Any, Optional

@@ -241,6 +241,8 @@
 # Purpose: Provides a real-time, gesture-based HCI by integrating hand
 #          tracking with direct mouse and keyboard control.
 
+from __future__ import annotations
+
 import logging
 from enum import Enum, auto
 from typing import List, Tuple, Optional, Callable
@@ -254,6 +256,10 @@ try:
 except ImportError as e:
     DEVIN_CORE_AVAILABLE = False
     _import_error = e
+    cv2 = None           # type: ignore
+    np = None            # type: ignore
+    mp = None            # type: ignore
+    KeyboardMouseController = None  # type: ignore
 
 # Configure basic logging
 logger = logging.getLogger("GestureControl")

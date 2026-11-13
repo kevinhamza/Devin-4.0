@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 from collections import defaultdict
+from sklearn.metrics import accuracy_score
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Literal, Tuple
 

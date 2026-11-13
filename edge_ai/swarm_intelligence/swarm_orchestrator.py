@@ -1,6 +1,7 @@
 # Devin/edge_ai/swarm_intelligence/swarm_orchestrator.py
 # Purpose: Orchestrates tasks and coordination for a swarm of agents.
 
+import threading
 import time
 import logging
 import uuid
@@ -9,6 +10,10 @@ from enum import Enum
 from collections import defaultdict
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field, asdict
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+logger = logging.getLogger("SwarmOrchestrator")
 
 # --- Conceptual Imports ---
 try:
@@ -62,9 +67,11 @@ class TaskStatus(str, Enum):
 @dataclass
 class SwarmTask:
     """Represents a task to be performed by an agent in the swarm."""
-    task_id: str = field(default_factory=lambda: f"SWARM-TASK-{uuid.uuid4().hex[:8].upper()}")
+    # Required fields first
     type: str # e.g., "explore_area", "monitor_location", "retrieve_item", "process_data"
     params: Dict[str, Any] # Task-specific parameters (e.g., {'target_location': (x,y), 'duration': 60})
+    # Auto-generated / defaulted fields
+    task_id: str = field(default_factory=lambda: f"SWARM-TASK-{uuid.uuid4().hex[:8].upper()}")
     priority: int = 0 # Higher value means higher priority
     status: TaskStatus = TaskStatus.PENDING
     assigned_agent_id: Optional[str] = None
@@ -287,6 +294,11 @@ class SwarmOrchestrator:
     def fail_task(self, task_id: str, reason: str):
         """Convenience method to mark a task as failed."""
         self.update_task_status(task_id, TaskStatus.FAILED, message=reason)
+
+    def _save_execution_history(self):
+        """Conceptual persistence of task/agent state changes."""
+        # In reality: serialize active_tasks and swarm_state to a database or file
+        pass
 
     def get_swarm_status(self) -> List[AgentState]:
         """Returns the current state of all registered agents."""

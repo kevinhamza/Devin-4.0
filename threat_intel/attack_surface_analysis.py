@@ -2,6 +2,7 @@
 # Purpose: A tool to automate attack surface analysis by performing
 #          subdomain enumeration and port scanning on a target domain.
 
+import json
 import logging
 import socket
 from typing import Dict, List, Optional, Set

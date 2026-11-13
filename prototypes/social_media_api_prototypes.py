@@ -1,6 +1,8 @@
 # Devin/prototypes/social_media_api_prototypes.py
 # Purpose: Prototype implementations for interacting with social media platform APIs.
 
+import datetime
+import random
 import logging
 import os
 import json

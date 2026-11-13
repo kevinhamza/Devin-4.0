@@ -2,6 +2,7 @@
 # Purpose: An AI-powered tool to analyze unstructured text and extract
 #          structured threat intelligence indicators.
 
+import os
 import logging
 import json
 from dataclasses import dataclass, field

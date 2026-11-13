@@ -17,16 +17,30 @@ Architecture: MCP Client for AI agent communication with HexStrike server
 Framework: FastMCP integration for tool orchestration
 """
 
+from __future__ import annotations
+
+from pathlib import Path
 import sys
 import os
 import argparse
 import logging
 from typing import Dict, Any, Optional
-import requests
 import time
 from datetime import datetime
 
-from mcp.server.fastmcp import FastMCP
+try:
+    import requests
+    _REQUESTS_AVAILABLE = True
+except ImportError:
+    requests = None  # type: ignore
+    _REQUESTS_AVAILABLE = False
+
+try:
+    from mcp.server.fastmcp import FastMCP
+    _MCP_AVAILABLE = True
+except ImportError:
+    FastMCP = None  # type: ignore
+    _MCP_AVAILABLE = False
 
 class HexStrikeColors:
     """Enhanced color palette matching the server's ModernVisualEngine.COLORS"""

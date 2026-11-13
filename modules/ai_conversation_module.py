@@ -299,8 +299,11 @@
 # Purpose: The central controller for handling the logic of an AI conversation.
 # It orchestrates the chatbot engine, safety checkers, and task orchestrator.
 
+import os
+import json
+import uuid
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Literal
 
 try:
     from modules.ai_tools.chatbot_engine import ChatbotEngine

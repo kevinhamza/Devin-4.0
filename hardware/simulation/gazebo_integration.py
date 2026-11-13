@@ -26,14 +26,15 @@ except ImportError:
         def __init__(self, *args, **kwargs): pass
     class Pose: pass # Placeholder
     class Twist: pass # Placeholder
-    # Define placeholder service type strings that would match expected types
-    EMPTY_SRV_TYPE = "std_srvs/srv/Empty"
-    SPAWN_ENTITY_SRV_TYPE = "gazebo_msgs/srv/SpawnEntity"
-    DELETE_ENTITY_SRV_TYPE = "gazebo_msgs/srv/DeleteEntity"
-    GET_MODEL_STATE_SRV_TYPE = "gazebo_msgs/srv/GetModelState" # Newer Gazebo
-    GET_ENTITY_STATE_SRV_TYPE = "gazebo_msgs/srv/GetEntityState" # Older Gazebo/alternative
-    SET_MODEL_STATE_SRV_TYPE = "gazebo_msgs/srv/SetModelState"
 
+
+# Service type string constants (used whether or not ROS2 is available)
+EMPTY_SRV_TYPE = "std_srvs/srv/Empty"
+SPAWN_ENTITY_SRV_TYPE = "gazebo_msgs/srv/SpawnEntity"
+DELETE_ENTITY_SRV_TYPE = "gazebo_msgs/srv/DeleteEntity"
+GET_MODEL_STATE_SRV_TYPE = "gazebo_msgs/srv/GetModelState" # Newer Gazebo
+GET_ENTITY_STATE_SRV_TYPE = "gazebo_msgs/srv/GetEntityState" # Older Gazebo/alternative
+SET_MODEL_STATE_SRV_TYPE = "gazebo_msgs/srv/SetModelState"
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')

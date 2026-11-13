@@ -53,8 +53,7 @@ def initialize_modules(orchestrator, config):
         pimeye_api_key = config.get_api_key("PIMEYE_API_KEY")
         pimeye = PimEyeIntegration(api_key=pimeye_api_key)
         orchestrator.register_module("pimeye_integration", pimeye)
-        # logger.info("PimEye integration initialized.")
-        logging.info(f"PimEye API Key: {pimeye_api_key}")
+        logger.info("PimEye integration initialized.")
     except Exception as e:
         logger.error(f"Error initializing PimEye integration: {e}", exc_info=True)
 

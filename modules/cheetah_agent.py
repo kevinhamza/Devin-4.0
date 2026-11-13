@@ -1,6 +1,7 @@
 """Core agent loop: neutral message format, multi-provider streaming."""
 from __future__ import annotations
 
+from pathlib import Path
 import os
 import time
 import uuid

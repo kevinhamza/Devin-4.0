@@ -1,6 +1,7 @@
 # Devin/prototypes/automation_prototypes.py
 # Purpose: Prototype implementations for Desktop UI Automation (interacting with GUIs).
 
+from pathlib import Path
 import logging
 import os
 import sys

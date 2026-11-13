@@ -20,9 +20,10 @@
 # ## IS AT YOUR OWN SOLE AND ABSOLUTE RISK.                                       ## #
 # ################################################################################## #
 
+from pathlib import Path
 import logging
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Literal, Optional
+from typing import List, Dict, Any, Literal, Optional, Tuple
 import uuid
 
 # Configure basic logging
@@ -38,18 +39,17 @@ class HypotheticalPolicyRule:
     """
     Represents an extremely simplified, hypothetical policy rule defined as data.
     """
-    rule_id: str = field(default_factory=lambda: f"HRULE-{uuid.uuid4().hex[:6].upper()}")
+    # Required fields first (no defaults)
     description: str # e.g., "S3 buckets must have server-side encryption enabled."
     target_resource_type: str # e.g., "AWS::S3::Bucket", "UserAccount", "NetworkTraffic"
-    
     # Conditions are a list of dictionaries, implying an AND logic between them for this simple example.
     # Each condition dict has 'field', 'operator', and 'value'.
     conditions: List[Dict[str, Any]] # e.g., [{"field": "properties.encryption.type", "operator": "equals", "value": "AES256"}]
-    
-    # Conceptual action if the rule is "violated" (i.e., conditions for violation are met)
-    # In a real system, this might trigger alerts, remediation, or block actions.
+    # Conceptual action if the rule is "violated"
     conceptual_violation_action: Literal["FLAG_FOR_REVIEW", "LOG_VIOLATION", "CONCEPTUAL_DENY"]
     severity: Literal["Critical", "High", "Medium", "Low", "Informational"]
+    # Optional / auto-generated fields with defaults
+    rule_id: str = field(default_factory=lambda: f"HRULE-{uuid.uuid4().hex[:6].upper()}")
     rationale: Optional[str] = None # Why this rule exists
     version: str = "1.0"
 

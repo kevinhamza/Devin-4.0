@@ -1,6 +1,7 @@
 # Devin/digital_twins/system_twin.py
 # Purpose: Represents a digital twin of a system or infrastructure component.
 
+import json
 import logging
 import datetime
 import random

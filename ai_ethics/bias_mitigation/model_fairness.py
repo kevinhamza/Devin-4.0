@@ -1,8 +1,10 @@
 # Devin/ai_ethics/bias_mitigation/model_fairness.py # Purpose: Implements checks and potentially adjustments during or after model training to ensure fair outcomes across groups.
 
+import random
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, List, Optional, Tuple, Callable
+import statistics
+from typing import Dict, Any, List, Literal, Optional, Tuple, Callable, Union
 from collections import defaultdict
 
 # Note: Actual implementation often relies on specialized libraries like Fairlearn or AIF360,

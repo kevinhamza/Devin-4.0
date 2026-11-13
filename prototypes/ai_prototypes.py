@@ -1,6 +1,7 @@
 # Devin/prototypes/ai_prototypes.py
 # Purpose: Prototype implementations for higher-level AI tasks like reasoning, planning, and advanced NLP.
 
+import json
 import logging
 import os
 import re

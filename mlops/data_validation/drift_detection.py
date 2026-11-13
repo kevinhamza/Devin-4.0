@@ -3,13 +3,41 @@
 #          and prediction drift for model monitoring in an AI lifecycle.
 # AI Lifecycle & Production AI 🧠🚀
 
+from __future__ import annotations
+
+import random
 import logging
-import pandas as pd
-import numpy as np
-from scipy import stats # For Kolmogorov-Smirnov, Chi-Squared tests
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score # For performance monitoring
-from sklearn.preprocessing import KBinsDiscretizer # For binning continuous data for PSI/Chi-squared
 from typing import Dict, Any, List, Union, Optional, Literal
+
+try:
+    import pandas as pd
+    _PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None  # type: ignore
+    _PANDAS_AVAILABLE = False
+
+try:
+    import numpy as np
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    np = None  # type: ignore
+    _NUMPY_AVAILABLE = False
+
+try:
+    from scipy import stats
+    _SCIPY_AVAILABLE = True
+except ImportError:
+    stats = None  # type: ignore
+    _SCIPY_AVAILABLE = False
+
+try:
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.preprocessing import KBinsDiscretizer
+    _SKLEARN_AVAILABLE = True
+except ImportError:
+    accuracy_score = f1_score = precision_score = recall_score = None  # type: ignore
+    KBinsDiscretizer = None  # type: ignore
+    _SKLEARN_AVAILABLE = False
 
 # Configure basic logging
 logger = logging.getLogger("DriftDetector")

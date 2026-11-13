@@ -7,18 +7,22 @@ explicitly bootstraps all capability modules, then delegates to the
 DevinREPL (Claude Code-style interface) or agent.py.
 
 Usage:
-  python main.py                  # Full module load + DevinREPL
-  python main.py "do something"    # One-shot prompt
+  python main.py                  # Devin REPL (starts in about a second)
+  python main.py "do something"    # One message, then exit (Devin decides: answer or act)
+  python main.py --do "task"      # One task carried out with mouse, keyboard and shell
+  python main.py --chat "hello"   # One answer, the computer is not touched
+  python main.py --doctor         # Check screen capture, input control and the model
+  python main.py --model NAME     # Use this Ollama model
+  python main.py --load-all       # Also import every module in the repo before the REPL
   python main.py --status         # Print per-file module load status
   python main.py --caps           # Capability summary per directory
-  python main.py --voice          # REPL in voice command mode
-  python main.py --provider hf    # Force HuggingFace provider
   python main.py --no-agent       # Load modules only, skip REPL
-  python main.py --test           # Run 40 core tests via agent.py
+  python main.py --test           # Run core tests via agent.py
   DEVIN_USE_CLASSIC_REPL=1 python main.py  # Use agent.py REPL instead
 """
 from __future__ import annotations
-import os, sys, json, time, platform, threading, subprocess, shutil, signal
+import os, sys, json, time, platform, threading, subprocess, shutil, signal, warnings
+warnings.filterwarnings('ignore')  # silence ALL Python-level warnings globally (scapy/cryptography/etc.)
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
@@ -52,19 +56,132 @@ _FIRST_PARTY = [
     'threat_intel', 'web', 'xr_env',
 ]
 
+# Stdlib modules that must never be shadowed by project subdirectories
+_STDLIB_SHADOW_GUARD = {
+    'email', 'http', 'json', 'os', 'sys', 'io', 'logging',
+    'threading', 'socket', 'ssl', 'urllib', 'uuid', 'typing',
+    'collections', 'functools', 'itertools', 'pathlib', 'hashlib',
+    'base64', 'time', 'datetime', 'math', 'random', 'string',
+    'struct', 're', 'abc', 'ast', 'copy', 'csv', 'gc', 'stat',
+    'traceback', 'warnings', 'weakref', 'queue', 'signal',
+}
+
+def _safe_add_path(p: Path) -> None:
+    """Add p to sys.path only if it doesn't contain stdlib-shadowing files."""
+    if not p.is_dir():
+        return
+    for name in _STDLIB_SHADOW_GUARD:
+        if (p / f'{name}.py').exists() or (p / name).is_dir():
+            return  # skip — would shadow stdlib
+    _add_path(p)
+
 _add_path(ROOT)
-for _base_name in _FIRST_PARTY:
-    _base = ROOT / _base_name
-    _add_path(_base)
-    if _base.is_dir():
-        for _sub in _base.rglob('*'):
-            if _sub.is_dir() and not _sub.name.startswith('.') \
-                    and '__pycache__' not in str(_sub) \
-                    and 'node_modules' not in str(_sub):
-                _add_path(_sub)
+_paths_ready = False
+
+
+def _bootstrap_paths() -> None:
+    """Put every first-party directory on sys.path.
+
+    Only the full module loader and the classic agent.py REPL need this. It walks
+    tens of thousands of files, so the normal REPL start skips it.
+    """
+    global _paths_ready
+    if _paths_ready:
+        return
+    _paths_ready = True
+    for _base_name in _FIRST_PARTY:
+        _base = ROOT / _base_name
+        _safe_add_path(_base)
+        if _base.is_dir():
+            for _sub in _base.rglob('*'):
+                if _sub.is_dir() and not _sub.name.startswith('.') \
+                        and '__pycache__' not in str(_sub) \
+                        and 'node_modules' not in str(_sub):
+                    _safe_add_path(_sub)
+    # Re-anchor ROOT first so repos/ subdirs never shadow top-level modules/
+    _root_s = str(ROOT)
+    if _root_s in sys.path:
+        sys.path.remove(_root_s)
+    sys.path.insert(0, _root_s)
 
 import importlib as _il
 import importlib.util as _ilu
+import logging as _logging
+import warnings as _warnings
+
+# ── Suppress noisy startup output during module loading ───────────────────────
+# Many optional-dependency warnings and "Conceptual/Placeholder" messages are
+# printed at import time. Suppress them unless --verbose is requested.
+_QUIET_STARTUP = '--verbose' not in sys.argv and '--debug' not in sys.argv
+
+class _StartupFilter(_logging.Filter):
+    """Drop known-noisy startup log records during initial module load."""
+    _NOISE = ('Conceptual', 'Placeholder', 'prototype', 'non-functional',
+              'not found', 'not available', 'not installed', 'not reachable',
+              'library not found', 'SDK not found', 'module not found',
+              'Using placeholder', 'Using placeholders', 'will be skipped',
+              'DeprecationWarning')
+    def filter(self, record: _logging.LogRecord) -> bool:
+        if record.levelno >= _logging.ERROR:
+            return True  # always show errors
+        msg = record.getMessage()
+        return not any(n.lower() in msg.lower() for n in self._NOISE)
+
+_startup_filter = _StartupFilter()
+
+class _StartupStdoutSuppress:
+    """Context manager that silences print()/warning output from module imports."""
+    def __enter__(self):
+        if _QUIET_STARTUP:
+            self._old_out = sys.stdout
+            self._old_err = sys.stderr
+            self._devnull = open(os.devnull, 'w')
+            sys.stdout = self._devnull
+            sys.stderr = self._devnull
+        return self
+    def __exit__(self, *_):
+        if _QUIET_STARTUP:
+            sys.stdout = self.__dict__.get('_old_out', sys.__stdout__)
+            sys.stderr = self.__dict__.get('_old_err', sys.__stderr__)
+            try:
+                self._devnull.close()
+            except Exception:
+                pass
+
+def _quiet_load_start():
+    """Suppress noisy print/log output before bulk module loading."""
+    if not _QUIET_STARTUP:
+        return
+    _warnings.filterwarnings('ignore')  # suppress all Python warnings
+    _logging.root.addFilter(_startup_filter)
+    _logging.root.setLevel(_logging.CRITICAL)  # silence everything below CRITICAL at root
+    # Suppress all known noisy third-party and project loggers
+    for _noisy in (
+        'scapy', 'cryptography', 'urllib3', 'paramiko', 'asyncio',
+        'ToolExecutor', 'RealityEngineFacade', 'XRFacade', 'QuantumFacade',
+        'PrivacyFacade', 'ResilienceFacade', 'PlatformOps', 'PostQuantumCrypto',
+        'modules', 'ai_core', 'ai_ethics', 'experimental',
+        'SpeakerRecognition', 'GestureControl', 'FacialRecognition',
+        'PowerManagement', 'SpeechRecognition', 'DiskScanner', 'NetworkMonitor',
+        'PasswordCracker', 'ForensicTools', 'OSFingerprint',
+        'AzureIntegration', 'GCPIntegration', 'AWSIntegration',
+        'SSOIntegration', 'DigitalTwin', 'AICommander', 'SwarmOrchestrator',
+        'OllamaProvider', 'HFProvider', 'FreeClaudeProvider',
+        'ReasoningEngine', 'ConversationEngine', 'VoiceEngine',
+        'BrowserAgent', 'SystemMonitor', 'DataLogger',
+        'sentence_transformers', 'transformers', 'torch', 'PIL', 'matplotlib',
+    ):
+        _logging.getLogger(_noisy).setLevel(_logging.CRITICAL)
+
+def _quiet_load_end():
+    """Re-enable normal logging after module loading is complete."""
+    if not _QUIET_STARTUP:
+        return
+    try:
+        _logging.root.removeFilter(_startup_filter)
+        _logging.root.setLevel(_logging.WARNING)  # restore normal level
+    except Exception:
+        pass
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Universal dynamic module loader
@@ -117,6 +234,7 @@ class _Capabilities:
     conversation   = None
     hf_provider    = None
     free_claude    = None
+    ollama         = None
     system_monitor = None
     voice          = None
     browser        = None
@@ -162,6 +280,15 @@ def _bootstrap_capabilities() -> None:
     try:
         from modules import free_claude_provider
         CAPS.free_claude = free_claude_provider
+    except BaseException:
+        pass
+
+    # Ollama local provider
+    try:
+        from modules import ollama_provider
+        CAPS.ollama = ollama_provider
+        if ollama_provider.is_available():
+            models = ollama_provider.list_models()
     except BaseException:
         pass
 
@@ -280,15 +407,19 @@ class DevinAGI:
 
     def __init__(self):
         self.modules: Dict[str, Optional[Any]] = {}
-        self._load_all()
-        _bootstrap_capabilities()
+        self._load_all()  # _bootstrap_capabilities() is called inside _load_all
 
     def _load_all(self) -> None:
-        for dir_name in self.SCAN_DIRS:
-            directory = ROOT / dir_name
-            if not directory.is_dir():
-                continue
-            self.modules.update(_discover_dir(directory))
+        _bootstrap_paths()
+        _quiet_load_start()
+        with _StartupStdoutSuppress():
+            for dir_name in self.SCAN_DIRS:
+                directory = ROOT / dir_name
+                if not directory.is_dir():
+                    continue
+                self.modules.update(_discover_dir(directory))
+            _bootstrap_capabilities()
+        _quiet_load_end()
 
     @property
     def os_agent(self):        return CAPS.os_agent
@@ -378,6 +509,7 @@ class DevinAGI:
         lines.append(f'  browser_agent  : {"ready" if CAPS.browser else "not loaded"}')
         lines.append(f'  hf_provider    : {"ready" if CAPS.hf_provider else "not loaded"}')
         lines.append(f'  free_claude    : {"ready" if CAPS.free_claude else "not loaded"}')
+        lines.append(f'  ollama         : {"ready (" + str(CAPS.ollama.list_models()) + ")" if CAPS.ollama and CAPS.ollama.is_available() else "not running"}')
         return '\n'.join(lines)
 
 
@@ -415,6 +547,14 @@ def _banner(devin: DevinAGI) -> None:
     ]:
         mark = '✅' if obj else '⚪'
         caps_str += f'{mark}{label}  '
+    # Show active AI provider
+    ollama_ok = CAPS.ollama and CAPS.ollama.is_available()
+    hf_ok = bool(os.environ.get('HF_TOKEN'))
+    provider_label = (
+        '🟢Ollama' if ollama_ok else
+        ('🟡HF' if hf_ok else '⚪NoAI')
+    )
+    caps_str += f'  {provider_label}'
     print(_c('36;1', '│') + caps_str + _c('36;1', ''))
     print(_c('36;1', f'╰{line}╯') + '\n')
 
@@ -426,7 +566,12 @@ def main():
         description='Devin AGI 4.0 — full module loader + agent REPL',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument('prompt',       nargs='?',          help='One-shot prompt (skip REPL)')
+    p.add_argument('prompt',       nargs='?',          help='One message, then exit')
+    p.add_argument('--do',         default='',          help='Carry out one task on the computer, then exit')
+    p.add_argument('--chat',       default='',          help='Answer one message without touching the computer')
+    p.add_argument('--doctor',     action='store_true', help='Check screen capture, input control and the model')
+    p.add_argument('--model',      default='',          help='Ollama model to use')
+    p.add_argument('--load-all',   action='store_true', help='Import every module in the repo before the REPL')
     p.add_argument('--status',     action='store_true', help='Print module load status and exit')
     p.add_argument('--caps',       action='store_true', help='Print capability summary per directory')
     p.add_argument('--no-agent',   action='store_true', help='Load modules only, skip REPL')
@@ -439,6 +584,26 @@ def main():
         os.environ['DEVIN_PROVIDER'] = args.provider
     if args.voice:
         os.environ['DEVIN_VOICE_MODE'] = '1'
+    if args.model:
+        os.environ['OLLAMA_MODEL'] = args.model
+
+    # ── Fast path: the REPL needs none of the bulk module loading ───────────────
+    classic = bool(os.environ.get('DEVIN_USE_CLASSIC_REPL'))
+    heavy = args.status or args.caps or args.no_agent or args.test or args.load_all or classic
+    if not heavy:
+        from modules.devin_repl import DevinREPL
+        repl = DevinREPL()
+        if args.doctor:
+            repl._ensure_model()
+            sys.exit(0 if repl.doctor() else 1)
+        if args.do:
+            sys.exit(repl.run_once(args.do, force='agent'))
+        if args.chat:
+            sys.exit(repl.run_once(args.chat, force='chat'))
+        if args.prompt:
+            sys.exit(repl.run_once(args.prompt))
+        repl.run()
+        sys.exit(0)
 
     devin = get_devin()
 
@@ -467,13 +632,16 @@ def main():
     # Set DEVIN_USE_CLASSIC_REPL=1 to use agent.py's built-in REPL instead.
     if not args.test and not args.prompt and not os.environ.get('DEVIN_USE_CLASSIC_REPL'):
         try:
-            from modules.devin_repl import start_repl
+            # Suppress any import-time noise from devin_repl and its imports
+            with _StartupStdoutSuppress():
+                from modules.devin_repl import start_repl
             start_repl(devin)
             sys.exit(0)
         except BaseException:
             pass  # Fall through to agent.py on any failure
 
     # ── Delegate to agent.py (──────────────────────────────────────────────────────────
+    _bootstrap_paths()
     agent_argv = [str(agent_py)]
     if args.test:
         agent_argv.append('--test')

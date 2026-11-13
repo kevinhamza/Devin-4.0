@@ -367,6 +367,8 @@
 #          platforms like Twitter, Reddit, Facebook, Instagram, and LinkedIn for
 #          OSINT and automation.
 
+import uuid
+import random
 import logging
 import os
 from datetime import datetime, timezone

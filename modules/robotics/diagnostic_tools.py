@@ -261,6 +261,7 @@
 # Purpose: A functional suite of tools for running diagnostics on all
 #          robotics components by integrating with other live modules.
 
+import json
 import logging
 import threading
 import time

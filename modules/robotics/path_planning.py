@@ -334,6 +334,8 @@
 # Purpose: Provides advanced path planning, smoothing, and following for a robot
 #          in a 2D environment. Implements A* and gradient-based smoothing.
 
+from pathlib import Path
+import time
 import logging
 import heapq
 from collections import defaultdict

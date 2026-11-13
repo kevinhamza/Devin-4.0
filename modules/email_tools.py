@@ -275,6 +275,8 @@
 # Purpose: A functional, production-ready suite of tools for automating email
 #          management using smtplib and imaplib.
 
+from pathlib import Path
+import random
 import logging
 import os
 import smtplib

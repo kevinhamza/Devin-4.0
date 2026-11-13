@@ -3,13 +3,34 @@
 #          Focuses on fairness checks. 🛡️
 # AI Lifecycle & Production AI 🧠🚀
 
+from __future__ import annotations
+
+import random
 import logging
-import pandas as pd
-import numpy as np
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression # For a simple model example
 from typing import Dict, Any, List, Union, Optional, Tuple
+
+try:
+    import pandas as pd
+    _PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None  # type: ignore
+    _PANDAS_AVAILABLE = False
+
+try:
+    import numpy as np
+    _NUMPY_AVAILABLE = True
+except ImportError:
+    np = None  # type: ignore
+    _NUMPY_AVAILABLE = False
+
+try:
+    from sklearn.metrics import confusion_matrix
+    from sklearn.model_selection import train_test_split
+    from sklearn.linear_model import LogisticRegression
+    _SKLEARN_AVAILABLE = True
+except ImportError:
+    confusion_matrix = train_test_split = LogisticRegression = None  # type: ignore
+    _SKLEARN_AVAILABLE = False
 
 # Configure basic logging
 logger = logging.getLogger("BiasDetector")
