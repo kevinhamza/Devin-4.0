@@ -2,26 +2,31 @@
 # Devin AGI 4.0 — Universal launcher
 #
 # Usage:
-#   ./devin                        Interactive REPL (full module load + agent)
-#   ./devin "do something"         One-shot prompt
-#   ./devin --voice                Start in voice command mode
-#   ./devin --provider hf          Use HuggingFace free tier (default)
-#   ./devin --provider claude      Use Claude API
-#   ./devin --provider gemini      Use Gemini API
-#   ./devin --provider openai      Use OpenAI API
-#   ./devin --provider ollama      Use local Ollama
-#   ./devin --provider free        Use free-claude-code fallback
-#   ./devin --test                 Run core test suite
+#   ./devin                        Interactive terminal (Shift+Tab switches mode)
+#   ./devin "message"              One message, then exit (Devin decides: answer or act)
+#   ./devin --do "task"            Carry out one task with the mouse and keyboard
+#   ./devin --chat "message"       Answer only, never touch the computer
+#   ./devin --doctor               Check screen capture, input control and the model
+#   ./devin --model NAME           Use this Ollama model
+#   ./devin --setup                Install Python packages and check Linux system packages
+#   ./devin --test                 Run the test suite
+#   ./devin --load-all             Import every module in the repo before the terminal
 #   ./devin --status               Show module load status
 #   ./devin --caps                 Capability summary per directory
-#   ./devin --no-agent             Load modules only (no REPL)
-#   ./devin --setup                Install Python dependencies
+#   ./devin --no-agent             Load modules only
 #   ./devin --version              Show version
 #   ./devin --help                 Show this help
 #
 # Environment variables (set in .env, never here):
-#   HF_TOKEN, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
-#   OLLAMA_BASE_URL, CLAUDE_SESSION_KEY, DEVIN_PROVIDER, DEVIN_MODEL
+#   OLLAMA_BASE_URL       Ollama server (default http://localhost:11434)
+#   OLLAMA_MODEL          model for conversation (default: the most capable installed one)
+#   DEVIN_AGENT_MODEL     model that works the computer (default: an installed model that can see)
+#   DEVIN_INPUT_BACKEND   gnome | ydotool | xdotool | pyautogui (default: automatic)
+#   DEVIN_ALLOW_SHELL     1 lets Devin run commands directly; 0 = mouse and keyboard only
+#   DEVIN_MAX_STEPS       most actions per task (default 40)
+#   DEVIN_EYES            auto | always | never: when the screenshot itself goes to the model
+#   DEVIN_TYPE_INTERVAL   seconds per key when typing (default 0.045, a person's pace)
+#   DEVIN_TRACE           1 logs every prompt, reply and outcome (in $XDG_RUNTIME_DIR/devin/)
 
 set -euo pipefail
 
@@ -68,7 +73,7 @@ fi
 # ── Argument parsing ───────────────────────────────────────────────────────────────────────
 case "${1:-}" in
   --help|-h)
-    head -n 20 "$0" | grep '^#' | sed 's/^# \?//'
+    head -n 30 "$0" | grep '^#' | sed 's/^# \?//'
     exit 0
     ;;
 
@@ -83,13 +88,36 @@ case "${1:-}" in
     if [ -f requirements.txt ]; then
       "$PYTHON" -m pip install -r requirements.txt
     fi
+    if [ "$(uname -s)" = "Linux" ]; then
+      # Desktop control needs a few system packages that pip cannot provide.
+      MISSING=""
+      for pair in ydotool:ydotool tesseract:tesseract-ocr xclip:xclip gdbus:libglib2.0-bin; do
+        command -v "${pair%%:*}" >/dev/null 2>&1 || MISSING="$MISSING ${pair##*:}"
+      done
+      /usr/bin/python3 -c "import gi; gi.require_version('Atspi','2.0'); gi.require_version('Gst','1.0')" 2>/dev/null \
+        || MISSING="$MISSING python3-gi gir1.2-atspi-2.0 gir1.2-gstreamer-1.0 gstreamer1.0-pipewire"
+      if [ -n "$MISSING" ]; then
+        echo ""
+        echo "Linux system packages still missing. Install them with:"
+        echo "  sudo apt install -y$MISSING"
+      fi
+      if command -v ydotool >/dev/null 2>&1 && [ ! -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/.ydotool_socket" ]; then
+        echo ""
+        echo "ydotool is installed but its daemon is not running for you. Run once:"
+        echo "  sudo usermod -aG input \"\$USER\"            # permanent, applies from your next login"
+        echo "  sudo setfacl -m \"u:\$USER:rw\" /dev/uinput  # works right now"
+        echo "  systemctl --user reset-failed ydotool; systemctl --user enable --now ydotool"
+      fi
+      echo ""
+      echo "Check everything with:  ./devin --doctor"
+    fi
     echo "Done."
     exit 0
     ;;
 
   --test)
-    # Run core test suite directly via agent.py
-    exec "$PYTHON" agent.py --test "${@:2}"
+    # Unit tests run against a fake desktop: they never move the real pointer.
+    exec "$PYTHON" -m pytest tests/test_os_agent.py tests/test_computer_agent.py -q "${@:2}"
     ;;
 
   --status)

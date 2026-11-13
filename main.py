@@ -7,14 +7,17 @@ explicitly bootstraps all capability modules, then delegates to the
 DevinREPL (Claude Code-style interface) or agent.py.
 
 Usage:
-  python main.py                  # Full module load + DevinREPL
-  python main.py "do something"    # One-shot prompt
+  python main.py                  # Devin REPL (starts in about a second)
+  python main.py "do something"    # One message, then exit (Devin decides: answer or act)
+  python main.py --do "task"      # One task carried out with mouse, keyboard and shell
+  python main.py --chat "hello"   # One answer, the computer is not touched
+  python main.py --doctor         # Check screen capture, input control and the model
+  python main.py --model NAME     # Use this Ollama model
+  python main.py --load-all       # Also import every module in the repo before the REPL
   python main.py --status         # Print per-file module load status
   python main.py --caps           # Capability summary per directory
-  python main.py --voice          # REPL in voice command mode
-  python main.py --provider hf    # Force HuggingFace provider
   python main.py --no-agent       # Load modules only, skip REPL
-  python main.py --test           # Run 40 core tests via agent.py
+  python main.py --test           # Run core tests via agent.py
   DEVIN_USE_CLASSIC_REPL=1 python main.py  # Use agent.py REPL instead
 """
 from __future__ import annotations
@@ -73,21 +76,33 @@ def _safe_add_path(p: Path) -> None:
     _add_path(p)
 
 _add_path(ROOT)
-for _base_name in _FIRST_PARTY:
-    _base = ROOT / _base_name
-    _safe_add_path(_base)
-    if _base.is_dir():
-        for _sub in _base.rglob('*'):
-            if _sub.is_dir() and not _sub.name.startswith('.') \
-                    and '__pycache__' not in str(_sub) \
-                    and 'node_modules' not in str(_sub):
-                _safe_add_path(_sub)
+_paths_ready = False
 
-# Re-anchor ROOT first so repos/ subdirs never shadow top-level modules/
-_root_s = str(ROOT)
-if _root_s in sys.path:
-    sys.path.remove(_root_s)
-sys.path.insert(0, _root_s)
+
+def _bootstrap_paths() -> None:
+    """Put every first-party directory on sys.path.
+
+    Only the full module loader and the classic agent.py REPL need this. It walks
+    tens of thousands of files, so the normal REPL start skips it.
+    """
+    global _paths_ready
+    if _paths_ready:
+        return
+    _paths_ready = True
+    for _base_name in _FIRST_PARTY:
+        _base = ROOT / _base_name
+        _safe_add_path(_base)
+        if _base.is_dir():
+            for _sub in _base.rglob('*'):
+                if _sub.is_dir() and not _sub.name.startswith('.') \
+                        and '__pycache__' not in str(_sub) \
+                        and 'node_modules' not in str(_sub):
+                    _safe_add_path(_sub)
+    # Re-anchor ROOT first so repos/ subdirs never shadow top-level modules/
+    _root_s = str(ROOT)
+    if _root_s in sys.path:
+        sys.path.remove(_root_s)
+    sys.path.insert(0, _root_s)
 
 import importlib as _il
 import importlib.util as _ilu
@@ -395,6 +410,7 @@ class DevinAGI:
         self._load_all()  # _bootstrap_capabilities() is called inside _load_all
 
     def _load_all(self) -> None:
+        _bootstrap_paths()
         _quiet_load_start()
         with _StartupStdoutSuppress():
             for dir_name in self.SCAN_DIRS:
@@ -550,7 +566,12 @@ def main():
         description='Devin AGI 4.0 — full module loader + agent REPL',
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument('prompt',       nargs='?',          help='One-shot prompt (skip REPL)')
+    p.add_argument('prompt',       nargs='?',          help='One message, then exit')
+    p.add_argument('--do',         default='',          help='Carry out one task on the computer, then exit')
+    p.add_argument('--chat',       default='',          help='Answer one message without touching the computer')
+    p.add_argument('--doctor',     action='store_true', help='Check screen capture, input control and the model')
+    p.add_argument('--model',      default='',          help='Ollama model to use')
+    p.add_argument('--load-all',   action='store_true', help='Import every module in the repo before the REPL')
     p.add_argument('--status',     action='store_true', help='Print module load status and exit')
     p.add_argument('--caps',       action='store_true', help='Print capability summary per directory')
     p.add_argument('--no-agent',   action='store_true', help='Load modules only, skip REPL')
@@ -563,6 +584,26 @@ def main():
         os.environ['DEVIN_PROVIDER'] = args.provider
     if args.voice:
         os.environ['DEVIN_VOICE_MODE'] = '1'
+    if args.model:
+        os.environ['OLLAMA_MODEL'] = args.model
+
+    # ── Fast path: the REPL needs none of the bulk module loading ───────────────
+    classic = bool(os.environ.get('DEVIN_USE_CLASSIC_REPL'))
+    heavy = args.status or args.caps or args.no_agent or args.test or args.load_all or classic
+    if not heavy:
+        from modules.devin_repl import DevinREPL
+        repl = DevinREPL()
+        if args.doctor:
+            repl._ensure_model()
+            sys.exit(0 if repl.doctor() else 1)
+        if args.do:
+            sys.exit(repl.run_once(args.do, force='agent'))
+        if args.chat:
+            sys.exit(repl.run_once(args.chat, force='chat'))
+        if args.prompt:
+            sys.exit(repl.run_once(args.prompt))
+        repl.run()
+        sys.exit(0)
 
     devin = get_devin()
 
@@ -600,6 +641,7 @@ def main():
             pass  # Fall through to agent.py on any failure
 
     # ── Delegate to agent.py (──────────────────────────────────────────────────────────
+    _bootstrap_paths()
     agent_argv = [str(agent_py)]
     if args.test:
         agent_argv.append('--test')

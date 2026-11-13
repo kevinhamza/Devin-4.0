@@ -1,1786 +1,974 @@
-#!/usr/bin/env python3
 """
-Devin AGI 4.0 — Grok-style CLI with Agentic Tool Execution
+modules/devin_repl.py — Devin's terminal interface.
 
-All credentials via .env / environment variables only.
-Never hardcode API keys.
+A conversation in the terminal: shaded `❯` bars for what you said, `◆ Thought for 1.2s`
+lines with Devin's reasoning and the plan it wrote, one `›` row per action it takes on
+the computer together with what the screenshot showed afterwards, a live status line,
+and a bordered input box with the model name on its lower edge.
+
+Three modes, cycled with Shift+Tab:
+    auto    Devin decides whether to just answer or to operate the computer
+    agent   every message is a task carried out with the mouse, keyboard and shell
+    chat    conversation only; the computer is never touched
+
+Run `./devin`, or `./devin "open the calculator and compute 12*7"` for a single task.
 """
 from __future__ import annotations
-import os, sys, shutil, signal, subprocess, threading, time, json, re
-import urllib.parse as _uparse
+
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Generator, Tuple
+from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parent.parent
-_ENV = ROOT / '.env'
-if _ENV.exists():
-    for _l in _ENV.read_text().splitlines():
-        _l = _l.strip()
-        if _l and not _l.startswith('#') and '=' in _l:
-            _k, _, _v = _l.partition('=')
-            os.environ.setdefault(_k.strip(), _v.strip().strip('"\''))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from modules import ollama_provider as llm  # noqa: E402
+
+VERSION = '4.0'
+MODES = ('auto', 'agent', 'chat')
+_TTY = sys.stdout.isatty()
 
 
-# ── Terminal helpers ───────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# Terminal drawing
+# ══════════════════════════════════════════════════════════════════════════════
 
 def _cols() -> int:
-    return shutil.get_terminal_size((120, 24)).columns
+    return max(40, shutil.get_terminal_size((100, 30)).columns)
 
-def _rows() -> int:
-    return shutil.get_terminal_size((120, 24)).lines
 
-_IS_TTY = sys.stdout.isatty()
+def _sgr(code: str, text: str) -> str:
+    return f'\033[{code}m{text}\033[0m' if _TTY else text
 
-def _c(code: str, text: str) -> str:
-    if not _IS_TTY:
+
+DIM, BOLD = '2', '1'
+GRAY = '38;5;245'
+FAINT = '38;5;240'
+WHITE = '38;5;255'
+CYAN = '38;5;80'
+BLUE = '38;5;75'
+GREEN = '38;5;114'
+YELLOW = '38;5;179'
+RED = '38;5;203'
+BG_USER = '48;5;236'
+BG_ROW = '48;5;234'
+
+_ANSI = re.compile(r'\033\[[0-9;]*m')
+
+
+def _width(text: str) -> int:
+    """Printed width of a string (wide characters count double)."""
+    plain = _ANSI.sub('', text)
+    try:
+        from wcwidth import wcswidth
+        w = wcswidth(plain)
+        return w if w >= 0 else len(plain)
+    except Exception:
+        return len(plain)
+
+
+def _clip(text: str, width: int) -> str:
+    text = text.replace('\n', ' ')
+    if _width(text) <= width:
         return text
-    return f'\033[{code}m{text}\033[0m'
+    out = ''
+    for ch in text:
+        if _width(out + ch) > width - 1:
+            break
+        out += ch
+    return out + '…'
 
-def _bg(code: str, text: str) -> str:
-    if not _IS_TTY:
-        return text
-    return f'\033[{code}m{text}\033[0m'
 
-# ANSI codes
-CYAN_B  = '36;1'
-CYAN    = '36'
-WHITE_B = '37;1'
-GRAY    = '2'
-GRAY_B  = '90'
-YELLOW  = '33'
-GREEN   = '32'
-RED     = '31'
-MAGENTA = '35'
-BLUE    = '34;1'
-DIM     = '2'
-BOLD    = '1'
-
-# Background colors
-BG_DARK  = '48;5;236'   # dark gray bg for user msg
-BG_BLACK = '48;5;232'
-BG_TOOL  = '48;5;234'   # slightly lighter for tool blocks
-
-def _now_hhmm() -> str:
+def _clock() -> str:
     return time.strftime('%I:%M %p').lstrip('0')
 
-def _elapsed(start: float) -> str:
-    s = time.time() - start
-    if s < 60:
-        return f'{s:.1f}s'
-    return f'{int(s//60)}m {int(s%60)}s'
 
-def _hr(w: int, char: str = '─') -> str:
-    return char * max(w, 1)
-
-def _tok_estimate(messages: List[Dict]) -> int:
-    total = sum(len(m.get('content', '')) for m in messages)
-    return total // 4  # rough chars-to-tokens
+def _duration(seconds: float) -> str:
+    if seconds < 60:
+        return f'{seconds:.1f}s'
+    return f'{int(seconds // 60)}m {int(seconds % 60)}s'
 
 
-# ── AI Provider wrappers ───────────────────────────────────────────────────────
-
-def _tools_to_openai_schema(tools: Dict) -> List[Dict]:
-    """Convert devin tool registry to OpenAI-compatible function schema."""
-    result = []
-    for name, info in tools.items():
-        props = {}
-        for pname, pdesc in info.get('params', {}).items():
-            props[pname] = {'type': 'string', 'description': str(pdesc)}
-        result.append({
-            'type': 'function',
-            'function': {
-                'name': name,
-                'description': info.get('desc', ''),
-                'parameters': {
-                    'type': 'object',
-                    'properties': props,
-                    'required': list(props.keys()),
-                },
-            },
-        })
-    return result
+def _kilo(n: int) -> str:
+    return f'{n / 1000:.1f}k' if n < 100_000 else f'{n // 1000}k'
 
 
-def _tools_to_anthropic_schema(tools: Dict) -> List[Dict]:
-    """Convert devin tool registry to Anthropic tool schema."""
-    result = []
-    for name, info in tools.items():
-        props = {}
-        for pname, pdesc in info.get('params', {}).items():
-            props[pname] = {'type': 'string', 'description': str(pdesc)}
-        result.append({
-            'name': name,
-            'description': info.get('desc', ''),
-            'input_schema': {
-                'type': 'object',
-                'properties': props,
-                'required': list(props.keys()),
-            },
-        })
-    return result
+def _wrap(text: str, width: int) -> List[str]:
+    import textwrap
+    lines: List[str] = []
+    for para in text.split('\n'):
+        lines.extend(textwrap.wrap(para, width, break_long_words=True, replace_whitespace=False) or [''])
+    return lines
 
 
-class _BaseProvider:
-    name = 'none'
+class Status:
+    """The live `⠋ Responding… 8.5s` line. Everything else prints through `write()`."""
 
-    def available(self) -> bool:
-        return False
+    FRAMES = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
 
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        yield '[No provider available — set API key in .env]'
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._label = ''
+        self._since = 0.0
+        self._task_since = 0.0
+        self._tokens = 0
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+        self._drawn = False
 
-    def complete(self, messages: List[Dict], system: str = '') -> str:
-        return ''.join(self.stream(messages, system))
+    def start(self, label: str) -> None:
+        with self._lock:
+            self._label, self._since = label, time.monotonic()
+            if not self._running:
+                self._task_since = self._since
+                self._running = True
+                if _TTY:
+                    self._thread = threading.Thread(target=self._spin, daemon=True)
+                    self._thread.start()
 
-    def call_with_tools(
-        self, messages: List[Dict], tools: Dict, system: str = ''
-    ) -> Dict:
-        """
-        Single LLM call with tool definitions. Returns:
-          {"content": str, "tool_calls": [{"name": str, "arguments": dict}]}
-        Default implementation uses streaming + ReAct text parsing (no native tool calls).
-        Subclasses override for native tool calling.
-        """
-        full = self.complete(messages, system)
-        action_name, inputs, _ = _parse_action(full)
-        final_m = _FINAL_RE.search(full)
-        if final_m:
-            return {'content': final_m.group(1).strip(), 'tool_calls': []}
-        if action_name:
-            return {'content': '', 'tool_calls': [{'name': action_name, 'arguments': inputs or {}}]}
-        return {'content': full.strip(), 'tool_calls': []}
+    def label(self, label: str, tokens: Optional[int] = None) -> None:
+        with self._lock:
+            if label != self._label:
+                self._label, self._since = label, time.monotonic()
+            if tokens is not None:
+                self._tokens = tokens
+
+    def stop(self) -> None:
+        with self._lock:
+            self._running = False
+            self._erase()
+        t, self._thread = self._thread, None
+        if t is not None and t is not threading.current_thread():
+            t.join(timeout=0.5)
+
+    def _erase(self) -> None:
+        if self._drawn and _TTY:
+            sys.stdout.write('\r\033[2K')
+            sys.stdout.flush()
+            self._drawn = False
+
+    def _draw(self) -> None:
+        now = time.monotonic()
+        frame = self.FRAMES[int(now * 10) % len(self.FRAMES)]
+        left = f'  {frame} {self._label} {now - self._since:.1f}s'
+        right = f'{int(now - self._task_since)}s'
+        if self._tokens:
+            right += f' ↓{_kilo(self._tokens)}'
+        right += ' [ctrl+c stop]'
+        gap = max(1, _cols() - _width(left) - _width(right) - 1)
+        sys.stdout.write('\r\033[2K' + _sgr(GRAY, left) + ' ' * gap + _sgr(FAINT, right))
+        sys.stdout.flush()
+        self._drawn = True
+
+    def _spin(self) -> None:
+        while True:
+            with self._lock:
+                if not self._running:
+                    return
+                self._draw()
+            time.sleep(0.1)
+
+    def write(self, text: str = '') -> None:
+        """Print a line above the status line."""
+        with self._lock:
+            self._erase()
+            sys.stdout.write(text + '\n')
+            sys.stdout.flush()
+            if self._running and _TTY:
+                self._draw()
+
+    def raw(self, text: str) -> None:
+        """Print without a newline (streaming). The status line must be stopped."""
+        with self._lock:
+            self._erase()
+            sys.stdout.write(text)
+            sys.stdout.flush()
 
 
-class _GeminiProvider(_BaseProvider):
-    name = 'gemini'
+class UI:
+    def __init__(self) -> None:
+        self.status = Status()
 
-    def __init__(self):
-        self._key = os.environ.get('GEMINI_API_KEY', '') or os.environ.get('GOOGLE_API_KEY', '')
-        self._model = os.environ.get('GEMINI_MODEL', 'gemini-2.0-flash-exp')
-        self._client_cache = None
+    def out(self, text: str = '') -> None:
+        self.status.write(text)
 
-    def available(self) -> bool:
-        return bool(self._key)
+    def header(self, model_label: str, backend: str) -> None:
+        w = _cols()
+        title = f' Devin {VERSION} '
+        self.out()
+        self.out(_sgr(FAINT, '╭─') + _sgr(BOLD, title) + _sgr(FAINT, '─' * max(1, w - len(title) - 4) + '╮'))
+        for line in (f'brain  {model_label}', f'hands  {backend}',
+                     'Tell me what to do on this computer. Shift+Tab switches mode, /help lists commands.'):
+            body = _clip(line, w - 4)
+            self.out(_sgr(FAINT, '│ ') + _sgr(GRAY, body) + ' ' * max(0, w - 4 - _width(body)) + _sgr(FAINT, ' │'))
+        self.out(_sgr(FAINT, '╰' + '─' * (w - 2) + '╯'))
 
-    def _client(self):
-        if self._client_cache:
-            return self._client_cache
-        try:
-            import google.genai as genai
-            c = genai.Client(api_key=self._key)
-            self._client_cache = ('new', c)
-            return self._client_cache
-        except (ImportError, Exception):
-            pass
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=self._key)
-            m = genai.GenerativeModel(self._model)
-            self._client_cache = ('old', m)
-            return self._client_cache
-        except (ImportError, Exception):
-            return None
+    def topline(self, tokens: int, context: int) -> None:
+        w = _cols()
+        branch = _git_branch()
+        cwd = str(Path.cwd()).replace(str(Path.home()), '~', 1)
+        left_plain = f'  {branch} {cwd}' if branch else f'  {cwd}'
+        left = (f'  {_sgr(GREEN, branch)} {_sgr(GRAY, cwd)}' if branch else f'  {_sgr(GRAY, cwd)}')
+        right = f'{tokens / 1000:.1f}K / {context // 1000}K'
+        gap = max(1, w - _width(left_plain) - len(right) - 1)
+        self.out(left + ' ' * gap + _sgr(GRAY, right))
 
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        info = self._client()
-        if not info:
-            yield '[Gemini SDK not installed: pip install google-genai]'
-            return
-        sdk, client = info
-        last = messages[-1].get('content', '') if messages else ''
-        try:
-            if sdk == 'new':
-                from google.genai import types as gt
-                cfg = gt.GenerateContentConfig(
-                    system_instruction=system or None,
-                    temperature=0.7,
-                )
-                for chunk in client.models.generate_content_stream(
-                    model=self._model, contents=last, config=cfg
-                ):
-                    if chunk.text:
-                        yield chunk.text
+    def user(self, text: str) -> None:
+        w = _cols()
+        stamp = _clock()
+        lines = _wrap(text, w - 8 - len(stamp))
+        pad = _sgr(BG_USER, ' ' * w)
+        self.out()
+        self.out(pad)
+        for i, line in enumerate(lines):
+            head = '  ❯ ' if i == 0 else '    '
+            tail = stamp if i == 0 else ''
+            fill = ' ' * max(1, w - _width(head) - _width(line) - len(tail) - 1)
+            if _TTY:
+                self.out(f'\033[{BG_USER}m{head}\033[1m{line}\033[22m{fill}\033[{GRAY}m{tail} \033[0m')
             else:
-                history = []
-                for msg in messages[:-1]:
-                    history.append({
-                        'role': 'model' if msg.get('role') == 'assistant' else 'user',
-                        'parts': [msg.get('content', '')],
-                    })
-                chat = client.start_chat(history=history)
-                for chunk in chat.send_message(last, stream=True):
-                    if chunk.text:
-                        yield chunk.text
-        except Exception as e:
-            yield f'\n[Gemini error: {e}]'
+                self.out(f'{head}{line}')
+        self.out(pad)
+        self.out()
+
+    def thought(self, seconds: float, text: str = '', plan: Optional[List[str]] = None) -> None:
+        line = f'  ◆ {_sgr(BOLD, "Thought")} for {_duration(seconds)}'
+        self.out(_sgr(GRAY, line))
+        if text:
+            for part in _wrap(text, _cols() - 8)[:4]:
+                self.out(_sgr(GRAY, f'    {part}'))
+        if plan:
+            for i, step in enumerate(plan, start=1):
+                self.out(_sgr(FAINT, f'    {i}. {_clip(step, _cols() - 10)}'))
+
+    def row(self, text: str, detail: str = '', ok: Optional[bool] = None) -> None:
+        w = _cols()
+        mark = '›'
+        color = GRAY if ok is None else (GREEN if ok else YELLOW)
+        body = _clip(text, w - 6)
+        fill = ' ' * max(0, w - 4 - _width(body))
+        if _TTY:
+            self.out(f'\033[{BG_ROW}m  \033[{color}m{mark}\033[0m\033[{BG_ROW}m \033[1m{body}\033[22m{fill}\033[0m')
+        else:
+            self.out(f'  {mark} {body}')
+        if detail:
+            for part in _wrap(detail, w - 8)[:6]:
+                self.out(_sgr(FAINT, f'    {part}'))
+
+    def answer(self, text: str) -> None:
+        text = text.strip() or '(no reply)'
+        w = _cols()
+        stamp = _clock()
+        self.out()
+        rendered = _markdown(text, w - 6 - len(stamp))
+        for i, line in enumerate(rendered):
+            if i == 0:
+                gap = max(2, w - 2 - _width(line) - len(stamp) - 1)
+                self.out(f'  {line}' + ' ' * gap + _sgr(GRAY, stamp))
+            else:
+                self.out(f'  {line}')
+
+    def worked(self, seconds: float) -> None:
+        self.out()
+        self.out(_sgr(GRAY, f'  Worked for {_duration(seconds)}'))
+
+    def note(self, text: str, color: str = GRAY) -> None:
+        for line in text.split('\n'):
+            for part in (_wrap(line, _cols() - 4) if len(line) > _cols() - 4 else [line]):
+                self.out(_sgr(color, f'  {part}'))
+
+    def error(self, text: str) -> None:
+        self.note(text, RED)
 
 
-class _ClaudeProvider(_BaseProvider):
-    name = 'claude'
-
-    def __init__(self):
-        self._key = os.environ.get('ANTHROPIC_API_KEY', '')
-        self._model = os.environ.get('CLAUDE_MODEL', 'claude-opus-4-5')
-
-    def available(self) -> bool:
-        return bool(self._key)
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=self._key)
-            with client.messages.stream(
-                model=self._model, max_tokens=4096,
-                system=system or 'You are Devin, an autonomous AI assistant.',
-                messages=messages,
-            ) as s:
-                for text in s.text_stream:
-                    yield text
-        except Exception as e:
-            yield f'[Claude error: {e}]'
-
-    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
-        try:
-            import anthropic
-            client = anthropic.Anthropic(api_key=self._key)
-            anth_tools = _tools_to_anthropic_schema(tools)
-            resp = client.messages.create(
-                model=self._model, max_tokens=4096,
-                system=system or 'You are Devin, an autonomous AI assistant.',
-                messages=messages,
-                tools=anth_tools,
-            )
-            content_text = ''
-            tool_calls = []
-            for block in resp.content:
-                if hasattr(block, 'text'):
-                    content_text += block.text
-                elif getattr(block, 'type', '') == 'tool_use':
-                    tool_calls.append({'name': block.name, 'arguments': block.input or {}})
-            return {'content': content_text, 'tool_calls': tool_calls}
-        except Exception as e:
-            return {'content': f'[Claude tool call error: {e}]', 'tool_calls': []}
+def _markdown(text: str, width: int) -> List[str]:
+    """Light markdown → terminal lines: bullets, bold, inline code, headings, code blocks."""
+    out: List[str] = []
+    in_code = False
+    for raw in text.split('\n'):
+        if raw.strip().startswith('```'):
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(_sgr(CYAN, '  ' + raw))
+            continue
+        line = raw.rstrip()
+        indent = ''
+        m = re.match(r'^(\s*)([-*•]|\d+[.)])\s+(.*)$', line)
+        if m:
+            bullet = '•' if m.group(2) in '-*•' else m.group(2)
+            indent = m.group(1) + ' ' * (len(bullet) + 1)
+            line = f'{m.group(1)}{bullet} {m.group(3)}'
+        heading = re.match(r'^#{1,6}\s+(.*)$', line)
+        if heading:
+            line = f'**{heading.group(1)}**'
+        wrapped = _wrap(line, width) if line else ['']
+        for i, part in enumerate(wrapped):
+            if i:
+                part = indent + part
+            part = re.sub(r'\*\*(.+?)\*\*', lambda mm: _sgr(BOLD, mm.group(1)), part)
+            part = re.sub(r'`([^`]+)`', lambda mm: _sgr(CYAN, mm.group(1)), part)
+            out.append(part)
+    return out or ['']
 
 
-class _OpenAIProvider(_BaseProvider):
-    name = 'openai'
-
-    def __init__(self):
-        self._key = os.environ.get('OPENAI_API_KEY', '')
-        self._model = os.environ.get('OPENAI_MODEL', 'gpt-4o')
-
-    def available(self) -> bool:
-        return bool(self._key)
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        try:
-            import openai
-            client = openai.OpenAI(api_key=self._key)
-            all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-            for chunk in client.chat.completions.create(
-                model=self._model, messages=all_msgs, stream=True
-            ):
-                d = chunk.choices[0].delta
-                if d.content:
-                    yield d.content
-        except Exception as e:
-            yield f'[OpenAI error: {e}]'
-
-    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
-        try:
-            import openai
-            client = openai.OpenAI(api_key=self._key)
-            all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-            oai_tools = _tools_to_openai_schema(tools)
-            resp = client.chat.completions.create(
-                model=self._model, messages=all_msgs,
-                tools=oai_tools, tool_choice='auto',
-            )
-            msg = resp.choices[0].message
-            tool_calls = []
-            for tc in (msg.tool_calls or []):
-                try:
-                    args = json.loads(tc.function.arguments)
-                except Exception:
-                    args = {}
-                tool_calls.append({'name': tc.function.name, 'arguments': args})
-            return {'content': msg.content or '', 'tool_calls': tool_calls}
-        except Exception as e:
-            return {'content': f'[OpenAI tool call error: {e}]', 'tool_calls': []}
-
-
-_HF_MODELS = [
-    'Qwen/Qwen2.5-72B-Instruct',
-    'meta-llama/Meta-Llama-3.1-70B-Instruct',
-    'mistralai/Mixtral-8x7B-Instruct-v0.1',
-    'mistralai/Mistral-7B-Instruct-v0.3',
-    'HuggingFaceH4/zephyr-7b-beta',
-]
-
-
-class _HFProvider(_BaseProvider):
-    name = 'huggingface'
-
-    def __init__(self):
-        self._key = os.environ.get('HF_TOKEN', '') or os.environ.get('HUGGINGFACE_API_KEY', '')
-        self._model = os.environ.get('HF_MODEL', '')
-
-    def available(self) -> bool:
-        return bool(self._key)
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        try:
-            from modules.hf_enhanced_provider import stream_chat as hf_stream
-            all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-            model = self._model or _HF_MODELS[0]
-            for chunk in hf_stream(all_msgs, model=model):
-                yield chunk
-            return
-        except (ImportError, Exception):
-            pass
-
-        import urllib.request as _ur
-        import json as _json
-
-        all_msgs = ([{'role': 'system', 'content': system}] + messages) if system else messages
-        models_to_try = [self._model] if self._model else _HF_MODELS
-
-        for model_id in models_to_try:
-            try:
-                payload = _json.dumps({
-                    'model': model_id,
-                    'messages': all_msgs,
-                    'stream': True,
-                    'max_tokens': 2048,
-                }).encode()
-                req = _ur.Request(
-                    'https://router.huggingface.co/v1/chat/completions',
-                    data=payload,
-                    headers={
-                        'Authorization': f'Bearer {self._key}',
-                        'Content-Type': 'application/json',
-                    },
-                )
-                with _ur.urlopen(req, timeout=90) as resp:
-                    for raw in resp:
-                        line = raw.decode('utf-8', errors='replace').strip()
-                        if not line.startswith('data:'):
-                            continue
-                        chunk_str = line[5:].strip()
-                        if chunk_str == '[DONE]':
-                            return
-                        try:
-                            chunk = _json.loads(chunk_str)
-                            delta = chunk['choices'][0]['delta']
-                            if delta.get('content'):
-                                yield delta['content']
-                        except Exception:
-                            pass
-                return
-            except Exception:
-                continue
-
-        yield '[HuggingFace: all models unavailable. Check HF_TOKEN in .env]'
-
-
-class _FCCProvider(_BaseProvider):
-    name = 'free_claude'
-
-    def __init__(self):
-        self._base = (os.environ.get('FCC_BASE_URL') or '').rstrip('/')
-        self._model = os.environ.get('FCC_MODEL', 'anthropic/open_router/qwen/qwen3-235b-a22b')
-
-    def available(self) -> bool:
-        return bool(self._base)
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        import urllib.request as _ur
-        import json as _json
-
-        anth_msgs = [m for m in messages if m.get('role') != 'system']
-        if not anth_msgs:
-            anth_msgs = [{'role': 'user', 'content': ''}]
-
-        body: Dict = {
-            'model': self._model,
-            'messages': anth_msgs,
-            'max_tokens': 4096,
-        }
-        if system:
-            body['system'] = system
-
-        payload = _json.dumps(body).encode()
-        try:
-            req = _ur.Request(
-                f'{self._base}/v1/messages',
-                data=payload,
-                headers={'Content-Type': 'application/json', 'anthropic-version': '2023-06-01'},
-            )
-            with _ur.urlopen(req, timeout=120) as resp:
-                data = _json.loads(resp.read())
-                for block in data.get('content', []):
-                    if block.get('type') == 'text':
-                        yield block.get('text', '')
-        except Exception as e:
-            yield f'[FCC server error: {e}]'
-
-
-class _FreeClaudeSubprocProvider(_BaseProvider):
-    name = 'free_claude_sub'
-
-    def available(self) -> bool:
-        try:
-            from modules.free_claude_provider import is_available
-            return is_available()
-        except Exception:
-            return False
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        try:
-            from modules.free_claude_provider import chat as fc_chat
-            text, _ = fc_chat(messages, system=system)
-            yield text
-        except Exception as e:
-            yield f'[free-claude-code unavailable: {e}]'
-
-
-class _OllamaProvider(_BaseProvider):
-    """Local Ollama LLM provider — no API key, fully offline."""
-    name = 'ollama'
-
-    def __init__(self):
-        self._base = (os.environ.get('OLLAMA_BASE_URL') or 'http://localhost:11434').rstrip('/')
-        self._model = os.environ.get('OLLAMA_MODEL') or 'qwen2.5:0.5b'
-
-    def available(self) -> bool:
-        try:
-            import urllib.request as _ur
-            with _ur.urlopen(f'{self._base}/api/tags', timeout=3) as r:
-                data = json.loads(r.read())
-                return bool(data.get('models'))
-        except Exception:
-            return False
-
-    def _best_model(self) -> str:
-        try:
-            from modules.ollama_provider import _best_model as _bm
-            return _bm()
-        except Exception:
-            return self._model
-
-    def stream(self, messages: List[Dict], system: str = '') -> Generator[str, None, None]:
-        try:
-            from modules.ollama_provider import stream_chat
-            for chunk in stream_chat(messages, system_prompt=system, model=self._best_model()):
-                yield chunk
-        except Exception as e:
-            yield f'[Ollama error: {e}]'
-
-    def call_with_tools(self, messages: List[Dict], tools: Dict, system: str = '') -> Dict:
-        try:
-            from modules.ollama_provider import chat_with_tools
-            return chat_with_tools(messages, tools, system_prompt=system, model=self._best_model())
-        except Exception as e:
-            return {'content': f'[Ollama tool error: {e}]', 'tool_calls': []}
-
-
-def _select_provider(forced: str = '') -> _BaseProvider:
-    fcc = _FCCProvider()
-    fcc_sub = _FreeClaudeSubprocProvider()
-    ollama = _OllamaProvider()
-    candidates = {
-        'ollama': ollama,
-        'gemini': _GeminiProvider(),
-        'claude': _ClaudeProvider(),
-        'openai': _OpenAIProvider(),
-        'hf': _HFProvider(),
-        'huggingface': _HFProvider(),
-        'free_claude': fcc if fcc.available() else fcc_sub,
-        'fcc': fcc,
-    }
-    name = (forced or os.environ.get('DEVIN_PROVIDER', '')).lower().strip()
-    if name and name in candidates:
-        p = candidates[name]
-        if p.available():
-            return p
-        # Named provider not available — fall through to auto-select
-    # Auto-select priority: Ollama (local) > Claude > Gemini > OpenAI > HF > FCC
-    for p in [
-        ollama,
-        candidates['claude'],
-        candidates['gemini'],
-        candidates['openai'],
-        candidates['hf'],
-        fcc,
-        fcc_sub,
-    ]:
-        if p.available():
-            return p
-    return ollama  # return Ollama even if unavailable — gives helpful error msg
-
-
-# ── Tool registry ──────────────────────────────────────────────────────────────
-
-def _build_agent_tools(provider=None) -> Dict[str, Dict]:
-    tools: Dict[str, Dict] = {}
-
-    # ── OS Agent tools (observe, mouse, keyboard, windows, apps) ─────────────
+def _git_branch() -> str:
     try:
-        from modules.os_agent import get_os_agent
-        from modules import os_automation as _oa
-        agent = get_os_agent()
-
-        def _screenshot_tool(**_):
-            r = agent.screenshot('Describe the current screen in detail: open apps, text, UI elements, errors')
-            return f"Screenshot: {r.message}\nVision: {r.vision_result or 'no vision'}"
-
-        def _observe_tool(**_):
-            return agent.observe()
-
-        def _click_tool(x: int = 0, y: int = 0, button: str = 'left', **_):
-            r = agent.click(int(x), int(y), button)
-            return r.message
-
-        def _double_click_tool(x: int = 0, y: int = 0, **_):
-            r = agent.double_click(int(x), int(y))
-            return r.message
-
-        def _right_click_tool(x: int = 0, y: int = 0, **_):
-            r = agent.right_click(int(x), int(y))
-            return r.message
-
-        def _move_mouse_tool(x: int = 0, y: int = 0, **_):
-            return _oa.mouse_move(int(x), int(y))
-
-        def _drag_tool(x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0, **_):
-            r = agent.drag(int(x1), int(y1), int(x2), int(y2))
-            return r.message
-
-        def _scroll_tool(x: int = 0, y: int = 0, direction: str = 'down', amount: int = 3, **_):
-            return _oa.mouse_scroll(int(x), int(y), str(direction), int(amount))
-
-        def _get_mouse_pos_tool(**_):
-            pos = _oa.get_mouse_position()
-            return f"Mouse at ({pos['x']}, {pos['y']})"
-
-        def _type_text_tool(text: str = '', **_):
-            r = agent.type_text(str(text))
-            return r.message
-
-        def _press_key_tool(key: str = '', **_):
-            r = agent.press_key(str(key))
-            return r.message
-
-        def _hotkey_tool(keys: str = '', **_):
-            r = agent.hotkey(*str(keys).split('+'))
-            return r.message
-
-        def _click_and_type_tool(x: int = 0, y: int = 0, text: str = '', **_):
-            return _oa.human_click_and_type(int(x), int(y), str(text))
-
-        def _find_element_tool(description: str = '', **_):
-            coords = agent.find_element(str(description))
-            if coords:
-                return f"Found '{description}' at ({coords[0]}, {coords[1]})"
-            return f"Element not found: '{description}'"
-
-        def _click_element_tool(description: str = '', **_):
-            r = agent.click_element(str(description))
-            return r.message
-
-        def _type_into_field_tool(field: str = '', text: str = '', **_):
-            r = agent.type_into(str(field), str(text))
-            return r.message
-
-        def _open_app_tool(name: str = '', **_):
-            r = agent.open_application(str(name))
-            return r.message
-
-        def _search_app_tool(name: str = '', **_):
-            return _oa.search_and_open(str(name))
-
-        def _open_file_tool(path: str = '', **_):
-            return _oa.open_file(str(path))
-
-        def _list_windows_tool(**_):
-            return _oa.list_windows()
-
-        def _focus_window_tool(name: str = '', **_):
-            return _oa.focus_window(str(name))
-
-        def _active_window_tool(**_):
-            return _oa.get_active_window()
-
-        def _close_window_tool(**_):
-            return _oa.close_current_window()
-
-        def _minimize_window_tool(**_):
-            return _oa.minimize_window()
-
-        def _maximize_window_tool(**_):
-            return _oa.maximize_window()
-
-        def _alt_tab_tool(times: int = 1, **_):
-            return _oa.alt_tab(int(times))
-
-        def _get_clipboard_tool(**_):
-            return _oa.clipboard_get() or '(clipboard empty)'
-
-        def _set_clipboard_tool(text: str = '', **_):
-            return _oa.clipboard_set(str(text))
-
-        def _navigate_tool(url: str = '', **_):
-            url = str(url).strip()
-            # Intercept fabricated YouTube watch URLs — model often makes up video IDs
-            # Return a corrective message so the model uses youtube_search instead
-            if ('youtube.com/watch' in url or 'youtu.be/' in url):
-                return (
-                    "ERROR: YouTube direct video URLs are unreliable — the video ID may be fabricated. "
-                    "Use the youtube_search tool with the actual search query instead. "
-                    "Example: youtube_search(query='mark rober') — this opens YouTube and searches properly "
-                    "using real mouse clicks and keyboard input."
-                )
-            r = agent.navigate_browser(url)
-            parts = [r.message]
-            if r.vision_analysis:
-                parts.append(f"Screen: {r.vision_analysis}")
-            if r.after_screenshot:
-                parts.append(f"Screenshot saved: {r.after_screenshot}")
-            return '\n'.join(parts)
-
-        def _browser_address_bar_tool(url: str = '', **_):
-            r = agent.browser_address_bar(str(url))
-            return r.message
-
-        def _browser_search_tool(query: str = '', **_):
-            r = agent.browser_search(str(query))
-            return r.message
-
-        def _screen_size_tool(**_):
-            return _oa.get_screen_size()
-
-        def _wait_tool(seconds: float = 1.0, **_):
-            time.sleep(float(seconds))
-            return f"Waited {seconds}s"
-
-        def _vision_task_tool(goal: str = '', **_):
-            """Run a full autonomous vision→action loop for a GUI task."""
-            if not goal:
-                return 'ERROR: goal is required'
-            try:
-                from modules.screen_vision import run_vision_cycle
-                # Build AI caller using current provider
-                _prov = provider
-
-                def _ai_call(prompt: str) -> str:
-                    if _prov is None:
-                        return '{"action": "fail", "reason": "no AI provider"}'
-                    try:
-                        return _prov.complete([{'role': 'user', 'content': prompt}])
-                    except Exception as e:
-                        return f'{{"action": "fail", "reason": "{e}"}}'
-
-                cycle = run_vision_cycle(str(goal), ai_call_fn=_ai_call, max_steps=15, verbose=False)
-                if cycle.completed:
-                    return f"Vision task complete: {cycle.current_state}"
-                if cycle.failed:
-                    return f"Vision task failed after {cycle.step} steps: {cycle.failure_reason}"
-                return f"Vision task ran {cycle.step} steps"
-            except Exception as e:
-                return f"Vision task error: {e}"
-
-        def _scan_screen_tool(**_):
-            """Full screenshot + detailed AI description of everything visible."""
-            r = agent.screenshot(
-                'Describe EVERYTHING on screen in detail: '
-                'window titles, button labels, text content, icons, status bar, '
-                'any visible menus, dialogs, notifications. Include coordinates of key elements.'
-            )
-            return f"Screen scan:\n{r.vision_result or r.message}"
-
-        # ── Register all OS tools ──────────────────────────────────────────
-        tools['screenshot']       = {'fn': _screenshot_tool,       'desc': 'Take screenshot and describe current screen', 'params': {}}
-        tools['scan_screen']      = {'fn': _scan_screen_tool,       'desc': 'Full screen scan with detailed element descriptions', 'params': {}}
-        tools['observe_screen']   = {'fn': _observe_tool,           'desc': 'Observe current screen state (fast)', 'params': {}}
-        tools['click']            = {'fn': _click_tool,             'desc': 'Click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate', 'button': 'left|right|middle'}}
-        tools['double_click']     = {'fn': _double_click_tool,      'desc': 'Double-click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
-        tools['right_click']      = {'fn': _right_click_tool,       'desc': 'Right-click at pixel (x,y)', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
-        tools['move_mouse']       = {'fn': _move_mouse_tool,        'desc': 'Move mouse cursor to (x,y) without clicking', 'params': {'x': 'x coordinate', 'y': 'y coordinate'}}
-        tools['drag']             = {'fn': _drag_tool,              'desc': 'Drag from (x1,y1) to (x2,y2)', 'params': {'x1': 'start x', 'y1': 'start y', 'x2': 'end x', 'y2': 'end y'}}
-        tools['scroll']           = {'fn': _scroll_tool,            'desc': 'Scroll at position', 'params': {'x': 'x coord', 'y': 'y coord', 'direction': 'up|down', 'amount': 'scroll steps (default 3)'}}
-        tools['get_mouse_pos']    = {'fn': _get_mouse_pos_tool,     'desc': 'Get current mouse cursor position', 'params': {}}
-        tools['type_text']        = {'fn': _type_text_tool,         'desc': 'Type text via keyboard', 'params': {'text': 'text to type'}}
-        tools['press_key']        = {'fn': _press_key_tool,         'desc': 'Press a key: Return, Tab, Escape, ctrl+c, etc.', 'params': {'key': 'key name'}}
-        tools['hotkey']           = {'fn': _hotkey_tool,            'desc': 'Press keyboard shortcut e.g. ctrl+c, alt+f4', 'params': {'keys': 'keys joined by + e.g. ctrl+c'}}
-        tools['click_and_type']   = {'fn': _click_and_type_tool,    'desc': 'Click on a field and type text into it', 'params': {'x': 'x coord', 'y': 'y coord', 'text': 'text to type'}}
-        tools['find_element']     = {'fn': _find_element_tool,      'desc': 'Find UI element by visual description, returns coordinates', 'params': {'description': 'e.g. "search box", "submit button"'}}
-        tools['click_element']    = {'fn': _click_element_tool,     'desc': 'Find and click UI element by visual description', 'params': {'description': 'element description'}}
-        tools['type_into_field']  = {'fn': _type_into_field_tool,   'desc': 'Find a field by description and type into it', 'params': {'field': 'field description', 'text': 'text to type'}}
-        tools['open_app']         = {'fn': _open_app_tool,          'desc': 'Launch an application by name', 'params': {'name': 'app name e.g. firefox, gedit, nautilus'}}
-        tools['search_app']       = {'fn': _search_app_tool,        'desc': 'Search desktop launcher and open app', 'params': {'name': 'app name'}}
-        tools['open_file']        = {'fn': _open_file_tool,         'desc': 'Open file with its default application', 'params': {'path': 'file path'}}
-        tools['list_windows']     = {'fn': _list_windows_tool,      'desc': 'List all open windows', 'params': {}}
-        tools['focus_window']     = {'fn': _focus_window_tool,      'desc': 'Bring window to focus by partial name match', 'params': {'name': 'window title (partial)'}}
-        tools['active_window']    = {'fn': _active_window_tool,     'desc': 'Get the currently active/focused window title', 'params': {}}
-        tools['close_window']     = {'fn': _close_window_tool,      'desc': 'Close the currently active window', 'params': {}}
-        tools['minimize_window']  = {'fn': _minimize_window_tool,   'desc': 'Minimize the current window', 'params': {}}
-        tools['maximize_window']  = {'fn': _maximize_window_tool,   'desc': 'Maximize the current window', 'params': {}}
-        tools['alt_tab']          = {'fn': _alt_tab_tool,           'desc': 'Switch windows with Alt+Tab', 'params': {'times': 'number of tabs (default 1)'}}
-        tools['get_clipboard']    = {'fn': _get_clipboard_tool,     'desc': 'Get current clipboard contents', 'params': {}}
-        tools['set_clipboard']    = {'fn': _set_clipboard_tool,     'desc': 'Set clipboard contents', 'params': {'text': 'text to put in clipboard'}}
-        tools['navigate_browser'] = {'fn': _navigate_tool,          'desc': 'Open URL in Chrome using ydotool mouse+keyboard (takes before/after screenshots)', 'params': {'url': 'URL to open'}}
-        tools['browser_address']  = {'fn': _browser_address_bar_tool, 'desc': 'Type URL into focused browser address bar', 'params': {'url': 'URL'}}
-        tools['browser_search']   = {'fn': _browser_search_tool,    'desc': 'Search Google using real mouse+keyboard', 'params': {'query': 'search query'}}
-        # YouTube and app-launch helpers
-        def _youtube_search_tool(query: str = '', **_):
-            if not agent: return "OS agent not available"
-            r = agent.youtube_search(str(query))
-            parts = [r.message]
-            if r.vision_analysis:
-                parts.append(f"Screen: {r.vision_analysis}")
-            if r.after_screenshot:
-                parts.append(f"Screenshot: {r.after_screenshot}")
-            return '\n'.join(parts)
-        def _open_app_tool(app_name: str = '', **_):
-            if not agent: return "OS agent not available"
-            r = agent.open_app_by_name(str(app_name))
-            parts = [r.message]
-            if r.vision_analysis:
-                parts.append(f"Screen: {r.vision_analysis}")
-            if r.after_screenshot:
-                parts.append(f"Screenshot: {r.after_screenshot}")
-            return '\n'.join(parts)
-        tools['youtube_search']   = {'fn': _youtube_search_tool,    'desc': 'Search YouTube using real mouse+keyboard and show screenshot of results', 'params': {'query': 'search query (e.g. "mark rober")'}}
-        tools['open_app']         = {'fn': _open_app_tool,          'desc': 'Open any application by name (Chrome, Firefox, Terminal, Files, etc)', 'params': {'app_name': 'application name'}}
-        tools['screen_size']      = {'fn': _screen_size_tool,       'desc': 'Get screen resolution', 'params': {}}
-        tools['wait']             = {'fn': _wait_tool,              'desc': 'Wait/sleep for N seconds', 'params': {'seconds': 'seconds to wait'}}
-        tools['vision_task']      = {'fn': _vision_task_tool,       'desc': 'Run autonomous GUI task using vision+AI loop', 'params': {'goal': 'what to accomplish on screen'}}
-    except Exception:
+        head = Path.cwd() / '.git' / 'HEAD'
+        if head.exists():
+            ref = head.read_text().strip()
+            return ref.rsplit('/', 1)[-1] if ref.startswith('ref:') else ref[:7]
+    except OSError:
         pass
+    return ''
 
-    # Shell
-    def _shell_tool(cmd: str = '', timeout: int = 30, **_):
-        try:
-            r = subprocess.run(str(cmd), shell=True, capture_output=True, text=True, timeout=int(timeout))
-            out = (r.stdout or '')[:3000]
-            err = (r.stderr or '')[:800]
-            result = f"$ {cmd}\n{out}"
-            if err:
-                result += f"\nSTDERR: {err}"
-            return result
-        except subprocess.TimeoutExpired:
-            return f"[timeout after {timeout}s: {cmd}]"
-        except Exception as e:
-            return f"[shell error: {e}]"
 
-    def _read_file_tool(path: str = '', **_):
-        try:
-            p = Path(str(path))
-            if not p.exists():
-                return f"[file not found: {path}]"
-            if p.stat().st_size > 100_000:
-                return f"[file too large — use shell_run with head/tail]"
-            return p.read_text(errors='replace')[:4000]
-        except Exception as e:
-            return f"[read error: {e}]"
+# ══════════════════════════════════════════════════════════════════════════════
+# Deciding what a message needs
+# ══════════════════════════════════════════════════════════════════════════════
 
-    def _write_file_tool(path: str = '', content: str = '', **_):
-        try:
-            p = Path(str(path))
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(str(content))
-            return f"Written {len(content)} chars to {path}"
-        except Exception as e:
-            return f"[write error: {e}]"
+CHAT_SYSTEM = """You are Devin, an AI assistant that lives on the user's computer.
 
-    def _list_dir_tool(path: str = '.', **_):
-        try:
-            p = Path(str(path))
-            entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name))
-            lines = []
-            for e in entries[:60]:
-                mark = '' if e.is_dir() else ''
-                lines.append(f"  {mark} {e.name}{'/' if e.is_dir() else ''}")
-            return '\n'.join(lines) or '(empty)'
-        except Exception as e:
-            return f"[list error: {e}]"
+You can operate this computer yourself: you take screenshots, move the mouse, click, and type on the keyboard like a person. Right now you are only talking, so answer the user directly and briefly. Think the question through before you answer, and say so plainly when you are not sure.
 
-    tools['shell_run']  = {'fn': _shell_tool,    'desc': 'Run shell command, return stdout+stderr', 'params': {'cmd': 'command', 'timeout': 'seconds (default 30)'}}
-    tools['read_file']  = {'fn': _read_file_tool, 'desc': 'Read file contents', 'params': {'path': 'file path'}}
-    tools['write_file'] = {'fn': _write_file_tool,'desc': 'Write content to file', 'params': {'path': 'file path', 'content': 'content'}}
-    tools['list_dir']   = {'fn': _list_dir_tool,  'desc': 'List directory contents', 'params': {'path': 'directory path (default .)'}}
+If the user asks you to do something on the computer, never say you are unable to. Say you will do it and that they can press Shift+Tab to switch to agent mode, or start the message with /do."""
 
-    # Memory
-    def _remember_tool(fact: str = '', **_):
-        try:
-            _save_memory(str(fact))
-            return f"Remembered: {fact}"
-        except Exception as e:
-            return f"[memory error: {e}]"
 
-    def _recall_tool(query: str = '', **_):
-        try:
-            mems = _load_memories()
-            if not mems:
-                return "No memories stored."
-            if query:
-                q = query.lower()
-                mems = [m for m in mems if q in m.get('content', '').lower()]
-            return '\n'.join(f"- {m['content']}" for m in mems[-20:]) or "No matching memories."
-        except Exception as e:
-            return f"[recall error: {e}]"
+_ACT = re.compile(
+    r"\b(open|launch|start|run|close|quit|click|type|press|scroll|search|google|browse|go to|visit|play|"
+    r"watch|download|install|uninstall|create|delete|rename|move|copy|save|screenshot|show me|find|look up|"
+    r"turn (?:on|off)|switch to|maximi[sz]e|minimi[sz]e|log ?in|sign ?in|update|upgrade|scan)\b")
+_TALK = re.compile(
+    r"^(hi+|hey+|hello|yo|thanks?|thank you|ok(ay)?|yup|yes|yeah|no|nope|why|bye|good (morning|evening|night)|"
+    r"how are|who are|what are you|what can you|what is|what's|what are|what does|how does|how do i|explain|"
+    r"define|tell me about|who (is|was))\b")
 
-    tools['remember'] = {'fn': _remember_tool, 'desc': 'Save fact to persistent memory', 'params': {'fact': 'fact to remember'}}
-    tools['recall']   = {'fn': _recall_tool,   'desc': 'Recall memories, optionally filtered', 'params': {'query': 'search string (optional)'}}
 
-    # System info
+def quick_route(message: str) -> Optional[str]:
+    """'computer' / 'chat' when the wording makes it obvious, else None (ask the model)."""
+    low = message.strip().lower()
+    acts = bool(_ACT.search(low))
+    if _TALK.match(low) and not (acts and re.match(r'^(ok(ay)?|yes|yeah|yup|hey+|hi+|hello)\b', low)):
+        return 'chat'
+    if acts:
+        return 'computer'
+    if len(low.split()) <= 2:
+        return 'chat'
+    return None
+
+
+def route(message: str, history: List[Dict[str, str]], model: str) -> str:
+    """'computer' or 'chat' for one message."""
+    quick = quick_route(message)
+    if quick:
+        return quick
+    prompt = ('Is the user asking you to DO something on their computer (open, click, search, play, files, '
+              'settings, run or install software, read the screen), or only to TALK (greeting, question, '
+              f'explanation, writing)?\nMessage: "{message[:300]}"\nAnswer with one word: computer or chat.')
     try:
-        import psutil
-
-        def _sysinfo_tool(**_):
-            cpu = psutil.cpu_percent(interval=0.5)
-            mem = psutil.virtual_memory()
-            disk = psutil.disk_usage('/')
-            return (f"CPU: {cpu}%  RAM: {mem.percent}% ({mem.used//1024//1024}MB/{mem.total//1024//1024}MB)"
-                    f"  Disk: {disk.percent}% ({disk.used//1024//1024//1024}GB/{disk.total//1024//1024//1024}GB)")
-
-        def _procs_tool(filter_name: str = '', **_):
-            procs = []
-            for p in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info']):
-                try:
-                    info = p.info
-                    if not filter_name or filter_name.lower() in info['name'].lower():
-                        mem_mb = info.get('memory_info').rss // 1024 // 1024 if info.get('memory_info') else 0
-                        procs.append(f"PID {info['pid']:>6}  {info['name']:<30}  {mem_mb}MB")
-                except Exception:
-                    pass
-            return '\n'.join(procs[:40]) or 'No processes found'
-
-        def _network_tool(**_):
-            stats = psutil.net_io_counters()
-            conns = psutil.net_connections()
-            listening = [c for c in conns if c.status == 'LISTEN']
-            return (f"Bytes sent: {stats.bytes_sent//1024//1024}MB  Recv: {stats.bytes_recv//1024//1024}MB\n"
-                    f"Active connections: {len(conns)}  Listening ports: {[c.laddr.port for c in listening[:10]]}")
-
-        tools['system_info']     = {'fn': _sysinfo_tool, 'desc': 'Get CPU/RAM/disk usage', 'params': {}}
-        tools['list_processes']  = {'fn': _procs_tool,   'desc': 'List running processes', 'params': {'filter_name': 'optional name filter'}}
-        tools['network_status']  = {'fn': _network_tool, 'desc': 'Get network IO and connections', 'params': {}}
-    except ImportError:
-        pass
-
-    return tools
+        r = llm.chat_text([{'role': 'user', 'content': prompt}], model=model, max_tokens=6, temperature=0.0,
+                          until=lambda t: bool(re.search(r'\b(computer|chat)\b', t, re.I)))
+        return 'computer' if 'computer' in r['content'].lower() else 'chat'
+    except llm.OllamaError:
+        return 'chat'
 
 
-# ── Memory helpers ─────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# The REPL
+# ══════════════════════════════════════════════════════════════════════════════
 
-_MEMORY_FILE = ROOT / '.devin_memories.json'
+HELP = """Commands
+  /do <task>        carry out a task on the computer with the mouse and keyboard
+  /chat <message>   just answer, do not touch the computer
+  /look             describe what is on the screen right now
+  /model [name]     show or switch the Ollama model   ·   /models lists installed ones
+  /eyes [auto|always|never]   when the screenshot itself is sent to the model (now {eyes})
+  /pull <name>      download a model through Ollama
+  /mode [auto|agent|chat]
+  /steps <n>        most actions Devin may take per task (now {steps})
+  /shell [on|off]   let Devin also run commands directly, without a terminal window (now {shell})
+  /doctor           check screen capture, input control and the model
+  /clear            clear the screen and forget the conversation
+  !<command>        run a shell command yourself
+  /exit             quit
 
-def _load_memories() -> List[Dict]:
-    try:
-        if _MEMORY_FILE.exists():
-            return json.loads(_MEMORY_FILE.read_text())
-    except Exception:
-        pass
-    return []
+Keys
+  Shift+Tab  switch mode      Ctrl+C  stop the current task      Ctrl+D  quit
+  Esc Enter  new line in the input box"""
 
-def _save_memory(content: str) -> None:
-    mems = _load_memories()
-    mems.append({'content': content, 'ts': time.strftime('%Y-%m-%d %H:%M')})
-    _MEMORY_FILE.write_text(json.dumps(mems, indent=2))
-
-
-# ── ReAct system prompt ────────────────────────────────────────────────────────
-
-def _build_system_prompt(tools: Dict[str, Dict]) -> str:
-    tool_lines = []
-    for name, info in sorted(tools.items()):
-        params = ', '.join(f'{k}: {v}' for k, v in info.get('params', {}).items())
-        tool_lines.append(f"  - {name}({params}): {info['desc']}")
-    tool_desc = '\n'.join(tool_lines)
-
-    return f"""You are Devin, the world's most advanced autonomous AI operating system controller.
-You run on a real Linux (GNOME Wayland) system and can control it exactly like a human — seeing the screen,
-moving the mouse, typing on the keyboard, opening apps, managing windows, and reasoning about what you see.
-
-## Core Capabilities
-- VISION: Take screenshots and analyze screen content (UI elements, text, apps, dialogs)
-- MOUSE: Click, double-click, right-click, drag, scroll at any screen position
-- KEYBOARD: Type text, press keys, use shortcuts (ctrl+c, alt+tab, super, etc.)
-- WINDOWS: Open/focus/close/minimize/maximize/list windows and applications
-- FILES: Read, write, list files; open with default apps
-- BROWSER: Navigate URLs, type in address bar, search Google
-- SHELL: Run any shell command and get output
-- MEMORY: Remember facts across conversations
-- SYSTEM: Check CPU/RAM/disk, list processes, network status
-- VISION TASKS: Run full autonomous GUI tasks (observe → reason → act → verify loop)
-
-## Available Tools
-{tool_desc}
-
-## How to Operate Like a Human on the OS
-
-### To open an app:
-1. Use open_app("firefox") OR search_app("firefox") (uses desktop search)
-2. Wait 1-2 seconds then take screenshot to verify it opened
-
-### To interact with a UI element:
-1. Take screenshot first to see what's on screen
-2. Use find_element("button description") to get coordinates
-3. Click those coordinates, or use click_element("description") directly
-
-### To type in a field:
-1. Click the field first OR use type_into_field("field name", "text")
-2. For form inputs: click_and_type(x, y, "text")
-
-### To navigate browser:
-1. navigate_browser("https://...") to open URL
-2. OR focus browser window + browser_address("https://...") to type in address bar
-3. OR browser_search("query") for Google search
-
-### To verify an action worked:
-1. After every important action, take a screenshot
-2. Use scan_screen() for detailed element detection
-3. Use observe_screen() for quick state check
-
-## Response Rules
-1. USE TOOLS — never just describe what you would do; DO it
-2. VERIFY — after clicking/typing, screenshot to confirm the action worked
-3. ITERATE — if something doesn't work, try a different approach
-4. SEQUENCE — for complex tasks, break into steps: observe → act → verify → next step
-5. For simple questions needing no tools: answer directly
-6. For OS tasks: always start by observing the current screen state
-7. Think like a human: if a click doesn't work, the target may have moved — re-screenshot and re-find
-
-## ReAct Format (when not using native tool calling)
-Thought: [reasoning]
-Action: tool_name
-Action Input: {{"key": "value"}}
-...repeat...
-Final Answer: [complete answer after all steps done]"""
-
-
-# ── ReAct execution loop ───────────────────────────────────────────────────────
-
-_ACTION_RE     = re.compile(r'Action:\s*(.+?)(?:\n|$)', re.IGNORECASE)
-_INPUT_RE      = re.compile(r'Action\s+Input:\s*(.+?)(?=\nThought:|\nAction:|\nFinal Answer:|$)', re.IGNORECASE | re.DOTALL)
-_FINAL_RE      = re.compile(r'Final\s+Answer:\s*(.+)', re.IGNORECASE | re.DOTALL)
-_THOUGHT_RE    = re.compile(r'Thought:\s*(.+?)(?=\nAction:|\nFinal Answer:|$)', re.IGNORECASE | re.DOTALL)
-
-
-def _parse_action(text: str) -> Tuple[Optional[str], Optional[Dict], Optional[str]]:
-    """Parse one Thought/Action/Action Input block. Returns (action_name, inputs, thought)."""
-    thought_m = _THOUGHT_RE.search(text)
-    thought = thought_m.group(1).strip() if thought_m else None
-
-    action_m = _ACTION_RE.search(text)
-    if not action_m:
-        return None, None, thought
-
-    action_name = action_m.group(1).strip()
-    input_m = _INPUT_RE.search(text)
-    inputs: Dict = {}
-    if input_m:
-        raw = input_m.group(1).strip()
-        try:
-            inputs = json.loads(raw)
-        except json.JSONDecodeError:
-            # Try to extract key=value or bare string
-            inputs = {'cmd': raw} if action_name in ('shell_run',) else {'query': raw}
-    return action_name, inputs, thought
-
-
-def _run_tool(tools: Dict[str, Dict], name: str, inputs: Dict) -> str:
-    name = name.strip().lower().replace('-', '_').replace(' ', '_')
-    # Try exact match first, then prefix match
-    fn_info = tools.get(name)
-    if not fn_info:
-        for k, v in tools.items():
-            if name in k or k in name:
-                fn_info = v
-                name = k
-                break
-    if not fn_info:
-        return f"[Unknown tool: {name}. Available: {', '.join(sorted(tools.keys()))}]"
-    try:
-        return str(fn_info['fn'](**inputs))
-    except Exception as e:
-        return f"[Tool error in {name}: {e}]"
-
-
-# ── Grok-style UI renderer ─────────────────────────────────────────────────────
-
-class GrokUI:
-    """Renders grok-style CLI output."""
-
-    def __init__(self, provider_name: str = 'devin'):
-        self.provider_name = provider_name
-        self._chars_sent = 0
-        self._max_tokens = 200000  # rough estimate
-
-    def _w(self) -> int:
-        return _cols()
-
-    def print_header(self, cwd: str, tokens: int) -> None:
-        w = self._w()
-        left = f'  \033[32mmain\033[0m \033[2m{cwd}\033[0m'
-        right = f'\033[2m{tokens}K / {self._max_tokens//1000}K\033[0m'
-        gap = w - len(cwd) - len('  main ') - len(f'{tokens}K / {self._max_tokens//1000}K') - 2
-        print(f'{left}{" " * max(gap, 2)}{right}')
-
-    def print_user_msg(self, text: str) -> None:
-        w = self._w()
-        ts = _now_hhmm()
-        # Dark-bg row for user message
-        prefix = '  ❯ '
-        inner = text[:w - len(prefix) - len(ts) - 4]
-        padlen = w - len(prefix) - len(inner) - len(ts) - 2
-        if _IS_TTY:
-            # dark background bar
-            line = f'\033[{BG_DARK}m{prefix}\033[1m{inner}\033[0m\033[{BG_DARK}m{" " * max(padlen,1)}\033[2m{ts}\033[0m'
-        else:
-            line = f'{prefix}{inner}  {ts}'
-        print(line)
-
-    def print_thought(self, duration: float) -> None:
-        print(_c(GRAY_B, f'  ◆ Thought for {duration:.1f}s'))
-
-    def start_response(self, ts: str) -> None:
-        """Print timestamp at start of response (grok shows it inline)."""
-        pass  # We'll put timestamp at the end
-
-    def stream_text(self, text: str, end: str = '') -> None:
-        print(text, end=end, flush=True)
-
-    def print_tool_header(self, tool_name: str, inputs: Dict) -> str:
-        """Print collapsible tool call line. Returns the label for later."""
-        # Summarize inputs
-        if 'cmd' in inputs:
-            summary = inputs['cmd'][:60]
-        elif 'url' in inputs:
-            summary = inputs['url'][:60]
-        elif 'query' in inputs:
-            summary = inputs['query'][:60]
-        elif 'path' in inputs:
-            summary = inputs['path'][:60]
-        elif inputs:
-            summary = str(list(inputs.values())[0])[:60]
-        else:
-            summary = ''
-
-        label = f'{tool_name}: {summary}' if summary else tool_name
-        if _IS_TTY:
-            print(f'\033[{BG_TOOL}m  \033[36m›\033[0m\033[{BG_TOOL}m \033[2m{label}\033[0m')
-        else:
-            print(f'  › {label}')
-        return label
-
-    def print_tool_result(self, result: str, label: str, duration: float) -> None:
-        lines = result.strip().splitlines()
-        shown = lines[:8]  # show first 8 lines, collapse rest
-        for ln in shown:
-            print(_c(GRAY, f'    {ln}'))
-        if len(lines) > 8:
-            print(_c(GRAY, f'    … ({len(lines)-8} more lines)'))
-        print(_c(DIM, f'  \033[2mRan {label.split(":")[0]} in {duration:.2f}s\033[0m'))
-
-    def print_worked_for(self, duration: float) -> None:
-        s = duration
-        if s < 60:
-            print(_c(GRAY_B, f'\n  Worked for {s:.1f}s'))
-        else:
-            print(_c(GRAY_B, f'\n  Worked for {int(s//60)}m {int(s%60)}s'))
-
-    def print_final(self, text: str, ts: str) -> None:
-        # Print the response with timestamp at right of first line
-        lines = text.strip().splitlines()
-        if not lines:
-            return
-        w = self._w()
-        first = lines[0]
-        padlen = w - len('  ' + first) - len(ts) - 2
-        if _IS_TTY and padlen > 0:
-            print(f'  \033[0m{first}\033[{GRAY_B}m{" " * padlen}{ts}\033[0m')
-        else:
-            print(f'  {first}  {ts}')
-        for ln in lines[1:]:
-            print(f'  {ln}')
-
-    def print_elapsed(self, seconds: float) -> None:
-        print()
-        if seconds < 60:
-            print(_c(GRAY_B, f'  Worked for {seconds:.1f}s'))
-        else:
-            print(_c(GRAY_B, f'  Worked for {int(seconds//60)}m {int(seconds%60)}s'))
-
-    def print_status_bar(self, provider: str, model_hint: str = '') -> None:
-        w = self._w()
-        shortcuts = 'Shift+Tab:mode  |  Ctrl+c:cancel  |  Ctrl+x:shortcuts'
-        right = model_hint if model_hint else provider
-        gap = w - len(shortcuts) - len(right) - 4
-        print(_c(GRAY, f'  {shortcuts}{" " * max(gap,2)}{right}'))
-
-    def print_input_prompt(self) -> str:
-        return '  ❯ '
-
-    def banner(self, provider_name: str, cwd: str) -> None:
-        w = self._w()
-        sep = _hr(w - 4)
-        print()
-        print(_c(CYAN_B, f'  ╭{sep}╮'))
-        title = '  Devin AGI v4.0  ·  Autonomous OS-Controlling AI'
-        prov  = f'[{provider_name}]'
-        pad   = w - len(title) - len(prov) - 4
-        print(_c(CYAN_B, '  │') + _c(WHITE_B, title) +
-              ' ' * max(pad, 1) + _c(GRAY, prov) + _c(CYAN_B, ' │'))
-        sub = '  Type /help for commands · /think <task> for agentic mode · Ctrl+D to exit'
-        pad2 = w - len(sub) - 4
-        print(_c(CYAN_B, '  │') + _c(GRAY, sub) + ' ' * max(pad2, 0) + _c(CYAN_B, '│'))
-        print(_c(CYAN_B, f'  ╰{sep}╯'))
-        print()
-
-
-# ── Slash commands ─────────────────────────────────────────────────────────────
-
-_SLASH_HELP = """
-  Slash commands:
-    /help              Show this help
-    /clear             Clear screen + conversation history
-    /status            System and module status
-    /tools             List registered tools
-    /screenshot        Take + show screenshot of current screen
-    /vision <task>     Run autonomous GUI task (observe→act→verify loop)
-    /memory            Show saved memories
-    /remember <fact>   Save a fact to persistent memory
-    /shell <cmd>       Run a shell command directly
-    /git <args>        Run a git command
-    /think <task>      Force agentic mode on a task
-    /voice             Toggle voice mode
-    /provider <p>      Switch provider (claude|gemini|openai|hf|free_claude|ollama)
-    /model <m>         Set model for current provider
-    /mem               Conversation memory stats
-    /cwd               Show working directory
-    /reset             Reset conversation history
-    /exit  /q          Exit Devin
-"""
-
-
-# ── Main DevinREPL ─────────────────────────────────────────────────────────────
 
 class DevinREPL:
-    """Grok-style interactive REPL with agentic tool execution."""
-
-    def __init__(self, devin_agi: Optional[Any] = None, provider_name: str = ''):
-        self._agi = devin_agi
-        self._provider = _select_provider(provider_name)
-        self._history: List[Dict[str, str]] = []
-        self._voice_mode = os.environ.get('DEVIN_VOICE_MODE') == '1'
+    def __init__(self, devin_agi: Any = None, provider_name: str = '') -> None:
+        self.ui = UI()
+        self.history: List[Dict[str, str]] = []
+        self.mode = os.environ.get('DEVIN_MODE_DEFAULT', 'auto')
+        if self.mode not in MODES:
+            self.mode = 'auto'
+        self.model = ''          # answers in conversation
+        self.agent_model = ''    # operates the computer (must be able to see when one can)
+        self.tokens = 0
+        self._printed = True     # something was written since the last status bar
+        self.max_steps = int(os.environ.get('DEVIN_MAX_STEPS', '40'))
+        self._agent: Any = None
+        self._session: Any = None
         self._running = True
-        self._tools = _build_agent_tools(provider=self._provider)
-        self._system = _build_system_prompt(self._tools)
-        self._ui = GrokUI(provider_name=self._provider.name)
-        self._session = None
-        self._use_pt = False
-        self._setup_input()
+        self._task_tokens = 0
 
-    def _setup_input(self) -> None:
+    # ── model ──
+    def _ensure_model(self) -> bool:
+        if self.model:
+            return True
+        if not llm.is_available():
+            self.ui.error('Ollama is not answering at ' + llm._base())
+            self.ui.note('Start it with:  ollama serve      then pull a model, e.g.:  ollama pull gemma4:e2b')
+            return False
+        self.model = llm.pick_model()
+        self.agent_model = llm.pick_agent_model()
+        return True
+
+    def _model_label(self) -> str:
+        if not self.model:
+            return 'no model'
+        if self.mode == 'chat' or not self.agent_model or self.agent_model == self.model:
+            return f'ollama/{self.model}'
+        if self.mode == 'agent':
+            return f'ollama/{self.agent_model}'
+        return f'ollama/{self.agent_model} acts · {self.model} chats'
+
+    def _context(self) -> int:
+        return (llm.model_info(self.model)['context'] if self.model else 0) or 8192
+
+    def _capable(self) -> bool:
+        """Can this model be trusted to decide by itself to operate the computer?"""
+        if not self.agent_model:
+            return False
+        info = llm.model_info(self.agent_model)
+        size_ok = info['params_b'] == 0 or info['params_b'] >= 2  # 0 = size unknown (cloud)
+        return 'vision' in info['capabilities'] and size_ok
+
+    # ── input ──
+    def _build_session(self) -> None:
+        if not (sys.stdin.isatty() and _TTY):
+            return
         try:
             from prompt_toolkit import PromptSession
             from prompt_toolkit.history import FileHistory
-            from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+            from prompt_toolkit.key_binding import KeyBindings
             from prompt_toolkit.styles import Style
-            style = Style.from_dict({
-                'prompt': '#00ffff bold',
-                '': 'bg:#1a1a1a',
-            })
-            self._session = PromptSession(
-                history=FileHistory(str(Path.home() / '.devin_history')),
-                auto_suggest=AutoSuggestFromHistory(),
-                enable_history_search=True,
-                style=style,
-                multiline=False,
-            )
-            self._use_pt = True
-        except (ImportError, Exception):
-            pass
+        except Exception:
+            return
+        kb = KeyBindings()
 
-    def _get_input(self, prompt: str) -> Optional[str]:
-        if self._use_pt and self._session:
+        @kb.add('s-tab')
+        def _(event) -> None:
+            self.mode = MODES[(MODES.index(self.mode) + 1) % len(MODES)]
+            event.app.invalidate()
+
+        @kb.add('c-x')
+        def _(event) -> None:
+            event.app.exit(result='/help')
+
+        style = Style.from_dict({
+            'frame': '#5f5f5f', 'prompt': '#d0d0d0 bold', 'hint': '#808080', 'hintkey': '#d0d0d0 bold',
+            'model': '#808080', 'placeholder': '#5f5f5f', 'bottom-toolbar': 'noreverse bg:default',
+            'mode-auto': '#5fd7d7', 'mode-agent': '#87d787', 'mode-chat': '#d7af5f',
+        })
+        self._session = PromptSession(
+            history=FileHistory(str(Path.home() / '.devin_history')), key_bindings=kb, style=style,
+            erase_when_done=True, reserve_space_for_menu=0, multiline=False, mouse_support=False)
+
+    def _prompt_parts(self):
+        w = _cols()
+        top = [('class:frame', '╭' + '─' * (w - 2) + '╮\n'), ('class:frame', '│ '), ('class:prompt', '❯ ')]
+        label = f' {self._model_label()} ({self.mode}) '
+        label = _clip(label, w - 6)
+        bottom = [('class:frame', '╰' + '─' * max(1, w - 3 - _width(label))), ('class:model', label),
+                  ('class:frame', '─╯\n'),
+                  ('class:hintkey', ' Shift+Tab'), ('class:hint', ':mode '), (f'class:mode-{self.mode}', self.mode),
+                  ('class:hint', '  │  '), ('class:hintkey', 'Ctrl+c'), ('class:hint', ':cancel  │  '),
+                  ('class:hintkey', 'Ctrl+x'), ('class:hint', ':shortcuts')]
+        return top, bottom
+
+    def _read(self) -> Optional[str]:
+        self._flush_stdin()
+        if self._printed:
+            self.ui.topline(self.tokens, self._context())
+            self._printed = False
+        if self._session is None:
             try:
-                from prompt_toolkit import print_formatted_text
-                return self._session.prompt(prompt)
-            except (KeyboardInterrupt, EOFError):
+                return input('❯ ' if _TTY else '')
+            except (EOFError, KeyboardInterrupt):
                 return None
         try:
-            return input(prompt)
-        except (KeyboardInterrupt, EOFError):
+            return self._session.prompt(
+                lambda: self._prompt_parts()[0],
+                bottom_toolbar=lambda: self._prompt_parts()[1],
+                rprompt=[('class:frame', '│')],
+                placeholder=lambda: [('class:placeholder', {
+                    'auto': 'Ask anything, or tell me what to do on this computer',
+                    'agent': 'Describe a task — I will do it with the mouse and keyboard',
+                    'chat': 'Chat only — I will not touch the computer'}[self.mode])],
+                prompt_continuation=lambda width, line, soft: [('class:frame', '│   ')])
+        except KeyboardInterrupt:
+            return ''
+        except EOFError:
             return None
 
-    # ── Core: Agentic loop (native tool calling + ReAct fallback) ─────────────
-
-    def _native_tool_loop(self, user_text: str) -> str:
-        """
-        Universal agentic tool-calling loop — works with ALL providers.
-        Uses provider.call_with_tools() which dispatches to native tool calling
-        (Claude/OpenAI/Ollama) or falls back to ReAct text parsing.
-        Always takes a screenshot first so the agent sees the current screen state.
-        """
-        task_start = time.time()
-
-        # ── Auto-screenshot: always show agent the current screen before it acts ──
-        screen_ctx = ''
+    @staticmethod
+    def _flush_stdin() -> None:
+        """Drop keystrokes that landed in this terminal while Devin was driving the keyboard."""
         try:
-            if _IS_TTY:
-                print(f'\033[{BG_TOOL}m  \033[36m◉\033[0m\033[{BG_TOOL}m \033[2mobserving screen…\033[0m')
-            screen_ctx = _run_tool(self._tools, 'screenshot', {})
+            import termios
+            if sys.stdin.isatty():
+                termios.tcflush(sys.stdin, termios.TCIFLUSH)
         except Exception:
             pass
 
-        # Build conversation for this task
-        loop_messages = []
-        for m in self._history[-16:]:
-            loop_messages.append({'role': m['role'], 'content': m.get('content', '')})
-
-        # Inject current screen state so agent reasons from real screen, not imagination
-        if screen_ctx:
-            enriched = f"CURRENT SCREEN STATE:\n{screen_ctx}\n\nUSER REQUEST: {user_text}"
-        else:
-            enriched = user_text
-        loop_messages.append({'role': 'user', 'content': enriched})
-
-        # System prompt for native tool calling
-        system = (
-            "You are Devin, an autonomous AI that physically controls a real Linux GNOME Wayland desktop "
-            "using mouse clicks, keyboard input, and screenshots — exactly like a human.\n\n"
-            "CURRENT SCREEN STATE is provided at the start of every message. Read it before acting.\n\n"
-            "TOOL USAGE RULES — follow exactly:\n"
-            "• YouTube: ALWAYS use youtube_search(query='channel or video name'). "
-            "  NEVER call navigate_browser with any youtube.com URL — the system blocks it.\n"
-            "• Google search: use browser_search(query='...')\n"
-            "• Open any website: use navigate_browser(url='https://example.com')\n"
-            "• Mouse click: use click(x=NNN, y=NNN)\n"
-            "• Type text: use type_text(text='...')\n"
-            "• Press a key: use key_press(key='Return')\n"
-            "• Shell command: use shell_run(cmd='...')\n"
-            "• See current screen: use screenshot()\n"
-            "• Open app (Chrome, Files, Terminal, etc): use open_app(app_name='...')\n\n"
-            "WORKFLOW — for every task:\n"
-            "1. Read CURRENT SCREEN STATE\n"
-            "2. Decide one action\n"
-            "3. Call the tool\n"
-            "4. screenshot() is taken automatically — check the result\n"
-            "5. Decide next action based on new screen\n"
-            "6. Repeat until done\n\n"
-            "NEVER describe what you would do — just call tools and act."
-        )
-
-        max_tool_rounds = 20
-        all_observations = []
-        final_content = ''
-        seen_calls = set()  # prevent duplicate tool calls
-
-        for step in range(max_tool_rounds):
-            think_start = time.time()
-            result = self._provider.call_with_tools(loop_messages, self._tools, system=system)
-            think_dur = time.time() - think_start
-            self._ui.print_thought(think_dur)
-
-            tool_calls = result.get('tool_calls', [])
-            content = result.get('content', '').strip()
-
-            if not tool_calls:
-                # No more tool calls — take the content as final answer
-                if content and not content.startswith('Using tool:'):
-                    final_content = content
-                break
-
-            # Execute each unique tool call
-            executed_any = False
-            tool_results_text = []
-            for tc in tool_calls:
-                tool_name = tc.get('name', '')
-                tool_args = tc.get('arguments', {})
-
-                # Deduplicate: skip if we already ran this exact call
-                call_key = f'{tool_name}:{json.dumps(tool_args, sort_keys=True)}'
-                if call_key in seen_calls:
+    # ── chat ──
+    def chat(self, message: str) -> str:
+        self.history.append({'role': 'user', 'content': message})
+        self.ui.status.start('Responding…')
+        started = time.monotonic()
+        text = ''
+        thinking = ''
+        first: Optional[float] = None
+        try:
+            gen = llm.stream(self.history[-16:], system=CHAT_SYSTEM, model=self.model)
+            while True:
+                try:
+                    kind, piece = next(gen)
+                except StopIteration as stop:
+                    stats = stop.value or {}
+                    self.tokens += stats.get('tokens_in', 0) + stats.get('tokens_out', 0)
+                    break
+                if kind == 'thinking':
+                    thinking += piece
                     continue
-                seen_calls.add(call_key)
-                executed_any = True
+                if first is None:
+                    first = time.monotonic() - started
+                text += piece
+                self.ui.status.label('Responding…', self.tokens + len(text) // 4)
+        except llm.OllamaError as e:
+            self.ui.status.stop()
+            self.ui.error(str(e))
+            self.history.pop()
+            return ''
+        except KeyboardInterrupt:
+            self.ui.status.stop()
+            self.ui.note('Stopped.', YELLOW)
+            self.history.pop()
+            return ''
+        self.ui.status.stop()
+        self.ui.thought(first or (time.monotonic() - started), thinking.strip()[:300])
+        self.ui.answer(text)
+        self.ui.worked(time.monotonic() - started)
+        self.history.append({'role': 'assistant', 'content': text})
+        return text
 
-                # ── Auto-intercept: redirect YouTube watch URLs to youtube_search ──
-                if tool_name in ('navigate_browser', 'navigate') and tool_args:
-                    url_val = str(tool_args.get('url', ''))
-                    if 'youtube.com/watch' in url_val or 'youtu.be/' in url_val:
-                        # Silently rewrite: use user_text as query (much better than a hardcoded fallback)
-                        qs = _uparse.parse_qs(_uparse.urlparse(url_val).query)
-                        query_guess = (
-                            qs.get('search_query', [None])[0] or
-                            qs.get('q', [None])[0] or
-                            user_text  # original user request is the best query
-                        )
-                        tool_name = 'youtube_search'
-                        tool_args = {'query': str(query_guess)}
-
-                tool_label = self._ui.print_tool_header(tool_name, tool_args)
-                t_start = time.time()
-                observation = _run_tool(self._tools, tool_name, tool_args)
-                t_dur = time.time() - t_start
-                self._ui.print_tool_result(observation, tool_label, t_dur)
-
-                # ── Auto-screenshot: inject screen state after every visual action ──
-                _VISUAL_TOOLS = {
-                    'click', 'double_click', 'right_click', 'type_text', 'key_press',
-                    'scroll', 'drag', 'navigate_browser', 'browser_search', 'youtube_search',
-                    'open_app', 'browser_address', 'shell_run',
-                }
-                if tool_name in _VISUAL_TOOLS:
-                    try:
-                        snap = _run_tool(self._tools, 'screenshot', {})
-                        if snap and 'saved' in snap.lower():
-                            observation = observation + f'\n[Screen after action: {snap}]'
-                    except Exception:
-                        pass
-
-                obs_line = f'{tool_name}: {observation}'
-                all_observations.append(obs_line)
-                tool_results_text.append(f'[{tool_name} result]\n{observation}')
-
-            if not executed_any:
-                break  # all tool calls were duplicates
-
-            # Feed results back as a single user message (not per-tool)
-            loop_messages.append({'role': 'assistant', 'content': content or 'Calling tools...'})
-            loop_messages.append({
-                'role': 'user',
-                'content': '\n\n'.join(tool_results_text) + '\n\nWhat is your conclusion?',
-            })
-
-        # Build final answer from real data
-        if not final_content:
-            if all_observations:
-                final_content = '\n'.join(all_observations[-8:])
-            else:
-                final_content = '[Task executed — no output captured]'
-
-        return final_content
-
-    def _react_loop(self, user_text: str) -> str:
-        """
-        Main agentic loop. Uses native tool calling for Ollama, ReAct text format otherwise.
-        """
-        task_start = time.time()
-        self._history.append({'role': 'user', 'content': user_text})
-
-        # Try native tool calling for all providers (each implements call_with_tools)
+    # ── computer ──
+    def _confirm(self, command: str) -> bool:
+        self.ui.status.stop()
+        self.ui.note(f'Devin wants to run:  {command}', YELLOW)
         try:
-            final_answer = self._native_tool_loop(user_text)
-            total_dur = time.time() - task_start
-            ts = _now_hhmm()
-            print()
-            self._ui.print_final(final_answer, ts)
-            self._ui.print_elapsed(total_dur)
-            print()
-            self._history.append({'role': 'assistant', 'content': final_answer})
-            self._speak(final_answer)
-            return final_answer
-        except Exception:
-            pass  # fall through to ReAct text loop
+            answer = input('  Allow? [y/N] ').strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ''
+        self.ui.status.start('Working…')
+        return answer in ('y', 'yes')
 
-        # ReAct text-based fallback
-        return self._react_text_loop(user_text, task_start)
-
-    def _react_text_loop(self, user_text: str, task_start: float) -> str:
-        """ReAct text-based loop for providers without native tool calling."""
-        messages = list(self._history[-20:])
-        max_steps = 15
-        final_answer = ''
-
-        for step in range(max_steps):
-            think_start = time.time()
-            full_response = ''
-            try:
-                for chunk in self._provider.stream(messages, self._system):
-                    full_response += chunk
-            except Exception as e:
-                full_response = f"[Provider error: {e}]"
-                break
-
-            think_dur = time.time() - think_start
-            self._ui.print_thought(think_dur)
-
-            # Check for Final Answer first
-            final_m = _FINAL_RE.search(full_response)
-            if final_m:
-                final_answer = final_m.group(1).strip()
-                break
-
-            # Parse action
-            action_name, inputs, thought = _parse_action(full_response)
-
-            if not action_name:
-                # Treat whole response as final answer
-                final_answer = full_response.strip()
-                for prefix in ('Thought:', 'thought:'):
-                    if final_answer.lower().startswith(prefix.lower()):
-                        idx = final_answer.find('\n')
-                        if idx > 0:
-                            rest = final_answer[idx+1:].strip()
-                            if rest:
-                                final_answer = rest
-                break
-
-            # Execute tool
-            tool_label = self._ui.print_tool_header(action_name, inputs or {})
-            tool_start = time.time()
-            observation = _run_tool(self._tools, action_name, inputs or {})
-            tool_dur = time.time() - tool_start
-            self._ui.print_tool_result(observation, tool_label, tool_dur)
-
-            messages.append({'role': 'assistant', 'content': full_response})
-            messages.append({'role': 'user', 'content': f'Observation: {observation}\nContinue.'})
-
-        total_dur = time.time() - task_start
-
-        if not final_answer:
-            final_answer = '[No answer produced]'
-
-        ts = _now_hhmm()
-        print()
-        self._ui.print_final(final_answer, ts)
-        self._ui.print_elapsed(total_dur)
-        print()
-
-        self._history.append({'role': 'assistant', 'content': final_answer})
-        self._speak(final_answer)
-        return final_answer
-
-    def _speak(self, text: str) -> None:
-        if self._voice_mode and text:
-            try:
-                from main import CAPS
-                if CAPS.voice and hasattr(CAPS.voice, 'speak'):
-                    CAPS.voice.speak(text[:400])
-            except Exception:
-                pass
-
-    # ── Slash command handler ──────────────────────────────────────────────────
-
-    def _handle_slash(self, line: str) -> bool:
-        parts = line.strip().split(None, 1)
-        cmd = parts[0].lower()
-        arg = parts[1] if len(parts) > 1 else ''
-
-        if cmd in ('/exit', '/q', '/quit'):
-            self._running = False
-            print(_c(CYAN, '\n  Goodbye.\n'))
-            return True
-
-        if cmd == '/help':
-            print(_c(CYAN, _SLASH_HELP))
-            return True
-
-        if cmd == '/clear':
-            os.system('clear' if os.name == 'posix' else 'cls')
-            self._history.clear()
-            self._ui.banner(self._provider.name, os.getcwd())
-            return True
-
-        if cmd == '/reset':
-            self._history.clear()
-            print(_c(YELLOW, '  Conversation history cleared.'))
-            return True
-
-        if cmd == '/status':
-            self._show_status()
-            return True
-
-        if cmd == '/tools':
-            self._show_tools()
-            return True
-
-        if cmd == '/screenshot':
-            self._do_screenshot()
-            return True
-
-        if cmd == '/memory':
-            self._show_memory()
-            return True
-
-        if cmd == '/remember':
-            if arg:
-                try:
-                    _save_memory(arg)
-                    print(_c(GREEN, f'  ✓ Remembered: {arg}'))
-                except Exception as e:
-                    print(_c(RED, f'  [Error: {e}]'))
+    def _on_event(self, e: Dict[str, Any]) -> None:
+        kind = e['type']
+        if kind == 'look':
+            first = e.get('thinks', 1) == 1
+            self.ui.status.label('Looked at the screen. Planning…' if first
+                                 else 'Looked at the new screen. Thinking again…', self.tokens)
+        elif kind == 'think':
+            self.tokens = self._task_tokens + e.get('tokens', 0)
+            plan = e.get('plan') or []
+            self.ui.thought(e['seconds'], e.get('thought', ''), plan if len(plan) > 1 else None)
+        elif kind == 'speed':
+            if e.get('tps', 0) < 60:
+                self.ui.note(f'{e["model"]} reads about {e["tps"]:.0f} tokens a second on this machine, so each '
+                             f'time I stop to think takes around {_duration(450 / max(e["tps"], 0.5) + 25)}. '
+                             'Acting and checking the screen in between is fast.', FAINT)
+        elif kind == 'act_start':
+            self.ui.status.label(f'{e.get("summary") or e["action"]}…', self.tokens)
+        elif kind == 'act':
+            step = e['step']
+            failed = step.outcome.startswith(('ERROR', 'REFUSED', 'BLOCKED')) or bool(step.problem)
+            ok = False if (failed or step.changed is False) else (True if step.changed else None)
+            self.ui.row(step.summary, step.outcome, ok)
+            self.ui.status.label('Checked the screenshot. Next action…', self.tokens)
+        elif kind == 'verify_start':
+            self.ui.status.label('Checking the result against the screen…', self.tokens)
+        elif kind == 'verify':
+            self.tokens = self._task_tokens + e.get('tokens', 0)
+            if e['complete']:
+                self.ui.row('Checked the screen: the task is complete', e.get('reason', ''), True)
             else:
-                print(_c(YELLOW, '  Usage: /remember <fact>'))
-            return True
-
-        if cmd == '/vision':
-            if arg:
-                self._do_vision_task(arg)
+                self.ui.row('Checked the screen: not finished yet, continuing', e.get('reason', ''), False)
+                self.ui.status.label('Looking at the screen…', self.tokens)
+        elif kind == 'retry':
+            dropped = e.get('dropped', 0)
+            if e.get('new_window'):
+                self.ui.row(f'A new window appeared: "{_clip(e["new_window"], 50)}" — reading it before going on')
             else:
-                print(_c(YELLOW, '  Usage: /vision <task>  e.g. /vision open Firefox and go to github.com'))
-            return True
+                self.ui.row('The screen did not follow the plan — looking again and re-planning'
+                            if dropped else 'That did not work — trying another way', '', False)
 
-        if cmd == '/think':
-            if arg:
-                self._react_loop(arg)
-            else:
-                print(_c(YELLOW, '  Usage: /think <task description>'))
-            return True
-
-        if cmd == '/shell':
-            if arg:
-                self._shell(arg)
-            else:
-                print(_c(YELLOW, '  Usage: /shell <cmd>'))
-            return True
-
-        if cmd == '/git':
-            if arg:
-                self._shell(f'git {arg}')
-            else:
-                print(_c(YELLOW, '  Usage: /git <args>'))
-            return True
-
-        if cmd == '/mem':
-            n = len(self._history)
-            chars = sum(len(m.get('content', '')) for m in self._history)
-            tok = chars // 4
-            mems = _load_memories()
-            print(_c(GRAY, f'  Conversation: {n} messages, ~{tok}K tokens  |  Memories: {len(mems)} facts'))
-            return True
-
-        if cmd == '/voice':
-            self._voice_mode = not self._voice_mode
-            print(_c(YELLOW, f'  Voice mode: {"ON" if self._voice_mode else "OFF"}'))
-            return True
-
-        if cmd == '/provider':
-            if arg:
-                self._provider = _select_provider(arg.strip())
-                self._system = _build_system_prompt(self._tools)
-                self._ui.provider_name = self._provider.name
-                print(_c(YELLOW, f'  Provider switched to: {self._provider.name}'))
-            else:
-                print(_c(GRAY, f'  Current provider: {self._provider.name}'))
-            return True
-
-        if cmd == '/model':
-            if arg:
-                env_map = {
-                    'gemini': 'GEMINI_MODEL', 'claude': 'CLAUDE_MODEL',
-                    'openai': 'OPENAI_MODEL', 'hf': 'HF_MODEL', 'huggingface': 'HF_MODEL',
-                }
-                k = env_map.get(self._provider.name)
-                if k:
-                    os.environ[k] = arg.strip()
-                    self._provider = _select_provider(self._provider.name)
-                    print(_c(YELLOW, f'  Model set to: {arg.strip()}'))
-                else:
-                    print(_c(YELLOW, f'  Cannot set model for provider: {self._provider.name}'))
-            else:
-                print(_c(GRAY, '  Usage: /model <model-name>'))
-            return True
-
-        if cmd == '/cwd':
-            print(_c(GRAY, f'  {os.getcwd()}'))
-            return True
-
-        print(_c(YELLOW, f'  Unknown command: {cmd}  (type /help)'))
-        return True
-
-    # ── Utility methods ────────────────────────────────────────────────────────
-
-    def _shell(self, cmd: str) -> None:
-        t = time.time()
-        print(_c(GRAY, f'  $ {cmd}'))
+    def do(self, task: str) -> Any:
+        from modules import screen_vision as sv
+        from modules import os_automation as oa
+        self.history.append({'role': 'user', 'content': task})
+        started = time.monotonic()
+        self._task_tokens = self.tokens
+        context = ' | '.join(f'{m["role"]}: {m["content"][:120]}' for m in self.history[-5:-1])
+        self.ui.status.start('Looking at the screen…')
+        agent = sv.ComputerAgent(model=self.agent_model or self.model, on_event=self._on_event,
+                                 confirm=self._confirm, max_steps=self.max_steps, cwd=os.getcwd())
+        self._agent = agent
         try:
-            r = subprocess.run(cmd, shell=True, text=True, capture_output=True, timeout=60)
-            for ln in (r.stdout or '').splitlines():
-                print(_c(GRAY, f'  {ln}'))
-            for ln in (r.stderr or '').splitlines():
-                print(_c(RED, f'  {ln}'))
-        except subprocess.TimeoutExpired:
-            print(_c(RED, '  [timeout]'))
-        except Exception as e:
-            print(_c(RED, f'  [error: {e}]'))
-        print(_c(GRAY_B, f'  ({time.time()-t:.2f}s)'))
+            result = agent.run(task, context=context)
+        except KeyboardInterrupt:
+            agent.stop()
+            self.ui.status.stop()
+            self.ui.note('Stopped.', YELLOW)
+            self.history.append({'role': 'assistant', 'content': '(stopped by the user)'})
+            return None
+        except oa.DesktopError as e:
+            self.ui.status.stop()
+            self.ui.error(f'I cannot control this desktop: {e}')
+            self.history.pop()
+            return None
+        finally:
+            self._agent = None
+        self.ui.status.stop()
+        if result.success:
+            self.ui.answer(result.answer)
+        else:
+            self.ui.out()
+            self.ui.note(result.answer, YELLOW)
+        if result.steps and result.screenshot:
+            self.ui.note(f'screen saved: {result.screenshot}', FAINT)
+        self.ui.worked(time.monotonic() - started)
+        self.history.append({'role': 'assistant', 'content': result.answer})
+        return result
 
-    def _do_vision_task(self, goal: str) -> None:
-        """Run autonomous GUI vision task: observe→reason→act→verify."""
-        print(_c(CYAN, f'  [Vision] Goal: {goal}'))
-        t_start = time.time()
-        try:
-            from modules.screen_vision import run_vision_cycle
-            provider = self._provider
-
-            def _ai_call(prompt: str) -> str:
-                try:
-                    return provider.complete([{'role': 'user', 'content': prompt}])
-                except Exception as e:
-                    return f'{{"action": "fail", "reason": "{e}"}}'
-
-            cycle = run_vision_cycle(goal, ai_call_fn=_ai_call, max_steps=20, verbose=True)
-            dur = time.time() - t_start
-            if cycle.completed:
-                print(_c(GREEN, f'  ✓ Vision task complete in {dur:.1f}s: {cycle.current_state}'))
-            elif cycle.failed:
-                print(_c(RED, f'  ✗ Vision task failed after {cycle.step} steps: {cycle.failure_reason}'))
-            else:
-                print(_c(YELLOW, f'  ⚠ Vision task ran {cycle.step} steps (incomplete)'))
-        except Exception as e:
-            print(_c(RED, f'  [Vision error: {e}]'))
-
-    def _do_screenshot(self) -> None:
-        print(_c(CYAN, '  Taking screenshot…'))
-        try:
-            from modules.os_agent import get_os_agent
-            agent = get_os_agent()
-            r = agent.screenshot('Describe the current screen')
-            if r.success:
-                print(_c(GREEN, f'  ✓ {r.message}'))
-                if r.vision_result and r.vision_result != '[Vision analysis unavailable — no AI provider configured]':
-                    print(_c(GRAY, f'  Screen: {r.vision_result[:300]}'))
-            else:
-                print(_c(RED, f'  ✗ {r.message}'))
-        except Exception as e:
-            print(_c(RED, f'  [screenshot error: {e}]'))
-
-    def _show_memory(self) -> None:
-        mems = _load_memories()
-        if not mems:
-            print(_c(GRAY, '  No memories stored. Use /remember <fact> to save one.'))
+    # ── one message ──
+    def handle(self, line: str) -> None:
+        line = line.strip()
+        if not line:
             return
-        print(_c(CYAN, f'\n  Memories ({len(mems)}):'))
-        for m in mems[-20:]:
-            ts = m.get('ts', '')
-            content = m.get('content', '')
-            print(_c(GRAY, f'  [{ts}] {content}'))
-        print()
+        self._printed = True
+        if line.startswith('!'):
+            self._shell(line[1:].strip())
+            return
+        if line.startswith('/'):
+            self._slash(line)
+            return
+        self.ui.user(line)
+        if not self._ensure_model():
+            return
+        mode = self.mode
+        if mode == 'auto' and not self._capable():
+            # A model that cannot see or plan must never start clicking on its own
+            # because it misread a greeting. Acting stays an explicit choice: /do.
+            mode = 'chat'
+        if mode == 'auto':
+            self.ui.status.start('Reading…')
+            try:
+                mode = 'agent' if route(line, self.history, self.model) == 'computer' else 'chat'
+            except KeyboardInterrupt:
+                self.ui.status.stop()
+                return
+            self.ui.status.stop()
+        if mode == 'agent':
+            self.do(line)
+        else:
+            self.chat(line)
 
-    def _show_status(self) -> None:
-        print(_c(CYAN, f'\n  Provider: {self._provider.name}  Available: {self._provider.available()}'))
+    def _shell(self, command: str) -> None:
+        if not command:
+            return
+        self.ui.row(f'$ {command}')
         try:
-            from main import CAPS, get_devin
-            d = get_devin()
-            print(_c(CYAN, f'  Modules: {d.loaded_count()}/{d.total_count()} loaded'))
-            rows = [
-                ('OS Agent',       'os_agent'),
-                ('Reasoning',      'reasoning'),
-                ('Conversation',   'conversation'),
-                ('System Monitor', 'system_monitor'),
-                ('Voice Engine',   'voice'),
-                ('Browser Agent',  'browser'),
-            ]
-            for label, attr in rows:
-                obj = getattr(CAPS, attr, None)
-                mark = _c(GREEN, '●') + ' ready' if obj else _c(GRAY, '○') + ' not loaded'
-                print(f'  {label:<22} {mark}')
-        except Exception as e:
-            print(_c(YELLOW, f'  Module status unavailable: {e}'))
+            r = subprocess.run(command, shell=True, text=True, capture_output=True, timeout=300)
+            for ln in ((r.stdout or '') + (r.stderr or '')).rstrip().split('\n')[-40:]:
+                self.ui.note(ln, FAINT)
+        except subprocess.TimeoutExpired:
+            self.ui.error('timed out after 300s')
+        except KeyboardInterrupt:
+            self.ui.note('Stopped.', YELLOW)
+
+    def _slash(self, line: str) -> None:
+        cmd, _, arg = line.partition(' ')
+        cmd, arg = cmd.lower(), arg.strip()
+        ui = self.ui
+        if cmd in ('/exit', '/quit', '/q'):
+            self._running = False
+        elif cmd in ('/help', '/?'):
+            ui.out()
+            from modules import screen_vision as sv
+            ui.note(HELP.format(steps=self.max_steps, shell='on' if sv.shell_allowed() else 'off',
+                                eyes=os.environ.get('DEVIN_EYES', 'auto')))
+        elif cmd == '/clear':
+            self.history.clear()
+            self.tokens = 0
+            if _TTY:
+                sys.stdout.write('\033[2J\033[3J\033[H')
+            self._banner()
+        elif cmd == '/mode':
+            if arg in MODES:
+                self.mode = arg
+            ui.note(f'mode: {self.mode}')
+        elif cmd == '/shell':
+            if arg in ('on', 'off'):
+                os.environ['DEVIN_ALLOW_SHELL'] = '1' if arg == 'on' else '0'
+            from modules import screen_vision as sv
+            ui.note('direct shell commands: ' + ('on' if sv.shell_allowed() else
+                                                'off (mouse and keyboard only)'))
+        elif cmd == '/eyes':
+            if arg in ('auto', 'always', 'never'):
+                os.environ['DEVIN_EYES'] = arg
+            ui.note('screenshot sent to the model: ' + os.environ.get('DEVIN_EYES', 'auto')
+                    + '   (auto = always for a fast model; for a slow one only when the screen has almost no readable text)')
+        elif cmd == '/steps':
+            if arg.isdigit() and int(arg) > 0:
+                self.max_steps = int(arg)
+            ui.note(f'steps per task: {self.max_steps}')
+        elif cmd == '/models':
+            names = llm.list_models()
+            if not names:
+                ui.error('No models installed (or Ollama is not running).')
+            for name in names:
+                role = ('  ← works the computer' if name == self.agent_model else '') + \
+                       ('  ← chat' if name == self.model and self.model != self.agent_model else '')
+                ui.note(('● ' if name in (self.model, self.agent_model) else '  ') + llm.describe_model(name) + role)
+        elif cmd == '/model':
+            if arg:
+                installed = llm.list_models()
+                match = [m for m in installed if m == arg or m.split(':')[0] == arg]
+                if not match:
+                    ui.error(f'{arg} is not installed. Get it with:  /pull {arg}')
+                    return
+                self.model = match[0]
+                os.environ['OLLAMA_MODEL'] = self.model
+                self.agent_model = llm.pick_agent_model()
+            if self._ensure_model():
+                ui.note(f'chat: {llm.describe_model(self.model)}')
+                ui.note(f'works the computer: {llm.describe_model(self.agent_model)}')
+                self._warn_if_weak()
+        elif cmd == '/pull':
+            if not arg:
+                ui.note('usage: /pull <model>, for example /pull gemma4:e2b')
+                return
+            self._pull(arg)
+        elif cmd in ('/look', '/screenshot', '/screen'):
+            self._look(arg)
+        elif cmd == '/doctor':
+            self.doctor()
+        elif cmd == '/do':
+            if arg and self._ensure_model():
+                ui.user(arg)
+                self.do(arg)
+        elif cmd == '/chat':
+            if arg and self._ensure_model():
+                ui.user(arg)
+                self.chat(arg)
+        else:
+            ui.note(f'Unknown command {cmd}. Type /help.', YELLOW)
+
+    def _pull(self, name: str) -> None:
+        self.ui.status.start(f'Downloading {name}…')
+        def progress(status: str, done: int, total: int) -> None:
+            pct = f' {done * 100 // total}%' if total else ''
+            self.ui.status.label(f'{name}: {status}{pct}')
         try:
-            import psutil
-            cpu = psutil.cpu_percent(interval=0.3)
-            mem = psutil.virtual_memory()
-            print(_c(GRAY, f'\n  CPU: {cpu}%  RAM: {mem.percent}% ({mem.used//1024//1024}MB used)'))
-        except ImportError:
+            ok = llm.pull_model(name, progress)
+        except KeyboardInterrupt:
+            ok = False
+        self.ui.status.stop()
+        if ok:
+            self.ui.note(f'{name} is ready. Switch with:  /model {name}', GREEN)
+        else:
+            self.ui.error(f'Could not download {name} (check the name, your disk space and `ollama signin`).')
+
+    def _look(self, question: str) -> None:
+        from modules import screen_vision as sv
+        from modules import os_automation as oa
+        if not self._ensure_model():
+            return
+        self.ui.status.start('Looking at the screen…')
+        try:
+            obs = sv.look()
+            path = obs.save(oa._tmp_path('look.png'), marked=bool(obs.elements))
+            text = sv.describe_screen(question or 'Describe what is on the screen.', self.agent_model or self.model)
+        except oa.DesktopError as e:
+            self.ui.status.stop()
+            self.ui.error(str(e))
+            return
+        except KeyboardInterrupt:
+            self.ui.status.stop()
+            return
+        self.ui.status.stop()
+        self.ui.row(f'Looked at the screen — {len(obs.elements)} elements, window "{obs.window}"')
+        self.ui.answer(text)
+        self.ui.note(f'screenshot: {path}', FAINT)
+
+    def doctor(self) -> bool:
+        """Check everything Devin needs and say plainly what is missing."""
+        from modules import os_automation as oa
+        from modules import screen_vision as sv
+        ui = self.ui
+        ok_all = True
+
+        def line(ok: Optional[bool], label: str, detail: str = '') -> None:
+            mark = _sgr(GREEN, '✓') if ok else (_sgr(YELLOW, '!') if ok is None else _sgr(RED, '✗'))
+            ui.out(f'  {mark} {label}' + (_sgr(GRAY, f'  {detail}') if detail else ''))
+
+        ui.out()
+        s = oa.status()
+        backend = s.get('backend')
+        ok_all &= bool(backend)
+        line(bool(backend), 'mouse and keyboard control',
+             f'{backend} · screen {s.get("screen", "?")}' if backend else s.get('error', '').split('\n')[0])
+        if backend:
+            try:
+                t = time.monotonic()
+                img = oa.get_desktop().capture()
+                from PIL import ImageStat
+                bright = ImageStat.Stat(img.convert('L')).mean[0]
+                line(bright > 2, 'screen capture', f'{img.width}x{img.height} in {time.monotonic() - t:.2f}s'
+                     + ('' if bright > 2 else ' — the image is black'))
+                ok_all &= bright > 2
+            except Exception as e:
+                line(False, 'screen capture', str(e))
+                ok_all = False
+        yd = s.get('ydotool_socket')
+        line(True if yd else None, 'ydotool daemon',
+             yd or ('not running — optional on GNOME; needed on other Wayland desktops'
+                    if s.get('ydotool_installed') else 'not installed — sudo apt install ydotool'))
+        line(True if sv.ocr_available() else None, 'on-screen text reading (OCR)',
+             'tesseract' if sv.ocr_available() else 'not installed — sudo apt install tesseract-ocr')
+        if llm.is_available():
+            model = self.agent_model or llm.pick_agent_model()
+            info = llm.model_info(model)
+            vision = 'vision' in info['capabilities']
+            strong = vision and info['params_b'] >= 2 or info['params_b'] == 0
+            line(True if strong else None, 'model that works the computer', llm.describe_model(model)
+                 + ('' if strong else ' — too small / cannot see the screen; see /help → /pull'))
+            chat = self.model or llm.pick_model()
+            if chat != model:
+                line(True, 'model for conversation', llm.describe_model(chat))
+        else:
+            line(False, 'model', f'Ollama is not answering at {llm._base()}')
+            ok_all = False
+        power = oa.power_state()
+        if power['percent'] is not None:
+            if power['on_battery']:
+                line(None, 'power', f'on battery ({power["percent"]}%) — laptops slow the CPU on battery, '
+                                    'so the model thinks slower; plug in for full speed')
+            else:
+                line(True, 'power', f'plugged in ({power["percent"]}%)')
+        ui.out()
+        return ok_all
+
+    def _warn_if_weak(self) -> None:
+        if not self.agent_model:
+            return
+        try:
+            from modules import os_automation as oa
+            power = oa.power_state()
+            if power['on_battery']:
+                self.ui.note(f'On battery ({power["percent"]}%): the CPU runs slower, so I think slower. '
+                             'Plug in the charger for full speed.', YELLOW)
+        except Exception:
             pass
-        mems = _load_memories()
-        print(_c(GRAY, f'  Memories: {len(mems)}  Conversation: {len(self._history)} messages'))
-        print()
+        if self._capable():
+            return
+        info = llm.model_info(self.agent_model)
+        vision = 'vision' in info['capabilities']
+        small = 0 < info['params_b'] < 2
+        why = []
+        if not vision:
+            why.append('it cannot see screenshots, only a text list of what is on screen')
+        if small:
+            why.append('it is too small to plan multi-step tasks reliably')
+        self.ui.note(f'Heads-up: {self.agent_model} will struggle to operate the computer — '
+                     + ' and '.join(why) + '.', YELLOW)
+        self.ui.note('So in auto mode I will only talk. To make me act anyway, start the message with /do.', YELLOW)
+        self.ui.note('For real control install a model that can see, for example:  /pull bonsai-2:4b', YELLOW)
 
-    def _show_tools(self) -> None:
-        self._tools = _build_agent_tools()
-        print(_c(CYAN, f'\n  Available tools ({len(self._tools)}):'))
-        for name, info in sorted(self._tools.items()):
-            desc = info.get('desc', '')[:55]
-            params = ', '.join(info.get('params', {}).keys())
-            print(_c(GRAY, f'  › {name:<26} {desc}'))
-            if params:
-                print(_c(GRAY, f'    {"params:":<24} {params}'))
-        print()
-
-    # ── Main REPL loop ─────────────────────────────────────────────────────────
+    def _banner(self) -> None:
+        backend = 'not connected yet'
+        try:
+            from modules import os_automation as oa
+            s = oa.status()
+            backend = (f'{s["backend"]} · screen {s.get("screen", "?")} · real mouse and keyboard'
+                       if s.get('backend') else 'unavailable — run /doctor')
+        except Exception:
+            pass
+        if not self.model:
+            label = 'Ollama not reachable'
+        elif self.agent_model and self.agent_model != self.model:
+            label = (f'{llm.describe_model(self.agent_model)} works the computer  ·  '
+                     f'{self.model} for conversation')
+        else:
+            label = llm.describe_model(self.model)
+        self.ui.header(label, backend)
+        self._warn_if_weak()
 
     def run(self) -> None:
-        self._ui.banner(self._provider.name, os.getcwd())
-        # Warn if running a tiny Ollama model that may refuse or give poor results
-        if hasattr(self._provider, '_is_small') and self._provider._is_small:
-            print(_c(YELLOW,
-                f'  ⚠  Small model detected: {self._provider.model}\n'
-                '     Responses may be limited. For better results run:\n'
-                '       ollama pull llama3.2   (or qwen2.5:7b, mistral)\n'
-                '     then restart Devin.\n'))
-        cwd = os.getcwd()
-
+        self._ensure_model()
+        self._build_session()
+        if self._session is not None:
+            # A clean page: the banner at the top, the input box right under it.
+            sys.stdout.write('\033[2J\033[3J\033[H')
+            sys.stdout.flush()
+        self._banner()
         while self._running:
+            line = self._read()
+            if line is None:
+                break
             try:
-                if self._voice_mode:
-                    try:
-                        from main import CAPS
-                        if CAPS.voice and hasattr(CAPS.voice, 'listen_once'):
-                            print(_c(GRAY, '  [Listening…]'))
-                            text = CAPS.voice.listen_once()
-                            if text:
-                                print(_c(WHITE_B, f'  You: {text}'))
-                                self._react_loop(text)
-                                continue
-                    except Exception:
-                        pass
-
-                # Show token count in header area
-                tok = _tok_estimate(self._history)
-                if _IS_TTY:
-                    print(_c(GRAY, f'  \033[2mmain {cwd}  {tok}K / 200K\033[0m'))
-
-                line = self._get_input(self._ui.print_input_prompt())
-                if line is None:
-                    print()
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-
-                if line.startswith('/'):
-                    self._handle_slash(line)
-                    continue
-
-                # Print user message block
-                self._ui.print_user_msg(line)
-                print()
-
-                # Run the agentic ReAct loop
-                self._react_loop(line)
-
-                # Update shortcuts hint
-                self._ui.print_status_bar(self._provider.name)
-                print()
-
+                self.handle(line)
             except KeyboardInterrupt:
-                print(_c(YELLOW, '\n  (Ctrl+D or /exit to quit)'))
-            except Exception as e:
-                print(_c(RED, f'\n  [REPL error: {e}]'))
+                self.ui.status.stop()
+                self.ui.note('Stopped.', YELLOW)
+            except Exception as e:  # never drop the user back to a shell mid-conversation
+                self.ui.status.stop()
+                self.ui.error(f'{type(e).__name__}: {e}')
+        self.ui.status.stop()
+        self.ui.note('Bye.')
 
-        print(_c(GRAY, '  Session ended.\n'))
+    def run_once(self, prompt: str, force: str = '') -> int:
+        """Handle a single message and exit (./devin "…")."""
+        if not self._ensure_model():
+            return 1
+        if force in ('agent', 'chat'):
+            self.mode = force
+        self.handle(prompt)
+        return 0
 
-
-# ── Public API ─────────────────────────────────────────────────────────────────
 
 _repl: Optional[DevinREPL] = None
 
 
-def get_repl(devin_agi: Optional[Any] = None) -> DevinREPL:
+def get_repl(devin_agi: Any = None) -> DevinREPL:
     global _repl
     if _repl is None:
         _repl = DevinREPL(devin_agi=devin_agi)
     return _repl
 
 
-def start_repl(devin_agi: Optional[Any] = None) -> None:
+def start_repl(devin_agi: Any = None) -> None:
     get_repl(devin_agi).run()
 
 
