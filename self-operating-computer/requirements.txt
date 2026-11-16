@@ -51,5 +51,5 @@ google-generativeai==0.3.0
 aiohttp==3.14.3
 ultralytics==8.4.131
 easyocr==1.7.1
-ollama==0.1.6
+ollama==0.6.2
 anthropic
